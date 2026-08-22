@@ -1,0 +1,54 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_AUTH_BASE": "https://api.ggfix.in/auth",
+        "EXPO_PUBLIC_TICKET_BASE": "https://api.ggfix.in/ticket",
+        "EXPO_PUBLIC_USER_BASE": "https://api.ggfix.in/user",
+        "EXPO_PUBLIC_SHOP_BASE": "https://api.ggfix.in/shop",
+        "EXPO_PUBLIC_TECHNICIAN_BASE": "https://api.ggfix.in/technician",
+        "EXPO_PUBLIC_ORDER_BASE": "https://api.ggfix.in/order",
+        "EXPO_PUBLIC_MASTER_DATA_BASE": "https://api.ggfix.in"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_AUTH_BASE": "https://api.ggfix.in/auth",
+        "EXPO_PUBLIC_TICKET_BASE": "https://api.ggfix.in/ticket",
+        "EXPO_PUBLIC_USER_BASE": "https://api.ggfix.in/user",
+        "EXPO_PUBLIC_SHOP_BASE": "https://api.ggfix.in/shop",
+        "EXPO_PUBLIC_TECHNICIAN_BASE": "https://api.ggfix.in/technician",
+        "EXPO_PUBLIC_ORDER_BASE": "https://api.ggfix.in/order",
+        "EXPO_PUBLIC_MASTER_DATA_BASE": "https://api.ggfix.in"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_AUTH_BASE": "https://api.ggfix.in/auth",
+        "EXPO_PUBLIC_TICKET_BASE": "https://api.ggfix.in/ticket",
+        "EXPO_PUBLIC_USER_BASE": "https://api.ggfix.in/user",
+        "EXPO_PUBLIC_SHOP_BASE": "https://api.ggfix.in/shop",
+        "EXPO_PUBLIC_TECHNICIAN_BASE": "https://api.ggfix.in/technician",
+        "EXPO_PUBLIC_ORDER_BASE": "https://api.ggfix.in/order",
+        "EXPO_PUBLIC_MASTER_DATA_BASE": "https://api.ggfix.in"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

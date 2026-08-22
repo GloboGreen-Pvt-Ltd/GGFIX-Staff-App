@@ -1,0 +1,85 @@
+name: EAS Build (Android/iOS)
+
+# Builds the app on Expo's EAS cloud servers.
+# Runs automatically on a push to main or preview, and can be triggered manually
+# from the Actions tab (where you can pick the platform and profile).
+
+on:
+  push:
+    branches: [main, preview]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build
+        type: choice
+        options:
+          - android
+          - ios
+          - all
+        default: android
+      profile:
+        description: EAS build profile
+        type: choice
+        options:
+          - preview
+          - production
+          - development
+        default: preview
+
+# Avoid stacking up concurrent builds for the same branch.
+concurrency:
+  group: eas-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build on EAS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Without EXPO_TOKEN the run reaches `eas build` and dies with
+      # "An Expo user account is required to proceed" — a red X on every push
+      # that says nothing about the cause. Check first and skip cleanly
+      # instead, so a missing secret is a warning rather than a failure.
+      #
+      # The token is read via `env:` rather than interpolated into the shell,
+      # so it is never expanded into a command line.
+      - name: Check Expo credentials
+        id: creds
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=EAS build skipped::EXPO_TOKEN is not set on this repository, so there is nothing to authenticate the build with. Add it under Settings -> Secrets and variables -> Actions (create the token at expo.dev -> Account Settings -> Access Tokens), then re-run this workflow."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup EAS / Expo
+        if: steps.creds.outputs.present == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        if: steps.creds.outputs.present == 'true'
+        run: npm ci
+
+      - name: Build on EAS
+        if: steps.creds.outputs.present == 'true'
+        run: |
+          eas build \
+            --platform ${{ github.event.inputs.platform || 'android' }} \
+            --profile ${{ github.event.inputs.profile || (github.ref_name == 'main' && 'production' || 'preview') }} \
+            --non-interactive \
+            --no-wait

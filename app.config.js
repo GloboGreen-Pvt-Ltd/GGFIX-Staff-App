@@ -5,7 +5,7 @@ const host = process.env.EXPO_PUBLIC_API_HOST || null;
 
 export default {
   expo: {
-    name: 'Repair Shop Employee',
+    name: 'GGFIX Employee',
     slug: 'ggfixemployee',
     // EAS account/organization that owns the project (from your Expo dashboard).
     // Verify this matches expo.dev → your account. Change if different.

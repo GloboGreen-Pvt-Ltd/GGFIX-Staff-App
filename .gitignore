@@ -32,3 +32,6 @@ yarn-error.*
 .DS_Store
 .vscode/
 .idea/
+
+# Editor/CLI backups that the office→mirror sync drags in (eas.json.bak).
+*.bak

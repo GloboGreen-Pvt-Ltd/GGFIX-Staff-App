@@ -37,7 +37,6 @@ import { rf, rlh, rs } from '../utils/responsive';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 30;
-const DIAL_CODE = '+91';
 const MOBILE_DIGITS = 10;
 
 const NAVY = '#00008B';
@@ -200,16 +199,12 @@ export default function LoginScreen({ onLogin }) {
 function MobileStep({ mobile, setMobile, loading, error, onSubmit }) {
   return (
     <View>
-      <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="cover" />
+      <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
 
       <Text style={styles.h1}>Login with{'\n'}mobile number</Text>
       <Text style={styles.sub}>Welcome to our app !</Text>
 
       <View style={styles.inputRow}>
-        <View style={styles.dialCard}>
-          <IndiaFlag />
-          <Text style={styles.dialText}>{DIAL_CODE}</Text>
-        </View>
         <View style={styles.numberCard}>
           <TextInput
             value={mobile}
@@ -252,7 +247,7 @@ function OtpStep({
       </Pressable>
 
       <Text style={styles.h1Center}>Verify Phone</Text>
-      <Text style={styles.subCenter}>Code is sent to {DIAL_CODE} {mobile}</Text>
+      <Text style={styles.subCenter}>Code is sent to {mobile}</Text>
 
       {/* The visible boxes are display-only; one transparent input sits on top
           of the whole row so backspace, paste and SMS autofill all behave like
@@ -281,13 +276,6 @@ function OtpStep({
         />
       </Pressable>
 
-      {__DEV__ ? (
-        // Dev-only hint. Advertising the default OTP in production hands
-        // attackers the second half of a credential (mobile + a guessable
-        // static OTP = account takeover).
-        <Text style={styles.devHint}>Default dev OTP for shop staff: 123456.</Text>
-      ) : null}
-
       {note ? <Text style={styles.note}>{note}</Text> : null}
       <ErrorBox msg={error} />
 
@@ -314,9 +302,12 @@ function PrimaryButton({ label, loading, onPress }) {
       loading={loading}
       fullWidth
       elevated={false}
-      // twMerge drops Button's own `rounded-2xl`/`py-3.5` in favour of these, so
-      // the CTA keeps the design's squarer 10px corners at a fixed 56px height.
-      className="rounded-[10px] py-0"
+      // twMerge drops Button's own `rounded-2xl`/`py-3.5`/`bg-primary` in favour of
+      // these, so the CTA keeps the design's squarer 10px corners at a fixed 56px
+      // height and the deep green fill instead of the app's #00008B navy.
+      // The hex must stay literal here — Tailwind's JIT only compiles arbitrary
+      // values it can see as source text, so a constant would emit no class.
+      className="rounded-[10px] py-0 bg-[#004C40]"
       style={styles.cta}
     >
       <View style={styles.ctaInner}>
@@ -324,22 +315,6 @@ function PrimaryButton({ label, loading, onPress }) {
         <ArrowRight size={rs(18)} color="#FFFFFF" strokeWidth={2} />
       </View>
     </Button>
-  );
-}
-
-/**
- * Drawn rather than the 🇮🇳 emoji: regional-indicator flags fall back to two
- * boxed letters on some Android builds, which reads as a rendering bug.
- */
-function IndiaFlag() {
-  return (
-    <View style={styles.flag}>
-      <View style={[styles.flagStripe, { backgroundColor: '#FF9933' }]} />
-      <View style={[styles.flagStripe, { backgroundColor: '#FFFFFF' }]}>
-        <View style={styles.chakra} />
-      </View>
-      <View style={[styles.flagStripe, { backgroundColor: '#138808' }]} />
-    </View>
   );
 }
 
@@ -356,7 +331,13 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#FFFFFF' },
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: rs(24) },
 
-  logo: { height: rs(52), width: rs(52), borderRadius: rs(14), marginBottom: rs(22) },
+  // The PNG is a teal roundel sitting on an opaque WHITE 1024x1024 canvas with
+  // its own padding, so the mark only fills ~78% of the box — at the old rs(52)
+  // the visible circle was ~40dp. `contain` (not `cover`) because the canvas is
+  // square and cover would crop it if the box ever stops being 1:1. No
+  // borderRadius: it would round the white canvas, not the circle, and the page
+  // is already #FFFFFF so there is nothing to round.
+  logo: { height: rs(100), width: rs(100), marginBottom: rs(22), alignSelf: 'center' },
 
   h1: { fontSize: rf(28), lineHeight: rlh(36), fontWeight: '800', color: TEXT, letterSpacing: -0.4 },
   h1Center: { fontSize: rf(26), lineHeight: rlh(32), fontWeight: '800', color: TEXT, textAlign: 'center' },
@@ -364,23 +345,6 @@ const styles = StyleSheet.create({
   subCenter: { fontSize: rf(13.5), lineHeight: rlh(20), color: MUTED, textAlign: 'center', marginTop: rs(8) },
 
   inputRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(28) },
-  dialCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: rs(54),
-    paddingHorizontal: rs(12),
-    borderRadius: rs(12),
-    borderWidth: 1,
-    borderColor: BORDER,
-    backgroundColor: '#FFFFFF',
-    marginRight: rs(10),
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  dialText: { fontSize: rf(15), fontWeight: '700', color: TEXT, marginLeft: rs(7) },
   numberCard: {
     flex: 1,
     height: rs(54),
@@ -397,10 +361,6 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   numberInput: { fontSize: rf(15.5), fontWeight: '600', color: TEXT, padding: 0 },
-
-  flag: { height: rs(16), width: rs(22), borderRadius: rs(3), overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: BORDER },
-  flagStripe: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  chakra: { height: rs(4), width: rs(4), borderRadius: rs(2), backgroundColor: '#000080' },
 
   backBtn: { alignSelf: 'flex-start', height: rs(36), width: rs(36), alignItems: 'center', justifyContent: 'center', marginBottom: rs(8), marginLeft: -rs(8) },
 
@@ -426,7 +386,6 @@ const styles = StyleSheet.create({
   otpCharEmpty: { fontSize: rf(20), fontWeight: '700', color: '#CBD5E1' },
   otpHiddenInput: { ...StyleSheet.absoluteFillObject, opacity: 0, color: 'transparent' },
 
-  devHint: { fontSize: rf(11), color: MUTED, marginTop: rs(10), textAlign: 'center' },
   note: { fontSize: rf(12.5), color: '#004C40', marginTop: rs(10), textAlign: 'center' },
 
   cta: { height: rs(56), borderRadius: rs(10), marginTop: rs(26), paddingVertical: 0 },

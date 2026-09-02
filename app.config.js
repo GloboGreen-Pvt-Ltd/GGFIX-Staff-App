@@ -6,10 +6,10 @@ const host = process.env.EXPO_PUBLIC_API_HOST || null;
 export default {
   expo: {
     name: 'GGFIX Employee',
-    slug: 'ggfixemployee',
+    slug: 'ggfix-app',
     // EAS account/organization that owns the project (from your Expo dashboard).
     // Verify this matches expo.dev → your account. Change if different.
-    owner: 'snandhas-organization',
+    owner: 'globogreen-system-and-technology-private-limited',
     version: '1.0.0',
     platforms: ['ios', 'android', 'web'],
     orientation: 'portrait',
@@ -54,7 +54,7 @@ export default {
       eas: {
         projectId:
           process.env.EAS_PROJECT_ID ||
-          '7a48d19f-9df0-48fb-bed0-16850d23b393',
+          '52db54d3-65c5-4efd-bab2-6718f0e3a686',
       },
     },
   },

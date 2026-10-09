@@ -17,9 +17,9 @@ export const TAB_BAR_HEIGHT = 78;
 // Brand green — mirrors the customer + shop apps so the three apps share one
 // bottom-bar language: white floating capsule, a green-soft pill that sits
 // behind the active tab, and green active icon/label.
-const TAB_GREEN = '#004C40';
-const TAB_GREEN_DARK = '#004C40';
-const TAB_GREEN_SOFT = '#DCFCE7';
+const TAB_GREEN = '#09AD2A';
+const TAB_GREEN_DARK = '#09AD2A';
+const TAB_GREEN_SOFT = '#E6F7EA';
 const TAB_INACTIVE = '#94A3B8';
 
 const TAB_HPAD = 6;       // capsule inner horizontal padding
@@ -96,7 +96,7 @@ export default function BottomTabBar({ active = 'Home', navigation }) {
               position: 'absolute', top: 8, left: 0,
               width: slot - TAB_PILL_INSET * 2, height: 46, borderRadius: 18,
               backgroundColor: TAB_GREEN_SOFT,
-              borderWidth: 1, borderColor: 'rgba(22, 163, 74, 0.14)',
+              borderWidth: 1, borderColor: 'rgba(9, 173, 42, 0.18)',
               transform: [{ translateX }],
             }}
           />

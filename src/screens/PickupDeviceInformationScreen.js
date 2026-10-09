@@ -90,7 +90,7 @@ export default function PickupDeviceInformationScreen({ navigation, route }) {
     }
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: slot.isVideo ? ImagePicker.MediaTypeOptions.Videos : ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: slot.isVideo ? ['videos'] : ['images'],
         allowsEditing: false,
         quality: 0.7,
         videoMaxDuration: 30,

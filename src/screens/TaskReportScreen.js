@@ -307,7 +307,7 @@ export default function MonthlySummaryScreen({ navigation }) {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor="#09AD2A" colors={['#09AD2A']} />}
       >
         <View style={styles.statsCard}>
           <View style={styles.statsHeader}>
@@ -315,25 +315,25 @@ export default function MonthlySummaryScreen({ navigation }) {
             <View style={styles.monthPill}>
               <Text style={styles.monthPillText}>{MONTHS[month - 1]} {year}</Text>
               <TouchableOpacity onPress={() => stepMonth(-1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                <Ionicons name="chevron-back" size={14} color="#FFFFFF" />
+                <Ionicons name="chevron-back" size={13} color="#1E1E1E" />
               </TouchableOpacity>
               <View style={styles.monthPillSep} />
               <TouchableOpacity onPress={() => stepMonth(1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
+                <Ionicons name="chevron-forward" size={13} color="#1E1E1E" />
               </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.statTilesRow}>
-            <StatTile value={String(counts.inProcess).padStart(2, '0')} label="In Process" hint="Active" icon="sync" bg="#00008B" />
-            <StatTile value={String(counts.pending).padStart(2, '0')} label="Pending" hint="Waiting" icon="alert-circle" bg="#EF4444" />
-            <StatTile value={String(counts.completed).padStart(3, '0')} label="Completed" hint="Finished" icon="checkmark-done" bg="#004C40" />
-            <StatTile value={String(counts.total).padStart(3, '0')} label="Total" hint="Overall" icon="stats-chart" bg="#1E1EAC" />
+            <StatTile value={String(counts.inProcess).padStart(2, '0')} label="In Process" hint="Active" icon="sync" bg="#F3BF23" fg="#1E1E1E" />
+            <StatTile value={String(counts.pending).padStart(2, '0')} label="Pending" hint="Waiting" icon="alert-circle" bg="#F84141" />
+            <StatTile value={String(counts.completed).padStart(3, '0')} label="Completed" hint="Finished" icon="checkmark-done" bg="#09AD2A" />
+            <StatTile value={String(counts.total).padStart(3, '0')} label="Total" hint="Overall" icon="stats-chart" bg="#1E1E1E" />
           </View>
         </View>
 
         {loading && list.length === 0 && (
-          <ActivityIndicator size="small" color="#00008B" style={{ marginVertical: 20 }} />
+          <ActivityIndicator size="small" color="#09AD2A" style={{ marginVertical: 20 }} />
         )}
 
         <Text style={styles.sectionHeader}>Recent Pending</Text>
@@ -377,12 +377,12 @@ export default function MonthlySummaryScreen({ navigation }) {
   );
 }
 
-function StatTile({ value, label, hint, icon, bg }) {
+function StatTile({ value, label, hint, icon, bg, fg = '#FFFFFF' }) {
   return (
     <View style={styles.statTileWrap}>
       <View style={[styles.statTileTop, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={11} color="#FFFFFF" />
-        <Text style={styles.statTileTopText}>{label}</Text>
+        <Ionicons name={icon} size={11} color={fg} />
+        <Text style={[styles.statTileTopText, { color: fg }]}>{label}</Text>
       </View>
       <Text style={styles.statTileValue}>{value}</Text>
       <Text style={styles.statTileHint}>{hint}</Text>
@@ -401,9 +401,11 @@ function TaskCard({ booking, bucket, eventKey, onPress, onHistory, onRefresh, re
   // between APPROVED and READY.
   const stepLine = technicianEventLabel(eventKey) || statusLabel(booking.status);
   const stepColor =
-    isPending ? '#DC2626'
-      : isInProcess ? '#00008B'
-        : '#004C40';
+    isPending ? '#F84141'
+      : isInProcess ? '#8A6700'
+        : '#09AD2A';
+  // Left edge: red = pending, yellow = in process, green = completed.
+  const accentColor = isPending ? '#F84141' : isInProcess ? '#F3BF23' : '#09AD2A';
 
   const footerLine =
     isPending ? `Pending On ${formatDateTime(booking.updatedAt || booking.createdAt)}`
@@ -412,7 +414,7 @@ function TaskCard({ booking, bucket, eventKey, onPress, onHistory, onRefresh, re
 
   return (
     <TouchableOpacity style={styles.taskCard} onPress={onPress} activeOpacity={0.85}>
-      <View style={styles.taskAccent} />
+      <View style={[styles.taskAccent, { backgroundColor: accentColor }]} />
       <View style={styles.taskInner}>
         <View style={styles.taskTopRow}>
           <Text style={styles.taskDate}>{formatDate(booking.createdAt)}</Text>
@@ -434,18 +436,18 @@ function TaskCard({ booking, bucket, eventKey, onPress, onHistory, onRefresh, re
             style={styles.taskStatusIcon}
           >
             {isPending && (
-              <View style={[styles.statusBadge, { backgroundColor: '#FEE2E2' }]}>
-                {refreshing ? <ActivityIndicator size="small" color="#DC2626" /> : <Ionicons name="refresh" size={14} color="#DC2626" />}
+              <View style={[styles.statusBadge, { backgroundColor: '#FEECEC' }]}>
+                {refreshing ? <ActivityIndicator size="small" color="#F84141" /> : <Ionicons name="refresh" size={13} color="#F84141" />}
               </View>
             )}
             {isInProcess && (
-              <View style={[styles.statusBadge, { backgroundColor: '#DBEAFE' }]}>
-                {refreshing ? <ActivityIndicator size="small" color="#00008B" /> : <Ionicons name="refresh" size={14} color="#00008B" />}
+              <View style={[styles.statusBadge, { backgroundColor: '#FDF6E0' }]}>
+                {refreshing ? <ActivityIndicator size="small" color="#8A6700" /> : <Ionicons name="refresh" size={13} color="#8A6700" />}
               </View>
             )}
             {isCompleted && (
-              <View style={[styles.statusBadge, { backgroundColor: '#DCFCE7' }]}>
-                {refreshing ? <ActivityIndicator size="small" color="#004C40" /> : <Ionicons name="refresh" size={14} color="#004C40" />}
+              <View style={[styles.statusBadge, { backgroundColor: '#E6F7EA' }]}>
+                {refreshing ? <ActivityIndicator size="small" color="#09AD2A" /> : <Ionicons name="refresh" size={13} color="#09AD2A" />}
               </View>
             )}
           </TouchableOpacity>
@@ -456,7 +458,7 @@ function TaskCard({ booking, bucket, eventKey, onPress, onHistory, onRefresh, re
             two destinations obvious + give History its own affordance. */}
         <View style={styles.actionRow}>
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: '#00008B' }]}
+            style={[styles.actionBtn, { backgroundColor: '#09AD2A' }]}
             onPress={onPress}
             activeOpacity={0.85}
           >
@@ -464,7 +466,7 @@ function TaskCard({ booking, bucket, eventKey, onPress, onHistory, onRefresh, re
             <Text style={styles.actionBtnText}>View Details</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: '#004C40' }]}
+            style={[styles.actionBtn, { backgroundColor: '#1E1E1E' }]}
             onPress={onHistory}
             activeOpacity={0.85}
           >
@@ -478,51 +480,51 @@ function TaskCard({ booking, bucket, eventKey, onPress, onHistory, onRefresh, re
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
+  safe: { flex: 1, backgroundColor: '#F8F8F8' },
   content: { padding: 12, paddingBottom: 32 },
 
-  statsCard: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 12 },
-  statsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  statsHeaderTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  monthPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E1EAC', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, gap: 6 },
-  monthPillText: { color: '#FFFFFF', fontSize: rf(11), fontWeight: '700' },
-  monthPillSep: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)' },
+  statsCard: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 10, borderWidth: 1, borderColor: '#ECECEC' },
+  statsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  statsHeaderTitle: { fontSize: rf(14), fontWeight: '700', color: '#1E1E1E' },
+  monthPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#ECECEC', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, gap: 6 },
+  monthPillText: { color: '#1E1E1E', fontSize: rf(11), fontWeight: '700' },
+  monthPillSep: { width: 1, height: 12, backgroundColor: '#E6E6E6' },
 
   statTilesRow: { flexDirection: 'row', gap: 6 },
-  statTileWrap: { flex: 1, backgroundColor: '#F9FAFB', borderRadius: 10, overflow: 'hidden', paddingBottom: 8, alignItems: 'center' },
+  statTileWrap: { flex: 1, backgroundColor: '#F8F8F8', borderRadius: 10, overflow: 'hidden', paddingBottom: 8, alignItems: 'center' },
   statTileTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, width: '100%', paddingVertical: 5 },
   statTileTopText: { color: '#FFFFFF', fontSize: rf(10), fontWeight: '700' },
-  statTileValue: { fontSize: rf(18), fontWeight: '800', color: '#111827', marginTop: 6 },
-  statTileHint: { fontSize: rf(9), color: '#9CA3AF', marginTop: 1, fontWeight: '600' },
+  statTileValue: { fontSize: rf(17), fontWeight: '800', color: '#1E1E1E', marginTop: 6 },
+  statTileHint: { fontSize: rf(9), color: '#A3A3A3', marginTop: 1, fontWeight: '600' },
 
-  sectionHeader: { fontSize: rf(13), fontWeight: '700', color: '#111827', marginTop: 14, marginBottom: 8 },
+  sectionHeader: { fontSize: rf(13), fontWeight: '800', color: '#1E1E1E', marginTop: 12, marginBottom: 6 },
 
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  filterChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB' },
-  filterChipActive: { backgroundColor: '#1E3A8A', borderColor: '#1E3A8A' },
-  filterChipText: { fontSize: rf(11), color: '#6B7280', fontWeight: '600' },
+  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#ECECEC' },
+  filterChipActive: { backgroundColor: '#09AD2A', borderColor: '#09AD2A' },
+  filterChipText: { fontSize: rf(11), color: '#6E6E6E', fontWeight: '600' },
   filterChipTextActive: { color: '#FFFFFF' },
 
-  taskCard: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 10, marginBottom: 8, overflow: 'hidden' },
-  taskAccent: { width: 3, backgroundColor: '#1E1EAC' },
-  taskInner: { flex: 1, padding: 10 },
+  taskCard: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 12, marginBottom: 8, overflow: 'hidden', borderWidth: 1, borderColor: '#ECECEC' },
+  taskAccent: { width: 3 },
+  taskInner: { flex: 1, paddingHorizontal: 10, paddingVertical: 9 },
   taskTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  taskDate: { fontSize: rf(12), fontWeight: '700', color: '#111827' },
-  taskTracking: { fontSize: rf(11), color: '#6B7280', fontWeight: '600' },
+  taskDate: { fontSize: rf(12), fontWeight: '700', color: '#1E1E1E' },
+  taskTracking: { fontSize: rf(11), color: '#6E6E6E', fontWeight: '600' },
   taskMiddleRow: { marginTop: 4 },
-  taskDevice: { fontSize: rf(11), color: '#374151' },
+  taskDevice: { fontSize: rf(11), color: '#4A4A4A' },
   taskBottomRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   taskStep: { fontSize: rf(11), fontWeight: '700' },
-  taskFooter: { fontSize: rf(10), color: '#9CA3AF', marginTop: 2 },
+  taskFooter: { fontSize: rf(10), color: '#A3A3A3', marginTop: 2 },
   taskStatusIcon: { marginLeft: 8 },
-  statusBadge: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  statusBadge: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
 
-  actionRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  actionRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
   actionBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 7, borderRadius: 6, gap: 4,
+    paddingVertical: 6, borderRadius: 8, gap: 4,
   },
   actionBtnText: { color: '#FFFFFF', fontSize: rf(11), fontWeight: '700' },
 
-  empty: { fontSize: rf(12), color: '#6B7280', textAlign: 'center', paddingVertical: 14 },
+  empty: { fontSize: rf(12), color: '#6E6E6E', textAlign: 'center', paddingVertical: 14 },
 });

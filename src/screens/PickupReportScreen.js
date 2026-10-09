@@ -7,12 +7,28 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  ChartColumn, CircleCheck, Clock3, FileText, MapPin, Package, PackageSearch, RefreshCw, Truck,
+} from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { listMyAssignedPickups } from '../api/pickups';
-import { rf } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
+import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
+import { MINT, mintShadow, HeroCard, CenterStepper, SectionCard, EmptyState } from '../components/MintKit';
+
+const MAX_CONTENT_WIDTH = 720;
+
+// Presentation only: summary-tile tints.
+const TILE_TINTS = {
+  inProcess: { bg: '#EFF6FF', border: '#DCE8FB', dot: '#2563EB', text: '#2563EB' },
+  pending:   { bg: '#FFF7E8', border: '#FBE8C5', dot: '#F59E0B', text: '#667085' },
+  completed: { bg: '#F1FAF6', border: '#D9EEE4', dot: '#00A86B', text: '#006B57' },
+  total:     { bg: '#F3EEFF', border: '#E6DCFB', dot: '#7C3AED', text: '#667085' },
+};
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -84,6 +100,8 @@ function customerLine(b) {
 }
 
 export default function PickupReportScreen({ navigation }) {
+  useHideNativeHeader(navigation);
+  const { width: winW } = useWindowDimensions();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -175,89 +193,125 @@ export default function PickupReportScreen({ navigation }) {
     navigation.navigate('PickupHistory', { booking: b });
   };
 
+  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(32);
+  const tileGap = rs(8);
+  const tileW = (contentW - tileGap * 3) / 4;
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <MintBackdrop />
+      <MintScreenHeader title="Pickup Report" navigation={navigation} />
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} colors={[MINT.deep]} tintColor={MINT.deep} />}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.statsCard}>
-          <View style={styles.statsHeader}>
-            <Text style={styles.statsHeaderTitle}>This Month</Text>
-            <View style={styles.monthPill}>
-              <Text style={styles.monthPillText}>{MONTHS[month - 1]} {year}</Text>
-              <TouchableOpacity onPress={() => stepMonth(-1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                <Ionicons name="chevron-back" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
-              <View style={styles.monthPillSep} />
-              <TouchableOpacity onPress={() => stepMonth(1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
+        <View style={{ width: contentW }}>
+          <HeroCard
+            icon={Truck}
+            title="Pickup Overview"
+            subtitle="Track your assigned pickups and status for the selected month."
+            art={contentW >= 360 ? <HeroArt /> : null}
+          />
+
+          <CenterStepper
+            label={`${MONTHS[month - 1]} ${year}`}
+            onPrev={() => stepMonth(-1)}
+            onNext={() => stepMonth(1)}
+            prevLabel="Previous month"
+            nextLabel="Next month"
+          />
+
+          <View style={[styles.statTilesRow, { gap: tileGap }]}>
+            <StatTile width={tileW} icon={Package} value={String(counts.inProcess).padStart(2, '0')} label="In Process" tint={TILE_TINTS.inProcess} />
+            <StatTile width={tileW} icon={Clock3} value={String(counts.pending).padStart(2, '0')} label="Pending" tint={TILE_TINTS.pending} />
+            <StatTile width={tileW} icon={CircleCheck} value={String(counts.completed).padStart(3, '0')} label="Completed" tint={TILE_TINTS.completed} />
+            <StatTile width={tileW} icon={ChartColumn} value={String(counts.total).padStart(3, '0')} label="Total" tint={TILE_TINTS.total} />
+          </View>
+
+          {loading && list.length === 0 && (
+            <ActivityIndicator size="small" color={MINT.deep} style={{ marginVertical: rs(20) }} />
+          )}
+
+          <SectionCard title="Recent Pending" style={styles.section}>
+            {recentPending ? (
+              <PickupRow booking={recentPending} bucket="PENDING" onDetails={() => openDetails(recentPending)} onHistory={() => openHistory(recentPending)} />
+            ) : (
+              <EmptyState
+                icon={PackageSearch}
+                title="No pending pickups"
+                text="You don't have any pending pickup tasks for this month."
+                action={{ label: 'Refresh', icon: RefreshCw, onPress: () => load(true), busy: refreshing }}
+              />
+            )}
+          </SectionCard>
+
+          <SectionCard title="In Process" style={styles.section}>
+            {recentInProcess ? (
+              <PickupRow booking={recentInProcess} bucket="IN_PROCESS" onDetails={() => openDetails(recentInProcess)} onHistory={() => openHistory(recentInProcess)} />
+            ) : (
+              <EmptyState icon={Truck} title="No pickups in progress" text="There are no active pickups at the moment." />
+            )}
+          </SectionCard>
+
+          <SectionCard title="Previous Completed" style={styles.section}>
+            <View style={styles.filterRow}>
+              {FILTERS.map((f, i) => (
+                <TouchableOpacity
+                  key={f}
+                  style={[styles.filterChip, i > 0 && styles.filterChipDivider, filter === f && styles.filterChipActive]}
+                  onPress={() => setFilter(f)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[styles.filterChipText, filter === f && styles.filterChipTextActive]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
+                    {f}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          </View>
-
-          <View style={styles.statTilesRow}>
-            <StatTile value={String(counts.inProcess).padStart(2, '0')} label="In Process" hint="Active" icon="sync" bg="#00008B" />
-            <StatTile value={String(counts.pending).padStart(2, '0')} label="Pending" hint="Waiting" icon="alert-circle" bg="#EF4444" />
-            <StatTile value={String(counts.completed).padStart(3, '0')} label="Completed" hint="Finished" icon="checkmark-done" bg="#004C40" />
-            <StatTile value={String(counts.total).padStart(3, '0')} label="Total" hint="Overall" icon="stats-chart" bg="#1E1EAC" />
-          </View>
+            {previousCompleted.length === 0 ? (
+              <EmptyState icon={FileText} text="No pickups found." />
+            ) : (
+              previousCompleted.map((b) => (
+                <PickupRow key={b.id} booking={b} bucket={bucketize(b.status)} onDetails={() => openDetails(b)} onHistory={() => openHistory(b)} />
+              ))
+            )}
+          </SectionCard>
         </View>
-
-        {loading && list.length === 0 && (
-          <ActivityIndicator size="small" color="#00008B" style={{ marginVertical: 20 }} />
-        )}
-
-        <Text style={styles.sectionHeader}>Recent Pending</Text>
-        {recentPending ? (
-          <PickupRow booking={recentPending} bucket="PENDING" onDetails={() => openDetails(recentPending)} onHistory={() => openHistory(recentPending)} />
-        ) : (
-          <Text style={styles.empty}>No pending pickups.</Text>
-        )}
-
-        <Text style={styles.sectionHeader}>In Process</Text>
-        {recentInProcess ? (
-          <PickupRow booking={recentInProcess} bucket="IN_PROCESS" onDetails={() => openDetails(recentInProcess)} onHistory={() => openHistory(recentInProcess)} />
-        ) : (
-          <Text style={styles.empty}>No pickups in progress.</Text>
-        )}
-
-        <Text style={styles.sectionHeader}>Previous Completed</Text>
-        <View style={styles.filterRow}>
-          {FILTERS.map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, filter === f && styles.filterChipActive]}
-              onPress={() => setFilter(f)}
-              activeOpacity={0.85}
-            >
-              <Text style={[styles.filterChipText, filter === f && styles.filterChipTextActive]}>
-                {f}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {previousCompleted.length === 0 ? (
-          <Text style={styles.empty}>No pickups found.</Text>
-        ) : (
-          previousCompleted.map((b) => (
-            <PickupRow key={b.id} booking={b} bucket={bucketize(b.status)} onDetails={() => openDetails(b)} onHistory={() => openHistory(b)} />
-          ))
-        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function StatTile({ value, label, hint, icon, bg }) {
+// Decorative van + map pin for the hero card (icons only, no image assets).
+function HeroArt() {
+  const disc = rs(72);
   return (
-    <View style={styles.statTileWrap}>
-      <View style={[styles.statTileTop, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={11} color="#FFFFFF" />
-        <Text style={styles.statTileTopText}>{label}</Text>
+    <View style={{ width: disc + rs(10), height: disc, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: disc, height: disc, borderRadius: disc / 2, backgroundColor: '#D8F1E6', alignItems: 'center', justifyContent: 'center' }}>
+        <Truck size={rs(36)} color={MINT.primary} fill="#FFFFFF" strokeWidth={1.8} />
       </View>
-      <Text style={styles.statTileValue}>{value}</Text>
-      <Text style={styles.statTileHint}>{hint}</Text>
+      <View style={{ position: 'absolute', top: -rs(6), right: 0 }}>
+        <MapPin size={rs(24)} color={MINT.primary} fill={MINT.bright} strokeWidth={1.8} />
+      </View>
+    </View>
+  );
+}
+
+function StatTile({ width, icon: Icon, value, label, tint }) {
+  const dot = rs(34);
+  return (
+    <View style={[styles.statTile, { width, backgroundColor: tint.bg, borderColor: tint.border }]}>
+      <View style={{ width: dot, height: dot, borderRadius: dot / 2, backgroundColor: tint.dot, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={rs(17)} color="#FFFFFF" strokeWidth={2.4} />
+      </View>
+      <Text style={styles.statTileValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{value}</Text>
+      <Text style={[styles.statTileLabel, { color: tint.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{label}</Text>
     </View>
   );
 }
@@ -269,7 +323,7 @@ function PickupRow({ booking, bucket, onDetails, onHistory }) {
   const stepLine = statusLabel(booking.status);
   const stepColor =
     isPending ? '#DC2626'
-      : isInProcess ? '#00008B'
+      : isInProcess ? '#2563EB'
         : '#004C40';
 
   const footerLine =
@@ -296,13 +350,13 @@ function PickupRow({ booking, bucket, onDetails, onHistory }) {
         </View>
         <View style={styles.taskActionsRow}>
           <TouchableOpacity onPress={onDetails} style={styles.taskActionBtn} activeOpacity={0.8}>
-            <Ionicons name="document-text-outline" size={14} color="#1E3A8A" />
+            <Ionicons name="document-text-outline" size={14} color={MINT.primary} />
             <Text style={styles.taskActionText}>View Details</Text>
           </TouchableOpacity>
           <View style={styles.taskActionDivider} />
           <TouchableOpacity onPress={onHistory} style={styles.taskActionBtn} activeOpacity={0.8}>
-            <Ionicons name="time-outline" size={14} color="#00008B" />
-            <Text style={[styles.taskActionText, { color: '#00008B' }]}>Pickup History</Text>
+            <Ionicons name="time-outline" size={14} color={MINT.primary} />
+            <Text style={[styles.taskActionText, { color: MINT.primary }]}>Pickup History</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -311,46 +365,47 @@ function PickupRow({ booking, bucket, onDetails, onHistory }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { padding: 12, paddingBottom: 32 },
+  safe: { flex: 1, backgroundColor: MINT.bg },
+  content: { alignItems: 'center', paddingTop: rs(4), paddingBottom: rs(24) },
 
-  statsCard: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 12 },
-  statsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  statsHeaderTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  monthPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E1EAC', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, gap: 6 },
-  monthPillText: { color: '#FFFFFF', fontSize: rf(11), fontWeight: '700' },
-  monthPillSep: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)' },
+  statTilesRow: { flexDirection: 'row', marginTop: rs(14) },
+  statTile: {
+    borderRadius: rs(18), borderWidth: 1, paddingHorizontal: rs(10), paddingVertical: rs(12), ...mintShadow,
+  },
+  statTileValue: { fontSize: rf(22), fontWeight: '800', color: MINT.text, marginTop: rs(10) },
+  statTileLabel: { fontSize: rf(12.5), fontWeight: '600', marginTop: 2 },
 
-  statTilesRow: { flexDirection: 'row', gap: 6 },
-  statTileWrap: { flex: 1, backgroundColor: '#F9FAFB', borderRadius: 10, overflow: 'hidden', paddingBottom: 8, alignItems: 'center' },
-  statTileTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, width: '100%', paddingVertical: 5 },
-  statTileTopText: { color: '#FFFFFF', fontSize: rf(10), fontWeight: '700' },
-  statTileValue: { fontSize: rf(18), fontWeight: '800', color: '#111827', marginTop: 6 },
-  statTileHint: { fontSize: rf(9), color: '#9CA3AF', marginTop: 1, fontWeight: '600' },
+  section: { marginTop: rs(14) },
 
-  sectionHeader: { fontSize: rf(13), fontWeight: '700', color: '#111827', marginTop: 14, marginBottom: 8 },
+  filterRow: {
+    flexDirection: 'row', borderRadius: 999, borderWidth: 1, borderColor: MINT.border,
+    backgroundColor: '#FFFFFF', overflow: 'hidden', marginBottom: rs(12),
+  },
+  filterChip: { flex: 1, height: rs(44), alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(4) },
+  filterChipDivider: { borderLeftWidth: 1, borderLeftColor: '#EAF0ED' },
+  filterChipActive: { backgroundColor: MINT.primary, borderRadius: 999, borderLeftWidth: 0 },
+  filterChipText: { fontSize: rf(13.5), color: '#344054', fontWeight: '600' },
+  filterChipTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  filterChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB' },
-  filterChipActive: { backgroundColor: '#1E3A8A', borderColor: '#1E3A8A' },
-  filterChipText: { fontSize: rf(11), color: '#6B7280', fontWeight: '600' },
-  filterChipTextActive: { color: '#FFFFFF' },
-
-  taskCard: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 10, marginBottom: 8, overflow: 'hidden' },
-  taskAccent: { width: 3, backgroundColor: '#1E1EAC' },
-  taskInner: { flex: 1, padding: 10 },
-  taskTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  taskDate: { fontSize: rf(12), fontWeight: '700', color: '#111827' },
-  taskTracking: { fontSize: rf(11), color: '#6B7280', fontWeight: '600' },
-  taskMiddleRow: { marginTop: 4 },
-  taskDevice: { fontSize: rf(11), color: '#374151' },
-  taskBottomRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
-  taskStep: { fontSize: rf(11), fontWeight: '700' },
-  taskFooter: { fontSize: rf(10), color: '#9CA3AF', marginTop: 2 },
-  taskActionsRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, paddingTop: 6, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E7EB' },
-  taskActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 6, gap: 4 },
-  taskActionText: { fontSize: rf(11), fontWeight: '700', color: '#1E3A8A' },
-  taskActionDivider: { width: StyleSheet.hairlineWidth, height: 16, backgroundColor: '#E5E7EB' },
-
-  empty: { fontSize: rf(12), color: '#6B7280', textAlign: 'center', paddingVertical: 14 },
+  taskCard: {
+    flexDirection: 'row', backgroundColor: MINT.softMint, borderRadius: rs(16), borderWidth: 1, borderColor: '#E3EFE9',
+    marginBottom: rs(10), overflow: 'hidden',
+  },
+  taskAccent: { width: rs(4), backgroundColor: MINT.bright },
+  taskInner: { flex: 1, padding: rs(12) },
+  taskTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: rs(8) },
+  taskDate: { fontSize: rf(13.5), fontWeight: '700', color: MINT.text },
+  taskTracking: { fontSize: rf(12), color: MINT.primary, fontWeight: '700' },
+  taskMiddleRow: { marginTop: rs(6) },
+  taskDevice: { fontSize: rf(13), color: '#344054' },
+  taskBottomRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(8) },
+  taskStep: { fontSize: rf(12.5), fontWeight: '700' },
+  taskFooter: { fontSize: rf(11.5), color: MINT.muted, marginTop: 2 },
+  taskActionsRow: {
+    flexDirection: 'row', alignItems: 'center', marginTop: rs(10), paddingTop: rs(8),
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#D5E6DD',
+  },
+  taskActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: rs(6), gap: rs(6) },
+  taskActionText: { fontSize: rf(12.5), fontWeight: '700', color: MINT.primary },
+  taskActionDivider: { width: StyleSheet.hairlineWidth, height: rs(18), backgroundColor: '#D5E6DD' },
 });

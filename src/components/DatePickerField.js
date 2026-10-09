@@ -60,7 +60,7 @@ function buildGrid(viewYear, viewMonth) {
 // The stateful calendar. Mounted only while the modal is visible (see
 // CalendarModal) so each open re-initialises from the current value — mirrors
 // TimePickerField's wheel remount trick.
-function CalendarBody({ initial, minimumDate, maximumDate, onCancel, onSave }) {
+function CalendarBody({ initial, minimumDate, maximumDate, onCancel, onSave, accent, accentSoft }) {
   const base = parseISO(initial) || new Date();
   const [selected, setSelected] = useState(parseISO(initial) ? initial : '');
   const [viewYear, setViewYear] = useState(base.getFullYear());
@@ -87,12 +87,12 @@ function CalendarBody({ initial, minimumDate, maximumDate, onCancel, onSave }) {
   return (
     <>
       <View style={styles.headerRow}>
-        <Pressable style={styles.navBtn} hitSlop={8} onPress={() => stepMonth(-1)}>
-          <Ionicons name="chevron-back" size={rf(18)} color="#00008B" />
+        <Pressable style={[styles.navBtn, accentSoft && { backgroundColor: accentSoft }]} hitSlop={8} onPress={() => stepMonth(-1)}>
+          <Ionicons name="chevron-back" size={rf(18)} color={accent || '#00008B'} />
         </Pressable>
         <Text style={styles.headerTitle}>{MONTHS[viewMonth]} {viewYear}</Text>
-        <Pressable style={styles.navBtn} hitSlop={8} onPress={() => stepMonth(1)}>
-          <Ionicons name="chevron-forward" size={rf(18)} color="#00008B" />
+        <Pressable style={[styles.navBtn, accentSoft && { backgroundColor: accentSoft }]} hitSlop={8} onPress={() => stepMonth(1)}>
+          <Ionicons name="chevron-forward" size={rf(18)} color={accent || '#00008B'} />
         </Pressable>
       </View>
 
@@ -111,7 +111,7 @@ function CalendarBody({ initial, minimumDate, maximumDate, onCancel, onSave }) {
           const isToday = iso === todayISO;
           return (
             <Pressable key={i} style={styles.cell} disabled={disabled} onPress={() => setSelected(iso)}>
-              <View style={[styles.dayWrap, isSel && styles.daySelected, !isSel && isToday && styles.dayToday]}>
+              <View style={[styles.dayWrap, isSel && styles.daySelected, isSel && accent && { backgroundColor: accent }, !isSel && isToday && styles.dayToday, !isSel && isToday && accent && { borderColor: accent }]}>
                 <Text
                   style={[
                     styles.dayText,
@@ -132,7 +132,7 @@ function CalendarBody({ initial, minimumDate, maximumDate, onCancel, onSave }) {
           <Text style={styles.cancelText}>Cancel</Text>
         </Pressable>
         <Pressable
-          style={[styles.saveBtn, !selected && styles.saveBtnDisabled]}
+          style={[styles.saveBtn, accent && { backgroundColor: accent }, !selected && styles.saveBtnDisabled]}
           hitSlop={8}
           disabled={!selected}
           onPress={() => onSave(selected)}
@@ -163,13 +163,16 @@ export default function DatePickerField({
   minimumDate,
   maximumDate,
   disabled,
+  fieldStyle, // optional style override for the trigger field (e.g. a taller, rounder look)
+  accent, // optional calendar accent colour (selected day, Save, arrows); defaults to navy
+  accentSoft, // optional tint behind the month arrows
 }) {
   const [open, setOpen] = useState(false);
   const display = formatDate(value);
   return (
     <>
       <Pressable
-        style={[styles.field, disabled && styles.fieldDisabled]}
+        style={[styles.field, fieldStyle, disabled && styles.fieldDisabled]}
         onPress={() => { if (!disabled) setOpen(true); }}
       >
         <Ionicons name="calendar-outline" size={rf(16)} color={disabled ? '#94A3B8' : '#64748B'} />
@@ -188,6 +191,8 @@ export default function DatePickerField({
         maximumDate={maximumDate}
         onCancel={() => setOpen(false)}
         onSave={(v) => { onChange?.(v); setOpen(false); }}
+        accent={accent}
+        accentSoft={accentSoft}
       />
     </>
   );

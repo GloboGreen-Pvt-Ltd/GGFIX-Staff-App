@@ -14,7 +14,7 @@
 // invoice lifecycle and the in-progress customer handover.
 import React, { useEffect, useRef, useState } from 'react';
 import { Text, View, TouchableOpacity, Image, ScrollView } from 'react-native';
-import { Audio } from 'expo-av';
+import { Audio } from '../../utils/audio';
 import {
   Truck, Wrench, Play, Pause, Square,
   ClipboardCheck, Clock, RotateCcw, CheckCircle2,
@@ -135,22 +135,22 @@ const LABEL_BY_KEY = Object.fromEntries(
   SHOP_BOOKING_STATUS_OPTIONS.map((o) => [o.value, o.label]),
 );
 
-const SUCCESS = '#004C40';      // green dot / line for completed steps
-const BRAND_GREEN_DARK = '#004C40';
-const DOT_BORDER = '#CBD5CB';   // gray ring around upcoming steps
-const LINE_PENDING = '#E2E8E2'; // connector between unreached steps
-const DANGER = '#DC2626';       // Return Device branch — dots, rail and header
-const DANGER_TINT = '#FEE2E2';
+const SUCCESS = '#09AD2A';      // green dot / line for completed steps
+const BRAND_GREEN_DARK = '#09AD2A';
+const DOT_BORDER = '#D4D4D4';   // gray ring around upcoming steps
+const LINE_PENDING = '#ECECEC'; // connector between unreached steps
+const DANGER = '#F84141';       // Return Device branch — dots, rail and header
+const DANGER_TINT = '#FEECEC';
 
 // Per-stage chrome for the five SERVICE groups. `layout` drives the renderer:
 // 'full' stacks down the page at full width; the two 'branch' stages are laid
 // out side by side in one row, left then right.
 const SERVICE_GROUP_META = {
-  [G_ACCEPTED]:  { title: 'Service Accepted', icon: ClipboardCheck, accent: BRAND_GREEN_DARK, tint: '#E6F7E3', done: SUCCESS, layout: 'full' },
-  [G_PROCESS]:   { title: 'In Process',       icon: Wrench,         accent: '#004C40',        tint: '#E6F7E3', done: SUCCESS, layout: 'full' },
-  [G_PENDING]:   { title: 'Working Pending',  icon: Clock,          accent: '#B45309',        tint: '#FEF3C7', done: SUCCESS, layout: 'branch' },
+  [G_ACCEPTED]:  { title: 'Service Accepted', icon: ClipboardCheck, accent: BRAND_GREEN_DARK, tint: '#E6F7EA', done: SUCCESS, layout: 'full' },
+  [G_PROCESS]:   { title: 'In Process',       icon: Wrench,         accent: '#09AD2A',        tint: '#E6F7EA', done: SUCCESS, layout: 'full' },
+  [G_PENDING]:   { title: 'Working Pending',  icon: Clock,          accent: '#8A6700',        tint: '#FDF6E0', done: SUCCESS, layout: 'branch' },
   [G_RETURN]:    { title: 'Return Device',    icon: RotateCcw,      accent: DANGER,           tint: DANGER_TINT, done: DANGER, layout: 'branch' },
-  [G_COMPLETED]: { title: 'Completed',        icon: CheckCircle2,   accent: BRAND_GREEN_DARK, tint: '#E6F7E3', done: SUCCESS, layout: 'full' },
+  [G_COMPLETED]: { title: 'Completed',        icon: CheckCircle2,   accent: BRAND_GREEN_DARK, tint: '#E6F7EA', done: SUCCESS, layout: 'full' },
 };
 
 const PHASE_META = {
@@ -158,14 +158,14 @@ const PHASE_META = {
     title: 'Pickup Service',
     subtitle: 'Doorstep pickup by our pickup person',
     icon: Truck,
-    tint: '#E6F7E3',
-    accent: '#004C40',
+    tint: '#E6F7EA',
+    accent: '#09AD2A',
   },
   SERVICE: {
     title: 'Shop Service',
     subtitle: 'Booking + repair lifecycle at the shop',
     icon: Wrench,
-    tint: '#E6F7E3',
+    tint: '#E6F7EA',
     accent: BRAND_GREEN_DARK,
   },
 };
@@ -176,17 +176,17 @@ function PhaseHeader({ phaseKey, anyDone }) {
   const Icon = meta.icon;
   return (
     <View
-      className="flex-row items-center mb-3 mt-1 rounded-2xl px-3 py-2.5"
-      style={{ backgroundColor: '#EFF5EE', borderWidth: 1, borderColor: '#EFF5EE' }}
+      className="flex-row items-center mb-2.5 rounded-xl px-2.5 py-2"
+      style={{ backgroundColor: '#F3FBF4', borderWidth: 1, borderColor: '#E1F3E5' }}
     >
       <View
-        className="w-9 h-9 rounded-full items-center justify-center mr-2.5"
+        className="w-8 h-8 rounded-full items-center justify-center mr-2"
         style={{ backgroundColor: meta.tint }}
       >
         <Icon size={16} color={meta.accent} />
       </View>
       <View className="flex-1">
-        <Text className="font-extrabold" style={{ fontSize: rf(13), color: meta.accent }}>
+        <Text className="font-extrabold" style={{ fontSize: rf(12.5), color: meta.accent }}>
           {meta.title}
         </Text>
         <Text className="text-gray-500 mt-0.5" style={{ fontSize: rf(10.5) }}>
@@ -213,15 +213,15 @@ function StageHeader({ groupKey, compact }) {
   const meta = SERVICE_GROUP_META[groupKey];
   if (!meta) return null;
   const Icon = meta.icon;
-  const box = compact ? 24 : 30;
+  const box = compact ? 22 : 26;
   return (
     <View
       className="flex-row items-center rounded-xl"
       style={{
         backgroundColor: meta.tint,
         paddingHorizontal: compact ? 8 : 10,
-        paddingVertical: compact ? 6 : 8,
-        marginBottom: 10,
+        paddingVertical: compact ? 5 : 6,
+        marginBottom: 8,
       }}
     >
       <View
@@ -236,7 +236,7 @@ function StageHeader({ groupKey, compact }) {
       </View>
       <Text
         className="flex-1 font-extrabold"
-        style={{ color: meta.accent, fontSize: rf(compact ? 11 : 12.5) }}
+        style={{ color: meta.accent, fontSize: rf(compact ? 11 : 12) }}
         numberOfLines={2}
       >
         {meta.title}
@@ -254,7 +254,7 @@ function StageHeader({ groupKey, compact }) {
  * global green.
  */
 function StepRow({ opt, ev, completed, isCurrent, isLast, lineCompleted, doneColor, compact }) {
-  const dot = compact ? 12 : 16;
+  const dot = compact ? 11 : 14;
   const danger = doneColor === DANGER;
   return (
     <View className="flex-row">
@@ -278,11 +278,11 @@ function StepRow({ opt, ev, completed, isCurrent, isLast, lineCompleted, doneCol
           )
         ) : null}
       </View>
-      <View className="flex-1" style={{ paddingBottom: compact ? 12 : 16 }}>
+      <View className="flex-1" style={{ paddingBottom: compact ? 10 : 12 }}>
         <View className="flex-row items-start justify-between">
           <Text
             className={`flex-1 pr-1 ${completed ? 'font-extrabold text-text' : 'font-bold text-text-muted'}`}
-            style={{ fontSize: rf(compact ? 11.5 : 13) }}
+            style={{ fontSize: rf(compact ? 11 : 12.5) }}
           >
             {opt.label}
           </Text>
@@ -290,7 +290,7 @@ function StepRow({ opt, ev, completed, isCurrent, isLast, lineCompleted, doneCol
             <View
               className="rounded-full ml-1"
               style={{
-                backgroundColor: danger ? DANGER_TINT : '#E6F7E3',
+                backgroundColor: danger ? DANGER_TINT : '#E6F7EA',
                 paddingHorizontal: 7, paddingVertical: 1.5,
               }}
             >
@@ -343,7 +343,7 @@ function BranchFork({ merge }) {
   );
 }
 
-const PLAYER_GREEN = '#004C40';
+const PLAYER_GREEN = '#09AD2A';
 const fmtClock = (ms) => {
   const s = Math.max(0, Math.floor((ms || 0) / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -443,8 +443,8 @@ function EventMedia({ audioUrl, imageUrls }) {
     <View className="mt-2">
       {hasAudio ? (
         <View
-          className="rounded-xl px-3 py-2.5 flex-row items-center"
-          style={{ borderWidth: 1, borderColor: '#E2E8E2', backgroundColor: '#F7FAF7' }}
+          className="rounded-xl px-2.5 py-2 flex-row items-center"
+          style={{ borderWidth: 1, borderColor: '#ECECEC', backgroundColor: '#F8F8F8' }}
         >
           <TouchableOpacity
             onPress={togglePlay}
@@ -456,12 +456,12 @@ function EventMedia({ audioUrl, imageUrls }) {
           <TouchableOpacity
             onPress={stop}
             className="w-8 h-8 rounded-full items-center justify-center mr-2"
-            style={{ borderWidth: 1, borderColor: '#CBD5CB', backgroundColor: '#FFFFFF' }}
+            style={{ borderWidth: 1, borderColor: '#D4D4D4', backgroundColor: '#FFFFFF' }}
           >
-            <Square size={11} color="#667066" fill="#667066" />
+            <Square size={11} color="#6E6E6E" fill="#6E6E6E" />
           </TouchableOpacity>
           <View className="flex-1">
-            <View style={{ height: 4, borderRadius: 2, backgroundColor: '#E2E8E2' }}>
+            <View style={{ height: 4, borderRadius: 2, backgroundColor: '#ECECEC' }}>
               <View style={{ height: 4, borderRadius: 2, width: `${pct * 100}%`, backgroundColor: PLAYER_GREEN }} />
             </View>
             <Text className="text-gray-500 mt-1" style={{ fontSize: rf(10) }}>
@@ -471,7 +471,7 @@ function EventMedia({ audioUrl, imageUrls }) {
           <TouchableOpacity
             onPress={cycleRate}
             className="ml-2 px-2.5 py-1.5 rounded-full"
-            style={{ backgroundColor: '#EFF5EE', borderWidth: 1, borderColor: '#E2E8E2' }}
+            style={{ backgroundColor: '#F3FBF4', borderWidth: 1, borderColor: '#E1F3E5' }}
           >
             <Text className="font-extrabold" style={{ fontSize: rf(11), color: BRAND_GREEN_DARK }}>{rate}x</Text>
           </TouchableOpacity>
@@ -666,7 +666,7 @@ export function ServiceHistoryTimeline({ events, status, phaseFilter }) {
           className="mb-2"
           style={
             showPickup
-              ? { paddingTop: 14, marginTop: 6, borderTopWidth: 1, borderTopColor: '#EFF5EE' }
+              ? { paddingTop: 14, marginTop: 6, borderTopWidth: 1, borderTopColor: '#F3F3F3' }
               : null
           }
         >

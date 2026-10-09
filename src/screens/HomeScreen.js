@@ -1,14 +1,19 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, Image, ActivityIndicator } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable, TouchableOpacity, ScrollView, Image, ActivityIndicator, Modal, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
 import {
-  Bell, MapPin, Camera, Sunrise, Sunset, ChevronDown, ChevronRight,
-  Calendar, Briefcase, Clock, ShieldAlert, ShieldCheck, ScanLine,
+  Bell, MapPin, Camera, Sunrise, Sunset, ChevronDown, ChevronLeft, ChevronRight,
+  Calendar, CalendarDays, Briefcase, Clock, ShieldAlert, ShieldCheck, ScanLine,
+  FingerprintPattern, LogOut, CircleCheck, ChartColumn, ClipboardList, FileText, Truck,
+  ArrowRight,
 } from 'lucide-react-native';
+import { rf, rlh, rs } from '../utils/responsive';
 import { selectSession, mergeTechnicianProfile, selectShopLocation } from '../store/authSlice';
-import { getCategoriesForSession, getRoleDisplayLabel } from '../config/categories';
+import { getCategoriesForSession, getRoleDisplayLabel, resolveRoleKey } from '../config/categories';
 import { employeeIdFromSession } from '../utils/employeeId';
 import { ticketRef } from '../utils/ticketRef';
 import {
@@ -27,22 +32,53 @@ import { readCurrentLocation, haversineMeters, GEOFENCE_RADIUS_METERS } from '..
 import { useLogout } from '../auth/LogoutContext';
 import { notify } from '../components/confirm';
 
-// Per-tile colour pairs for the Categories grid. Keyed by the category `key`
-// from config/categories.js. Each pair is { bg: light tint, fg: icon colour }
-// so the icons feel grouped by domain (time, leave, tasks, payroll).
-const CATEGORY_TINTS = {
-  daily_attendance: { bg: '#DBEAFE', fg: '#1D4ED8' },
-  daily_shift:      { bg: '#E0E7FF', fg: '#4338CA' },
-  monthly_summary:  { bg: '#CFFAFE', fg: '#0E7490' },
-  leave_request:    { bg: '#FFE4E6', fg: '#BE123C' },
-  apply_permission: { bg: '#E0F2FE', fg: '#0284C7' },
-  leave_report:     { bg: '#FFEDD5', fg: '#C2410C' },
-  assign_task:      { bg: '#EDE9FE', fg: '#6D28D9' },
-  task_report:      { bg: '#DCFCE7', fg: '#004C40' },
-  assign_pickup:    { bg: '#EDE9FE', fg: '#6D28D9' },
-  pickup_report:    { bg: '#DCFCE7', fg: '#004C40' },
-  salary_report:    { bg: '#FEF3C7', fg: '#B45309' },
-  default:          { bg: '#E0E7FF', fg: '#00008B' },
+// Home-screen palette (GGFIX green + mint). Scoped to this screen so the
+// app-wide theme tokens other screens rely on stay untouched.
+const C = {
+  // Brand palette
+  green: '#09AD2A',
+  red: '#F84141',
+  yellow: '#F3BF23',
+  ink: '#1E1E1E',
+  bg: '#F8F8F8',
+  surface: '#F3F3F3',
+  // Light tints of the palette colours (mixed with white) for tiles/pills
+  greenTint: '#E6F7EA',
+  greenSoft: '#F3FBF4',
+  redTint: '#FEECEC',
+  redSoft: '#FFF6F6',
+  yellowTint: '#FDF6E0',
+  yellowSoft: '#FEFAF0',
+  // Roles used throughout the screen
+  deep: '#09AD2A',
+  primary: '#09AD2A',
+  bright: '#09AD2A',
+  mint: '#E6F7EA',
+  card: '#FFFFFF',
+  border: '#ECECEC',
+  text: '#1E1E1E',
+  muted: '#6E6E6E',
+  faint: '#A3A3A3',
+};
+
+const MAX_CONTENT_WIDTH = 720;
+// Quick Access tiles, styled like the Partner app's dashboard tools: a pastel
+// circle behind a solid MaterialCommunityIcons glyph. Keyed by the category
+// `key` from config/categories.js; same pastel set as the Partner app.
+const QUICK_TILE_INK = '#111827';
+const QUICK_TILES = {
+  daily_attendance: { icon: 'account-clock', bg: '#E3F6EC' },
+  daily_shift:      { icon: 'calendar-clock', bg: '#E4EEFF' },
+  monthly_summary:  { icon: 'calendar-month', bg: '#FFF0D2' },
+  leave_request:    { icon: 'calendar-remove', bg: '#FDE3E3', fg: '#DC2626' },
+  apply_permission: { icon: 'shield-check', bg: '#F2E1FA' },
+  leave_report:     { icon: 'clipboard-text', bg: '#FFE8D6' },
+  assign_task:      { icon: 'clipboard-account', bg: '#E4EEFF' },
+  task_report:      { icon: 'clipboard-check', bg: '#E3F6EC' },
+  assign_pickup:    { icon: 'truck', bg: '#FFF0D2' },
+  pickup_report:    { icon: 'truck-delivery', bg: '#EFE2FF' },
+  salary_report:    { icon: 'currency-inr', bg: '#FFF0D2' },
+  default:          { icon: 'view-grid', bg: '#E3F6EC' },
 };
 
 // Status buckets used to split the "assignedToMe" ticket list into the
@@ -125,18 +161,23 @@ function useMinuteClock() {
 
 // Self-contained ticking "CURRENT TIME" block. Owns its own 1s interval, so the
 // per-second updates re-render only this small component, not all of HomeScreen.
-function LiveClock({ accentColor, statusText }) {
+function LiveClock({ statusColor, statusText }) {
   const now = useClock();
   const time = format12hClock(now);
   return (
-    <View className="flex-1">
-      <Text className="text-[10px] text-text-muted font-bold tracking-wider">CURRENT TIME</Text>
-      <Text className="text-[22px] font-extrabold text-text tracking-wider mt-1">
-        {time.h}:{time.m}:{time.s} <Text className="text-[14px] text-text-muted">{time.ap}</Text>
+    <View style={{ marginTop: rs(10) }}>
+      <View className="flex-row items-center">
+        <Clock size={rs(15)} color={C.text} strokeWidth={2} />
+        <Text style={{ fontSize: rf(13), color: C.text, marginLeft: rs(6) }}>Current Time</Text>
+      </View>
+      <Text style={{ fontSize: rf(30), fontWeight: '800', color: C.text, marginTop: rs(2), fontVariant: ['tabular-nums'] }}
+            numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+        {time.h}:{time.m}:{time.s}
+        <Text style={{ fontSize: rf(16), color: C.muted, fontWeight: '700' }}> {time.ap}</Text>
       </Text>
-      <View className="flex-row items-center mt-1">
-        <View className="h-1.5 w-1.5 rounded-full mr-1.5" style={{ backgroundColor: accentColor }} />
-        <Text className="text-[11px] font-bold" style={{ color: accentColor }}>{statusText}</Text>
+      <View className="flex-row items-center" style={{ marginTop: rs(2) }}>
+        <View style={{ width: rs(9), height: rs(9), borderRadius: rs(5), backgroundColor: statusColor, marginRight: rs(7) }} />
+        <Text style={{ fontSize: rf(13), fontWeight: '600', color: C.text }}>{statusText}</Text>
       </View>
     </View>
   );
@@ -177,18 +218,6 @@ function formatShortDate(iso) {
   return `${String(d.getDate()).padStart(2, '0')}-${months[d.getMonth()]}-${d.getFullYear()}`;
 }
 
-// "06-Feb-2026 01:21 PM"
-function formatShortDateTime(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  let h = d.getHours();
-  const m = String(d.getMinutes()).padStart(2, '0');
-  const ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return `${formatShortDate(iso)} ${String(h).padStart(2, '0')}:${m} ${ap}`;
-}
-
 function shortMonthYear(date) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${months[date.getMonth()]} ${date.getFullYear()}`;
@@ -209,12 +238,21 @@ export default function HomeScreen({ navigation }) {
   const shopLoc = useSelector(selectShopLocation);
   const onLogout = useLogout();
   const now = useMinuteClock();
+  const { width: winW } = useWindowDimensions();
   const categories = useMemo(() => getCategoriesForSession(session), [session]);
   const roleLabel = getRoleDisplayLabel(session);
   const displayName = session?.fullName || session?.email || roleLabel;
 
-  const month = now.getMonth() + 1;
-  const year = now.getFullYear();
+  // Month shown in the "This Month" card. null = follow the current calendar
+  // month (the default); set when the user picks another month from the pill.
+  const [pickedMonth, setPickedMonth] = useState(null);
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const month = pickedMonth ? pickedMonth.month : now.getMonth() + 1;
+  const year = pickedMonth ? pickedMonth.year : now.getFullYear();
+  // Read by the one-time mount load so a month change doesn't re-run it (and
+  // re-fetch profile/tickets/leaves); reloadAttendance handles month changes.
+  const monthRef = useRef({ month, year });
+  monthRef.current = { month, year };
 
   const [todayAttendance, setTodayAttendance] = useState(null);
   const [monthly, setMonthly] = useState(null);
@@ -286,15 +324,16 @@ export default function HomeScreen({ navigation }) {
   }, [shopLoc?.latitude, shopLoc?.longitude]);
 
   const loadFromTechnicianId = useCallback(async (techId) => {
+    const { month: m, year: y } = monthRef.current;
     try {
       const [att, lvs] = await Promise.all([
-        getMonthlyAttendance(techId, month, year).catch((e) => { setErrors((s) => ({ ...s, monthly: e?.message })); return null; }),
+        getMonthlyAttendance(techId, m, y).catch((e) => { setErrors((s) => ({ ...s, monthly: e?.message })); return null; }),
         getMyLeaves(techId).catch((e) => { setErrors((s) => ({ ...s, leaves: e?.message })); return []; }),
       ]);
       if (att) setMonthly(att);
       if (Array.isArray(lvs)) setLeaves(lvs);
     } catch (_) {}
-  }, [month, year]);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -388,7 +427,13 @@ export default function HomeScreen({ navigation }) {
   const dutyCheckOutLabel = formatTimeOfDay(session?.defaultCheckOut);
   const checkInLabel = formatTimeOfDay(todayAttendance?.checkInTime);
   const checkOutLabel = formatTimeOfDay(todayAttendance?.checkOutTime);
-  const monthLabel = shortMonthYear(now);
+  const monthLabel = shortMonthYear(new Date(year, month - 1, 1));
+  // Picking the current calendar month goes back to "follow the clock".
+  const selectMonth = (m, y) => {
+    setMonthPickerOpen(false);
+    const isCurrent = m === now.getMonth() + 1 && y === now.getFullYear();
+    setPickedMonth(isCurrent ? null : { month: m, year: y });
+  };
 
   const present = monthly?.presentDays ?? 0;
   const leaveDays = monthly?.leaveDays ?? 0;
@@ -515,427 +560,494 @@ export default function HomeScreen({ navigation }) {
   }, [leaves]);
 
   const buttonLabel = buttonMode === 'out' ? 'Check Out' : buttonMode === 'done' ? 'Done for Today' : 'Check In';
-  const buttonBg = buttonMode === 'out' ? '#DC2626' : buttonMode === 'done' ? '#6B7280' : '#00008B';
+  const buttonColors = buttonMode === 'out' ? [C.red, '#E73A3A'] : buttonMode === 'done' ? ['#A3A3A3', '#7A7A7A'] : [C.green, '#089E26'];
+  const ButtonIcon = buttonMode === 'out' ? LogOut : buttonMode === 'done' ? CircleCheck : FingerprintPattern;
   // Only block CHECK-IN when out of range. Never disable check-out: a checked-in
   // employee who walks out (or gets an inaccurate fix) must still be able to
   // check out — and checkout is what logs them out. The server already enforces
   // the radius, so this client gate is purely a convenience for check-in.
   const geoBlocksCheckIn = buttonMode === 'in' && geo.inRange === false;
-  // State-coloured accent on the live attendance card so the eye
-  // immediately sees whether the technician is checked in / out / done.
-  const heroAccent = buttonMode === 'out' ? '#FEE2E2' : buttonMode === 'done' ? '#DCFCE7' : '#E0E7FF';
-  const heroAccentStrong = buttonMode === 'out' ? '#DC2626' : buttonMode === 'done' ? '#004C40' : '#00008B';
+  const buttonDisabled = checkInBusy || buttonMode === 'done' || geoBlocksCheckIn;
   const greeting = greetingFor(now);
   const statusText = buttonMode === 'in' ? 'Not Checked In' : buttonMode === 'out' ? 'On Duty' : 'Completed';
+  const statusColor = buttonMode === 'in' ? C.yellow : C.green;
+
+  // Layout maths. Content is capped on tablets so cards don't stretch edge to edge.
+  const contentW = Math.min(winW, MAX_CONTENT_WIDTH);
+  const pad = rs(14);
+  const innerW = contentW - pad * 2;
+  // Quick Access grid (Partner app layout): 4 tiles a row on a phone, 5 on a
+  // large phone, 6 on a tablet; a short last row stays left-aligned.
+  const quickCols = winW >= 768 ? 6 : winW >= 430 ? 5 : 4;
+  const quickGap = rs(8);
+  const quickPad = rs(8);
+  const quickW = Math.floor((innerW - 2 - quickPad * 2 - quickGap * (quickCols - 1)) / quickCols);
+  // Month tiles sit icon-beside-value when there's room, icon-above otherwise.
+  const statGap = rs(6);
+  const statTileW = (innerW - rs(24) - statGap * 3) / 4;
+  const statInline = statTileW >= 88;
+
+  // Ticket QR scanning only applies to roles that handle tickets.
+  const showScan = resolveRoleKey(session) !== 'STAFF';
+  const subLine = session?.email || `${greeting}, ${String(displayName || '').trim().split(/\s+/)[0]}`;
+
+  const ticketLine = (t) => `${ticketRef(t)} · ${t.deviceDisplayName || 'Device'}${t.repairServicesSummary ? ` - ${t.repairServicesSummary}` : ''}`;
+  const leave = recentLeave ? leaveSummary(recentLeave) : null;
 
   return (
-    <SafeAreaView className="flex-1 bg-background" edges={['top']}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
-        {/* Header — greeting + avatar with status dot */}
-        <View className="px-4 pt-3 pb-3 flex-row items-center">
-          <View className="relative">
-            <Avatar uri={session?.photoUrl} name={displayName} />
-            <View className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-background"
-                  style={{ backgroundColor: hasCheckedIn && !hasCheckedOut ? '#004C40' : '#9CA3AF' }} />
-          </View>
-          <View className="flex-1 ml-3">
-            <Text className="text-[11px] text-text-muted">{greeting},</Text>
-            <Text className="text-[16px] font-extrabold text-text" numberOfLines={1}>{displayName}</Text>
-            <View className="flex-row items-center mt-1">
-              <View className="rounded-full bg-primary/10 px-2 py-[2px]">
-                <Text className="text-[10px] text-primary font-bold tracking-wide">ID: {employeeIdFromSession(session)}</Text>
-              </View>
-            </View>
-          </View>
-          <Pressable hitSlop={10} onPress={() => navigation.navigate('ScanTicketQr')}
-                     className="h-10 w-10 rounded-full items-center justify-center bg-card border border-border mr-2"
-                     style={{ shadowColor: '#0F172A', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
-            <ScanLine size={18} color="#0F172A" />
-          </Pressable>
-          <Pressable hitSlop={10} onPress={() => navigation.navigate('Notifications')}
-                     className="h-10 w-10 rounded-full items-center justify-center bg-card border border-border"
-                     style={{ shadowColor: '#0F172A', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
-            <Bell size={18} color="#0F172A" />
-            {unreadNotifs > 0 ? (
-              <View className="absolute top-2 right-2.5 h-2 w-2 rounded-full bg-danger" />
-            ) : null}
-          </Pressable>
-        </View>
-
-        {/* Duty roster — two cards side by side with cleaner icons & spacing */}
-        <View className="mx-4 flex-row" style={{ gap: 10 }}>
-          <DutyPill icon={Sunrise} iconColor="#F59E0B" iconBg="#FEF3C7" labelColor="#92400E" valueColor="#004C40"
-                    label="DUTY CHECK IN" value={dutyCheckInLabel} />
-          <DutyPill icon={Sunset} iconColor="#7C3AED" iconBg="#EDE9FE" labelColor="#5B21B6" valueColor="#DC2626"
-                    label="DUTY CHECK OUT" value={dutyCheckOutLabel} />
-        </View>
-
-        {/* Date + Location */}
-        <View className="px-4 mt-3 flex-row items-center justify-between">
-          <Text className="text-[12px] text-text font-semibold" numberOfLines={1}>{formatLongDate(now)}</Text>
-          <View className="flex-row items-center bg-primary/10 rounded-full px-3 py-1">
-            <MapPin size={12} color="#00008B" />
-            <Text className="text-[11px] text-primary font-bold ml-1">Cuddalore, Tamil Nadu</Text>
-          </View>
-        </View>
-
-        {/* Live attendance hero card */}
-        <View className="mx-4 mt-3 bg-card rounded-2xl border border-border overflow-hidden"
-              style={{ shadowColor: '#0F172A', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 }}>
-          <View className="h-1" style={{ backgroundColor: heroAccentStrong }} />
-          <View className="p-4">
-            <View className="flex-row items-start justify-between">
-              <LiveClock accentColor={heroAccentStrong} statusText={statusText} />
-              <View className="items-end">
-                <View className="flex-row items-center bg-background rounded-full px-2 py-1 border border-border">
-                  <Camera size={12} color="#004C40" />
-                  <Text className="text-[10px] text-text font-bold ml-1">Face Recognition</Text>
-                </View>
-                {geo.inRange === true ? (
-                  <View className="mt-1.5 flex-row items-center rounded-md px-2 py-0.5" style={{ backgroundColor: '#DCFCE7' }}>
-                    <ShieldCheck size={11} color="#004C40" />
-                    <Text className="text-[10px] font-bold ml-1" style={{ color: '#004C40' }}>In range</Text>
-                  </View>
-                ) : geo.inRange === false ? (
-                  <View className="mt-1.5 flex-row items-center rounded-md px-2 py-0.5" style={{ backgroundColor: '#FEE2E2' }}>
-                    <ShieldAlert size={11} color="#B91C1C" />
-                    <Text className="text-[10px] font-bold ml-1" style={{ color: '#B91C1C' }}>Out of range</Text>
-                  </View>
-                ) : null}
-              </View>
-            </View>
-
-            {/* Today's actual times — same stat-tile rhythm as "This Month" */}
-            <View className="flex-row mt-3.5" style={{ gap: 10 }}>
-              <TodayTile bg="#DCFCE7" iconBg="#004C40" icon={Sunrise} label="TODAY CHECK IN"
-                         value={checkInLabel} valueColor={hasCheckedIn ? '#004C40' : '#9CA3AF'} />
-              <TodayTile bg="#FEE2E2" iconBg="#DC2626" icon={Sunset} label="TODAY CHECK OUT"
-                         value={checkOutLabel} valueColor={hasCheckedOut ? '#DC2626' : '#9CA3AF'} />
-            </View>
-
-            <Pressable
-              onPress={handleCheckInPress}
-              disabled={checkInBusy || buttonMode === 'done' || geoBlocksCheckIn}
-              className="mt-3.5 rounded-xl py-3.5 items-center flex-row justify-center"
-              style={{
-                opacity: checkInBusy || buttonMode === 'done' || geoBlocksCheckIn ? 0.6 : 1,
-                backgroundColor: buttonBg,
-                shadowColor: buttonBg,
-                shadowOpacity: 0.3,
-                shadowRadius: 8,
-                shadowOffset: { width: 0, height: 4 },
-                elevation: 4,
-              }}
-            >
-              {checkInBusy ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text className="text-white font-extrabold text-[14px] tracking-wider">{buttonLabel}</Text>
-              )}
-            </Pressable>
-            {geo.inRange === true ? (
-              <View className="flex-row items-center justify-center mt-2">
-                <ShieldCheck size={11} color="#004C40" />
-                <Text className="text-[10px] font-bold ml-1" style={{ color: '#004C40' }}>
-                  Within shop range{geo.distance != null ? ` · ${geo.distance}m` : ''}
-                </Text>
-              </View>
-            ) : geo.inRange === false ? (
-              <View className="flex-row items-center justify-center mt-2">
-                <ShieldAlert size={11} color="#DC2626" />
-                <Text className="text-[10px] text-danger font-bold ml-1">
-                  Out of shop range{geo.distance != null ? ` · ${geo.distance}m` : ''}{geoBlocksCheckIn ? ' — check-in blocked' : ''}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        {/* Categories — colour-coded by domain so the eye can index by colour */}
-        <View className="px-4 mt-5">
-          <View className="flex-row items-center mb-3">
-            <View className="h-4 w-1 rounded-full bg-primary mr-2" />
-            <Text className="text-[15px] font-extrabold text-text">Categories</Text>
-          </View>
-          <View className="flex-row flex-wrap -mx-1">
-            {categories.map((c) => {
-              const Icon = c.icon;
-              const tint = CATEGORY_TINTS[c.key] || CATEGORY_TINTS.default;
-              return (
-                <Pressable
-                  key={c.key}
-                  onPress={() => navigation.navigate(c.route)}
-                  className="w-1/4 px-1 mb-3.5 items-center"
-                >
-                  <View className="h-14 w-14 rounded-2xl items-center justify-center"
-                        style={{
-                          backgroundColor: tint.bg,
-                          shadowColor: tint.fg,
-                          shadowOpacity: 0.2,
-                          shadowRadius: 5,
-                          shadowOffset: { width: 0, height: 2 },
-                          elevation: 2,
-                        }}>
-                    <Icon size={22} color={tint.fg} strokeWidth={2} />
-                  </View>
-                  <Text className="text-[11px] font-bold text-text mt-2 text-center leading-[14px]" numberOfLines={2}>{c.label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* This Month */}
-        <View className="mx-4 mt-1 bg-card rounded-2xl border border-border px-3 py-4"
-              style={{ shadowColor: '#0F172A', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
-          <View className="flex-row items-center justify-between px-1">
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.card }} edges={['top']}>
+      <ScrollView
+        style={{ backgroundColor: C.bg }}
+        contentContainerStyle={{ alignItems: 'center', paddingBottom: rs(12) }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={{ width: contentW, paddingHorizontal: pad }}>
+          {/* 1. Header: avatar, name + location, ID pill, (scan), bell */}
+          <View className="flex-row items-center" style={{ paddingTop: rs(8) }}>
             <View>
-              <Text className="text-[14px] font-extrabold text-text">This Month</Text>
-              <Text className="text-[11px] text-text-muted mt-0.5">{present} Present</Text>
+              <Avatar uri={session?.photoUrl} name={displayName} size={rs(50)} />
+              <View style={{
+                position: 'absolute', right: -rs(1), bottom: 0,
+                width: rs(13), height: rs(13), borderRadius: rs(7), borderWidth: 2, borderColor: '#FFFFFF',
+                backgroundColor: hasCheckedIn && !hasCheckedOut ? C.green : C.faint,
+              }} />
             </View>
-            <Pressable className="flex-row items-center bg-background border border-border rounded-lg px-2.5 py-1.5">
-              <Calendar size={12} color="#0F172A" />
-              <Text className="text-[11px] text-text font-bold ml-1.5">{monthLabel}</Text>
-              <ChevronDown size={12} color="#0F172A" style={{ marginLeft: 2 }} />
-            </Pressable>
-          </View>
-
-          <View className="flex-row items-center mt-3 px-1">
-            <View className="flex-1 h-2 bg-background rounded-full overflow-hidden">
-              <View className="h-full bg-primary rounded-full" style={{ width: `${progressPct}%` }} />
+            <View style={{ flex: 1, marginLeft: rs(10), marginRight: rs(8) }}>
+              <Text style={{ fontSize: rf(18.5), fontWeight: '800', color: C.text }} numberOfLines={1}>{displayName}</Text>
+              <View className="flex-row items-center" style={{ marginTop: rs(2) }}>
+                <MapPin size={rs(14)} color={C.green} fill={C.green} stroke="#FFFFFF" strokeWidth={1.6} />
+                <Text style={{ fontSize: rf(13), color: C.text, marginLeft: rs(4), flexShrink: 1 }} numberOfLines={1}>Cuddalore, Tamil Nadu</Text>
+              </View>
             </View>
-            <Text className="ml-2 text-[11px] font-bold text-text">{present}<Text className="text-text-muted"> / {totalDays}</Text></Text>
+            <View style={{ backgroundColor: C.greenTint, borderRadius: 999, paddingHorizontal: rs(10), paddingVertical: rs(4) }}>
+              <Text style={{ fontSize: rf(11.5), fontWeight: '700', color: C.text }} numberOfLines={1}>{employeeIdFromSession(session)}</Text>
+            </View>
+            {showScan ? <HeaderButton icon={ScanLine} onPress={() => navigation.navigate('ScanTicketQr')} /> : null}
+            <HeaderButton icon={Bell} dot={unreadNotifs > 0} onPress={() => navigation.navigate('Notifications')} />
           </View>
 
-          <View className="flex-row mt-3.5" style={{ marginHorizontal: -3 }}>
-            <StatTile color="#EEF2FF" iconColor="#00008B" icon={Calendar} value={String(present).padStart(2, '0')} label="Present" />
-            <StatTile color="#FFF7ED" iconColor="#F59E0B" icon={Briefcase} value={String(leaveDays).padStart(2, '0')} label="Leave" />
-            <StatTile color="#F0FDF4" iconColor="#004C40" icon={Calendar} value={String(permission).padStart(2, '0')} label="Permission" />
-            <StatTile color="#FEF2F2" iconColor="#DC2626" icon={Clock} value={String(lateHrs)} label="Late Hrs" />
+          {/* 2. Date bar (duty roster on the right) */}
+          <View className="flex-row items-center" style={{
+            marginTop: rs(10), height: rs(44), borderRadius: rs(14), borderWidth: 1, borderColor: C.border,
+            backgroundColor: C.card, paddingHorizontal: rs(12), ...shadow(0.04, 6, 2, 1),
+          }}>
+            <Calendar size={rs(19)} color={C.text} />
+            <Text style={{ flex: 1, fontSize: rf(14), fontWeight: '600', color: C.text, marginLeft: rs(10) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
+              {formatShortDay(now)}
+            </Text>
+            <View className="flex-row items-center" style={{ backgroundColor: C.bg, borderRadius: 999, paddingHorizontal: rs(8), paddingVertical: rs(4) }}>
+              <Sunrise size={rs(14)} color={C.green} />
+              <Text style={{ fontSize: rf(11.5), fontWeight: '700', color: C.text, marginLeft: rs(3) }}>{dutyCheckInLabel}</Text>
+              <Text style={{ fontSize: rf(11.5), color: C.faint, marginHorizontal: rs(4) }}>–</Text>
+              <Sunset size={rs(14)} color={C.red} />
+              <Text style={{ fontSize: rf(11.5), fontWeight: '700', color: C.text, marginLeft: rs(3) }}>{dutyCheckOutLabel}</Text>
+            </View>
           </View>
-        </View>
 
-        {/* Recent Pending */}
-        <View className="px-4 mt-5">
-          <SectionTitle text="Recent Pending" accent="#DC2626" />
-          {ticketsLoading ? (
-            <SectionLoader />
-          ) : pendingTicket ? (
-            <PendingCard
-              ticket={pendingTicket}
-              note={pendingLabel}
-              onPress={() => navigation.navigate('TechnicianTicketDetail', { ticketId: pendingTicket.id })}
+          {/* 3. Attendance banner */}
+          <View style={{ marginTop: rs(10), borderRadius: rs(20), overflow: 'hidden', borderWidth: 1, borderColor: '#DDF1E1', ...shadow(0.06, 12, 4, 3) }}>
+            <LinearGradient colors={['#F7FCF8', '#EDF9F0', '#DDF3E2']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: rs(12) }}>
+              <View pointerEvents="none" style={{ position: 'absolute', top: -rs(50), right: -rs(40), width: rs(190), height: rs(190), borderRadius: rs(95), backgroundColor: 'rgba(9,173,42,0.10)' }} />
+
+              <View className="flex-row">
+                {/* Left: brand + live clock */}
+                <View style={{ flex: 1, marginRight: rs(8) }}>
+                  <View className="flex-row items-center">
+                    <Image source={require('../../assets/logo.png')} style={{ width: rs(32), height: rs(32) }} resizeMode="contain" />
+                    <View style={{ marginLeft: rs(8), flex: 1 }}>
+                      <Text style={{ fontSize: rf(15), fontWeight: '900', color: C.text }}>GGFIX</Text>
+                      <Text style={{ fontSize: rf(11.5), color: C.muted }} numberOfLines={1}>{subLine}</Text>
+                    </View>
+                  </View>
+                  <LiveClock statusColor={statusColor} statusText={statusText} />
+                </View>
+
+                {/* Right: Check In button, range */}
+                <View style={{ width: '46%', alignItems: 'stretch', justifyContent: 'center' }}>
+                  <TouchableOpacity
+                    onPress={handleCheckInPress}
+                    disabled={buttonDisabled}
+                    accessibilityRole="button"
+                    accessibilityLabel={buttonLabel}
+                    activeOpacity={0.85}
+                    style={{
+                      borderRadius: rs(16), opacity: buttonDisabled ? 0.6 : 1,
+                      backgroundColor: buttonColors[1],
+                      shadowColor: buttonColors[1], shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 5,
+                    }}
+                  >
+                    <LinearGradient
+                      colors={buttonColors}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={{ height: rs(54), borderRadius: rs(16), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(8) }}
+                    >
+                      {checkInBusy ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <>
+                          <ButtonIcon size={rs(22)} color="#FFFFFF" strokeWidth={2} />
+                          <Text style={{ fontSize: rf(16), fontWeight: '800', color: '#FFFFFF', marginHorizontal: rs(6), flexShrink: 1 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{buttonLabel}</Text>
+                          <ArrowRight size={rs(18)} color="#FFFFFF" strokeWidth={2.4} />
+                        </>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                  {geo.inRange === true ? (
+                    <View className="flex-row items-center justify-center" style={{ marginTop: rs(6) }}>
+                      <ShieldCheck size={rs(13)} color={C.green} />
+                      <Text style={{ fontSize: rf(11), fontWeight: '700', color: C.text, marginLeft: rs(4) }} numberOfLines={1}>
+                        In range{geo.distance != null ? ` · ${geo.distance}m` : ''}
+                      </Text>
+                    </View>
+                  ) : geo.inRange === false ? (
+                    <View className="flex-row items-center justify-center" style={{ marginTop: rs(6) }}>
+                      <ShieldAlert size={rs(13)} color={C.red} />
+                      <Text style={{ fontSize: rf(11), fontWeight: '700', color: C.red, marginLeft: rs(4) }} numberOfLines={2}>
+                        Out of range{geo.distance != null ? ` · ${geo.distance}m` : ''}{geoBlocksCheckIn ? ' — check-in blocked' : ''}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+
+              {/* Today's actual punches (tap → Daily Attendance history) */}
+              <View className="flex-row" style={{ marginTop: rs(10), gap: rs(8) }}>
+                <TodayTile fg={C.green} tint={C.greenTint} icon={Sunrise} label="Today Check In"
+                           value={checkInLabel} valueColor={hasCheckedIn ? C.green : C.faint}
+                           onPress={() => navigation.navigate('DailyAttendance')} />
+                <TodayTile fg={C.red} tint={C.redTint} icon={Sunset} label="Today Check Out"
+                           value={checkOutLabel} valueColor={hasCheckedOut ? C.red : C.faint}
+                           onPress={() => navigation.navigate('DailyAttendance')} />
+              </View>
+            </LinearGradient>
+          </View>
+
+          {/* 4. Quick Access — every category for this role, Partner-app tile grid */}
+          <SectionTitle title="Quick Access" />
+          <View style={{
+            backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: '#E8ECEF',
+            paddingTop: rs(12), paddingBottom: rs(4), paddingHorizontal: quickPad, ...shadow(0.05, 10, 3, 1),
+          }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+              {categories.map((c, i) => (
+                <QuickTile
+                  key={c.key}
+                  item={c}
+                  width={quickW}
+                  style={{ marginRight: i % quickCols === quickCols - 1 ? 0 : quickGap, marginBottom: rs(8) }}
+                  onPress={() => navigation.navigate(c.route)}
+                />
+              ))}
+            </View>
+          </View>
+
+          {/* 11–13. This Month */}
+          <View style={{
+            marginTop: rs(12), backgroundColor: C.card, borderRadius: rs(20),
+            borderWidth: 1, borderColor: C.border, padding: rs(12), ...shadow(0.05, 10, 3, 2),
+          }}>
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-start flex-1" style={{ marginRight: rs(8) }}>
+                <ChartColumn size={rs(22)} color={C.bright} strokeWidth={2.5} />
+                <View style={{ marginLeft: rs(8), flexShrink: 1 }}>
+                  <Text className="font-extrabold" style={{ fontSize: rf(17), color: C.text }} numberOfLines={1}>This Month</Text>
+                  <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: 1 }}>{present} Present</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setMonthPickerOpen(true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Select month, ${monthLabel}`}
+                activeOpacity={0.85}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: C.border, borderRadius: rs(12), backgroundColor: C.card,
+                  paddingHorizontal: rs(12), paddingVertical: rs(6), flexShrink: 0,
+                }}
+              >
+                <Calendar size={rs(15)} color={C.text} />
+                <Text className="font-bold" style={{ fontSize: rf(13), color: C.text, marginLeft: rs(6) }}>{monthLabel}</Text>
+                <ChevronDown size={rs(15)} color={C.text} style={{ marginLeft: rs(4) }} />
+              </TouchableOpacity>
+            </View>
+
+            <View className="flex-row" style={{ marginTop: rs(8), gap: statGap }}>
+              <StatTile inline={statInline} bg={C.greenTint} fg={C.green} icon={Calendar} value={String(present).padStart(2, '0')} label="Present" />
+              <StatTile inline={statInline} bg={C.yellowTint} fg={C.yellow} icon={Briefcase} value={String(leaveDays).padStart(2, '0')} label="Leave" />
+              <StatTile inline={statInline} bg={C.surface} fg={C.ink} icon={ClipboardList} value={String(permission).padStart(2, '0')} label="Permission" />
+              <StatTile inline={statInline} bg={C.redTint} fg={C.red} icon={Clock} value={String(lateHrs)} label="Late Hrs" />
+            </View>
+          </View>
+
+          {/* 14–16. Recent rows */}
+          <View style={{ marginTop: rs(8), gap: rs(6) }}>
+            <InfoRow
+              icon={FileText} bg={C.redTint} fg={C.red}
+              title="Recent Pending"
+              subtitle={ticketsLoading ? 'Loading…' : pendingTicket ? ticketLine(pendingTicket) : 'No pending tickets'}
+              note={!ticketsLoading && pendingTicket ? `${pendingLabel} · ${formatShortDate(pendingTicket.updatedAt || pendingTicket.createdAt)}` : null}
+              noteColor={C.red}
+              onPress={!ticketsLoading && pendingTicket ? () => navigation.navigate('TechnicianTicketDetail', { ticketId: pendingTicket.id }) : undefined}
             />
-          ) : (
-            <EmptyCard text="No pending tickets" />
-          )}
-        </View>
-
-        {/* Assign & In Service Process */}
-        <View className="px-4 mt-4">
-          <SectionTitle text="Assign & In Service Process" accent="#00008B" />
-          {ticketsLoading ? (
-            <SectionLoader />
-          ) : inServiceTicket ? (
-            <InServiceCard
-              ticket={inServiceTicket}
-              note={inServiceLabel}
-              onPress={() => navigation.navigate('TechnicianTicketDetail', { ticketId: inServiceTicket.id })}
+            <InfoRow
+              icon={Truck} bg={C.greenTint} fg={C.green}
+              title="Assign & In Service Process"
+              subtitle={ticketsLoading ? 'Loading…' : inServiceTicket ? ticketLine(inServiceTicket) : 'No tickets in service'}
+              note={!ticketsLoading && inServiceTicket ? `${inServiceLabel} · ${formatShortDate(inServiceTicket.updatedAt || inServiceTicket.createdAt)}` : null}
+              noteColor={C.text}
+              onPress={!ticketsLoading && inServiceTicket ? () => navigation.navigate('TechnicianTicketDetail', { ticketId: inServiceTicket.id }) : undefined}
             />
-          ) : (
-            <EmptyCard text="No tickets in service" />
-          )}
-        </View>
-
-        {/* Recent Leave Request */}
-        <View className="px-4 mt-4">
-          <SectionTitle text="Recent Leave Request" accent="#F59E0B" />
-          {recentLeave ? (
-            <LeaveCard leave={recentLeave} />
-          ) : (
-            <EmptyCard text="No leave requests yet" />
-          )}
+            <InfoRow
+              icon={CalendarDays} bg={C.yellowTint} fg={C.yellow}
+              title="Recent Leave Request"
+              subtitle={leave ? `${leave.startDateLabel}${recentLeave.appliedDaysLabel ? ` · ${recentLeave.appliedDaysLabel}` : ''}` : 'No leave requests yet'}
+              note={leave && recentLeave.reason ? recentLeave.reason : null}
+              noteColor={C.muted}
+              right={leave ? (
+                <View style={{ backgroundColor: leave.statusBg, borderRadius: 999, paddingHorizontal: rs(10), paddingVertical: rs(3), marginLeft: rs(8) }}>
+                  <Text className="font-bold" style={{ fontSize: rf(11), color: leave.statusColor }}>{leave.statusText}</Text>
+                </View>
+              ) : null}
+            />
+          </View>
         </View>
       </ScrollView>
+
+      <MonthPickerModal
+        visible={monthPickerOpen}
+        month={month}
+        year={year}
+        onClose={() => setMonthPickerOpen(false)}
+        onSelect={selectMonth}
+      />
     </SafeAreaView>
   );
 }
 
-function DutyPill({ icon: Icon, iconColor, iconBg, labelColor, valueColor, label, value }) {
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Month + year picker for the "This Month" card. The year stepper is local to
+// the sheet (browsing only); nothing changes until a month is tapped.
+function MonthPickerModal({ visible, month, year, onClose, onSelect }) {
+  const [viewYear, setViewYear] = useState(year);
+  useEffect(() => { if (visible) setViewYear(year); }, [visible, year]);
+  const today = new Date();
+  const nowMonth = today.getMonth() + 1;
+  const nowYear = today.getFullYear();
   return (
-    <View className="flex-1 flex-row items-center bg-card rounded-xl border border-border px-3 py-2.5"
-          style={{ shadowColor: '#0F172A', shadowOpacity: 0.04, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
-      <View className="h-9 w-9 rounded-full items-center justify-center mr-2" style={{ backgroundColor: iconBg }}>
-        <Icon size={16} color={iconColor} strokeWidth={2} />
-      </View>
-      <View className="flex-1">
-        <Text className="text-[9px] font-extrabold tracking-wider" style={{ color: labelColor }}>{label}</Text>
-        <Text className="text-[14px] font-extrabold mt-0.5" style={{ color: valueColor }}>{value}</Text>
-      </View>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: rs(24) }} onPress={onClose}>
+        <Pressable
+          onPress={(e) => e.stopPropagation()}
+          style={{ backgroundColor: C.card, borderRadius: rs(20), padding: rs(16), alignSelf: 'center', width: '100%', maxWidth: 420 }}
+        >
+          <View className="flex-row items-center justify-between" style={{ marginBottom: rs(12) }}>
+            <Pressable onPress={() => setViewYear((y) => y - 1)} hitSlop={8} accessibilityLabel="Previous year"
+                       style={{ width: rs(36), height: rs(36), borderRadius: rs(18), backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronLeft size={rs(18)} color={C.ink} strokeWidth={2.6} />
+            </Pressable>
+            <Text className="font-extrabold" style={{ fontSize: rf(17), color: C.text }}>{viewYear}</Text>
+            <Pressable onPress={() => setViewYear((y) => y + 1)} hitSlop={8} accessibilityLabel="Next year"
+                       style={{ width: rs(36), height: rs(36), borderRadius: rs(18), backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronRight size={rs(18)} color={C.ink} strokeWidth={2.6} />
+            </Pressable>
+          </View>
+          <View className="flex-row flex-wrap" style={{ marginHorizontal: -rs(4) }}>
+            {MONTHS_SHORT.map((label, i) => {
+              const m = i + 1;
+              const selected = m === month && viewYear === year;
+              const isNow = m === nowMonth && viewYear === nowYear;
+              return (
+                <View key={label} style={{ width: '33.333%', padding: rs(4) }}>
+                  <TouchableOpacity
+                    onPress={() => onSelect(m, viewYear)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    activeOpacity={0.85}
+                    style={{
+                      height: rs(44), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: selected ? C.green : C.bg,
+                      borderWidth: 1, borderColor: selected ? C.green : isNow ? C.green : C.border,
+                    }}
+                  >
+                    <Text className="font-bold" style={{ fontSize: rf(14), color: selected ? '#FFFFFF' : C.text }}>{label}</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// "Mon, 6 Oct 2026" — compact date for the header bar.
+function formatShortDay(date) {
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  return `${days[date.getDay()]}, ${date.getDate()} ${MONTHS_SHORT[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+// Bold section heading (customer-app style, no "See all" — there's no list screen to open).
+function SectionTitle({ title, onViewAll }) {
+  return (
+    <View className="flex-row items-center" style={{ marginTop: rs(14), marginBottom: rs(8) }}>
+      <Text style={{ flex: 1, fontSize: rf(17), fontWeight: '800', color: C.text }}>{title}</Text>
+      {onViewAll ? (
+        <TouchableOpacity onPress={onViewAll} hitSlop={8} activeOpacity={0.7} className="flex-row items-center" style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={{ fontSize: rf(13), fontWeight: '600', color: C.green }}>View All</Text>
+          <ChevronRight size={rs(15)} color={C.text} style={{ marginLeft: rs(4) }} />
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
 
-function TodayTile({ bg, iconBg, icon: Icon, label, value, valueColor }) {
+// One Quick Access tile, as in the Partner app: no card box, just a pastel
+// circle with a solid glyph and a two-line label underneath.
+function QuickTile({ item, width, style, onPress }) {
+  const t = QUICK_TILES[item.key] || QUICK_TILES.default;
+  const box = rs(44);
   return (
-    <View className="flex-1 rounded-xl px-3 py-2.5" style={{ backgroundColor: bg }}>
-      <View className="h-7 w-7 rounded-full bg-white items-center justify-center"
-            style={{ shadowColor: iconBg, shadowOpacity: 0.25, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 }}>
-        <Icon size={13} color={iconBg} strokeWidth={2} />
+    <TouchableOpacity
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={item.label.replace(/\n/g, ' ')}
+      activeOpacity={0.75}
+      style={[{ width, alignItems: 'center', paddingVertical: rs(4) }, style]}
+    >
+      <View style={{ width: box, height: box, borderRadius: box / 2, backgroundColor: t.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <MaterialCommunityIcons name={t.icon} size={rs(23)} color={t.fg || QUICK_TILE_INK} />
       </View>
-      <Text className="text-[9px] font-extrabold tracking-wider mt-2" style={{ color: iconBg }}>{label}</Text>
-      <Text className="text-[15px] font-extrabold mt-0.5" style={{ color: valueColor }}>{value}</Text>
-    </View>
+      <Text
+        style={{ fontSize: rf(12), lineHeight: rlh(16), minHeight: rlh(32), fontWeight: '600', color: C.text, textAlign: 'center', marginTop: rs(6), letterSpacing: -0.1 }}
+        numberOfLines={2}
+        adjustsFontSizeToFit
+        minimumFontScale={0.8}
+      >
+        {item.label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
-function Avatar({ uri, name }) {
-  if (uri) return <Image source={{ uri }} className="h-11 w-11 rounded-full" />;
-  return (
-    <View className="h-11 w-11 rounded-full bg-primary items-center justify-center"
-          style={{ shadowColor: '#00008B', shadowOpacity: 0.25, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}>
-      <Text className="text-white font-extrabold text-[14px]">{initialsFromName(name)}</Text>
-    </View>
-  );
+function shadow(opacity = 0.06, radius = 10, y = 4, elevation = 2) {
+  return { shadowColor: C.ink, shadowOpacity: opacity, shadowRadius: radius, shadowOffset: { width: 0, height: y }, elevation };
 }
 
-function CheckCard({ icon, label, time, timeColor }) {
-  return (
-    <View className="flex-1 bg-card rounded-xl border border-border px-2.5 py-2 flex-row items-center"
-          style={{ shadowColor: '#0F172A', shadowOpacity: 0.03, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
-      <View className="h-7 w-7 rounded-full bg-background items-center justify-center mr-1.5">
-        {icon}
-      </View>
-      <View className="flex-1 items-center">
-        <Text className="text-[10px] font-bold text-text tracking-wide">{label}</Text>
-        <Text className="text-[13px] font-extrabold mt-0.5" style={{ color: timeColor }}>{time}</Text>
-      </View>
-    </View>
-  );
-}
-
-function StatTile({ color, iconColor, icon: Icon, value, label }) {
-  return (
-    <View className="flex-1 rounded-xl px-1.5 py-2.5" style={{ backgroundColor: color, marginHorizontal: 2 }}>
-      <View className="h-7 w-7 rounded-full bg-white items-center justify-center"
-            style={{ shadowColor: iconColor, shadowOpacity: 0.2, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 }}>
-        <Icon size={13} color={iconColor} />
-      </View>
-      <Text className="text-[15px] font-extrabold text-text mt-2" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
-      <Text className="text-[10px] text-text-muted font-semibold mt-0.5" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{label}</Text>
-    </View>
-  );
-}
-
-function PendingCard({ ticket, note, onPress }) {
-  return (
-    <Pressable onPress={onPress} className="bg-card rounded-2xl border border-border py-4 pl-4 pr-3 flex-row items-center"
-               style={{ shadowColor: '#0F172A', shadowOpacity: 0.05, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
-      <View className="w-1 self-stretch bg-danger rounded-full mr-4" />
-      <View className="flex-1">
-        <View className="flex-row items-center justify-between">
-          <Text className="text-[11px] text-text-muted font-semibold">{formatShortDate(ticket.createdAt)}</Text>
-          <Text className="text-[11px] text-primary font-bold">{ticketRef(ticket)}</Text>
-        </View>
-        <Text className="text-[13px] text-text font-bold mt-2 leading-[18px]" numberOfLines={2}>
-          {ticket.deviceDisplayName || 'Device'}
-          {ticket.repairServicesSummary ? ` - ${ticket.repairServicesSummary}` : ''}
-        </Text>
-        <Text className="text-[11px] text-danger font-bold mt-2">{note}</Text>
-        <Text className="text-[10px] text-text-muted mt-1.5">Pending On {formatShortDateTime(ticket.updatedAt || ticket.createdAt)}</Text>
-      </View>
-      <ChevronRight size={18} color="#9CA3AF" style={{ marginLeft: 8 }} />
-    </Pressable>
-  );
-}
-
-function InServiceCard({ ticket, note, onPress }) {
-  return (
-    <Pressable onPress={onPress} className="bg-card rounded-2xl border border-border py-4 pl-4 pr-3 flex-row items-center"
-               style={{ shadowColor: '#0F172A', shadowOpacity: 0.05, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
-      <View className="w-1 self-stretch bg-info rounded-full mr-4" />
-      <View className="flex-1">
-        <View className="flex-row items-center justify-between">
-          <Text className="text-[11px] text-text-muted font-semibold">{formatShortDate(ticket.createdAt)}</Text>
-          <Text className="text-[11px] text-primary font-bold">{ticketRef(ticket)}</Text>
-        </View>
-        <Text className="text-[13px] text-text font-bold mt-2 leading-[18px]" numberOfLines={2}>
-          {ticket.deviceDisplayName || 'Device'}
-          {ticket.repairServicesSummary ? ` - ${ticket.repairServicesSummary}` : ''}
-        </Text>
-        <Text className="text-[11px] text-info font-bold mt-2">{note}</Text>
-        <Text className="text-[10px] text-text-muted mt-1.5">In Service Process On {formatShortDateTime(ticket.updatedAt || ticket.createdAt)}</Text>
-      </View>
-      <ChevronRight size={18} color="#9CA3AF" style={{ marginLeft: 8 }} />
-    </Pressable>
-  );
-}
-
-function LeaveCard({ leave }) {
-  const requestedAt = leave.requestedAt ? new Date(leave.requestedAt) : null;
-  const requestedAtLabel = requestedAt
-    ? `${requestedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${requestedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`
-    : '—';
+function leaveSummary(leave) {
   const startDateLabel = leave.startDate
     ? new Date(leave.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : '—';
   const status = leave.status || 'PROCESSING';
-  const statusColor = status === 'APPROVED' ? '#004C40' : status === 'REJECTED' ? '#EF4444' : '#F59E0B';
-  const statusBg = status === 'APPROVED' ? 'rgba(16, 185, 129, 0.15)' : status === 'REJECTED' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)';
+  const statusColor = status === 'APPROVED' || status === 'REJECTED' ? '#FFFFFF' : C.ink;
+  const statusBg = status === 'APPROVED' ? C.green : status === 'REJECTED' ? C.red : C.yellow;
   const statusText = status.charAt(0) + status.slice(1).toLowerCase();
+  return { startDateLabel, statusColor, statusBg, statusText };
+}
+
+function HeaderButton({ icon: Icon, dot, onPress }) {
+  const size = rs(44);
   return (
-    <View className="bg-card rounded-2xl border border-border py-4 pl-4 pr-4 flex-row"
-          style={{ shadowColor: '#0F172A', shadowOpacity: 0.05, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
-      <View className="w-1 self-stretch bg-primary rounded-full mr-4" />
-      <View className="flex-1">
-        <View className="flex-row items-center justify-between">
-          <Text className="text-[12px] text-text font-bold">{startDateLabel}</Text>
-          <View className="rounded-full px-2.5 py-1" style={{ backgroundColor: statusBg }}>
-            <Text className="text-[10px] font-bold" style={{ color: statusColor }}>{statusText}</Text>
+    <TouchableOpacity hitSlop={8} onPress={onPress} activeOpacity={0.8}
+               style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: C.card, marginLeft: rs(8), borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', ...shadow(0.06, 6, 2, 2) }}>
+      <Icon size={rs(20)} color={C.text} />
+      {dot ? (
+        <View style={{
+          position: 'absolute', top: rs(8), right: rs(9), width: rs(9), height: rs(9),
+          borderRadius: rs(5), backgroundColor: C.red, borderWidth: 1.5, borderColor: '#FFFFFF',
+        }} />
+      ) : null}
+    </TouchableOpacity>
+  );
+}
+
+function StatusPill({ icon: Icon, bg, iconColor, color, text }) {
+  return (
+    <View className="flex-row items-center" style={{ marginTop: rs(6), backgroundColor: bg, borderRadius: 999, paddingHorizontal: rs(12), paddingVertical: rs(5) }}>
+      <Icon size={rs(15)} color={iconColor} />
+      <Text className="font-bold" style={{ fontSize: rf(12.5), color, marginLeft: rs(6) }}>{text}</Text>
+    </View>
+  );
+}
+
+function TodayTile({ fg, tint, icon: Icon, label, value, valueColor, onPress }) {
+  const circle = rs(34);
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={label}
+      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(14), paddingHorizontal: rs(8), paddingVertical: rs(8), ...shadow(0.05, 6, 2, 1) }}>
+      <View style={{ width: circle, height: circle, borderRadius: circle / 2, backgroundColor: tint, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={rs(17)} color={fg} strokeWidth={2} />
+      </View>
+      <View style={{ flex: 1, marginLeft: rs(8) }}>
+        <Text style={{ fontSize: rf(12), fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
+        <Text style={{ fontSize: rf(14), fontWeight: '700', color: valueColor, marginTop: 2, letterSpacing: 0.5 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{value}</Text>
+      </View>
+      <ChevronRight size={rs(16)} color={C.text} />
+    </TouchableOpacity>
+  );
+}
+
+function Avatar({ uri, name, size }) {
+  const box = { width: size, height: size, borderRadius: size / 2 };
+  if (uri) return <Image source={{ uri }} style={box} />;
+  return (
+    <View className="items-center justify-center" style={{ ...box, backgroundColor: C.deep, ...shadow(0.2, 6, 3, 3) }}>
+      <Text className="font-extrabold" style={{ fontSize: rf(22), color: '#FFFFFF' }}>{initialsFromName(name)}</Text>
+    </View>
+  );
+}
+
+function StatTile({ inline, bg, fg, icon: Icon, value, label }) {
+  const circle = rs(inline ? 30 : 24);
+  if (!inline) {
+    // Narrow tiles: icon beside the value, label underneath — keeps the tile short.
+    return (
+      <View className="flex-1" style={{ backgroundColor: bg, borderRadius: rs(14), paddingHorizontal: rs(7), paddingVertical: rs(7) }}>
+        <View className="flex-row items-center">
+          <View className="items-center justify-center" style={{ width: circle, height: circle, borderRadius: circle / 2, backgroundColor: '#FFFFFF', ...shadow(0.06, 3, 1, 1) }}>
+            <Icon size={rs(13)} color={fg} />
           </View>
+          <Text className="font-extrabold" style={{ flex: 1, fontSize: rf(16), color: C.text, marginLeft: rs(5) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
         </View>
-        <View className="flex-row justify-between mt-3">
-          <ColLabel value={leave.reason || '—'} label="Leave Reason" />
-          <ColLabel value={leave.appliedDaysLabel || '—'} label="Applied Days" align="center" />
-          <ColLabel value={requestedAtLabel} label="Request Date & Time" align="right" />
-        </View>
+        <Text style={{ fontSize: rf(10.5), color: C.muted, marginTop: rs(3) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{label}</Text>
+      </View>
+    );
+  }
+  return (
+    <View className={inline ? 'flex-1 flex-row items-center' : 'flex-1'} style={{ backgroundColor: bg, borderRadius: rs(14), paddingHorizontal: rs(7), paddingVertical: rs(7) }}>
+      <View className="items-center justify-center" style={{ width: circle, height: circle, borderRadius: circle / 2, backgroundColor: '#FFFFFF', ...shadow(0.06, 3, 1, 1) }}>
+        <Icon size={rs(15)} color={fg} />
+      </View>
+      <View className={inline ? 'flex-1' : undefined} style={inline ? { marginLeft: rs(6) } : { marginTop: rs(6) }}>
+        <Text className="font-extrabold" style={{ fontSize: rf(16), color: C.text }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
+        <Text style={{ fontSize: rf(10.5), color: C.muted }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{label}</Text>
       </View>
     </View>
   );
 }
 
-function ColLabel({ value, label, align = 'left' }) {
-  const alignClass = align === 'center' ? 'items-center' : align === 'right' ? 'items-end' : 'items-start';
+function InfoRow({ icon: Icon, bg, fg, title, subtitle, note, noteColor, right, onPress }) {
+  const Container = onPress ? Pressable : View;
+  const tile = rs(34);
   return (
-    <View className={alignClass} style={{ maxWidth: '34%' }}>
-      <Text className="text-[12px] font-bold text-text" numberOfLines={2}>{value}</Text>
-      <Text className="text-[10px] text-text-muted mt-0.5">{label}</Text>
-    </View>
-  );
-}
-
-function SectionTitle({ text, accent }) {
-  return (
-    <View className="flex-row items-center mb-2.5">
-      <View className="w-1 h-4 rounded-full mr-2" style={{ backgroundColor: accent || '#00008B' }} />
-      <Text className="text-[15px] font-extrabold text-text">{text}</Text>
-    </View>
-  );
-}
-
-function SectionLoader() {
-  return (
-    <View className="bg-card rounded-xl border border-border p-5 items-center">
-      <ActivityIndicator color="#00008B" />
-    </View>
-  );
-}
-
-function EmptyCard({ text }) {
-  return (
-    <View className="bg-card rounded-2xl border border-border py-5 px-4 items-center"
-          style={{ shadowColor: '#0F172A', shadowOpacity: 0.04, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1 }}>
-      <Text className="text-[12px] text-text-muted font-medium">{text}</Text>
-    </View>
+    <Container onPress={onPress} className="flex-row items-center" style={{
+      backgroundColor: C.card, borderRadius: rs(18), borderWidth: 1, borderColor: C.border,
+      paddingHorizontal: rs(10), paddingVertical: rs(6), minHeight: rs(50), ...shadow(0.04, 8, 2, 1),
+    }}>
+      <View className="items-center justify-center" style={{ width: tile, height: tile, borderRadius: rs(12), backgroundColor: bg }}>
+        <Icon size={rs(18)} color={fg} strokeWidth={2} />
+      </View>
+      <View className="flex-1" style={{ marginLeft: rs(12) }}>
+        <Text className="font-bold" style={{ fontSize: rf(14), color: C.text }} numberOfLines={1}>{title}</Text>
+        <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: 2 }} numberOfLines={1}>{subtitle}</Text>
+        {note ? (
+          <Text className="font-semibold" style={{ fontSize: rf(11), color: noteColor, marginTop: 2 }} numberOfLines={1}>{note}</Text>
+        ) : null}
+      </View>
+      {right}
+      <ChevronRight size={rs(18)} color={C.faint} style={{ marginLeft: rs(6) }} />
+    </Container>
   );
 }

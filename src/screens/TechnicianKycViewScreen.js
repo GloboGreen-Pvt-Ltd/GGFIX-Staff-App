@@ -118,7 +118,7 @@ export default function TechnicianKycViewScreen({ route, navigation }) {
         </View>
 
         {loading ? (
-          <ActivityIndicator size="large" color="#00008B" style={{ marginVertical: 40 }} />
+          <ActivityIndicator size="large" color="#09AD2A" style={{ marginVertical: 40 }} />
         ) : orderedDocs.length === 0 ? (
           <TouchableOpacity
             style={styles.uploadBtn}
@@ -134,14 +134,14 @@ export default function TechnicianKycViewScreen({ route, navigation }) {
                 document was REJECTED, so the employee is never left at a dead-end. */}
             {overallStatus === 'REJECTED' ? (
               <View style={styles.rejectBanner}>
-                <Ionicons name="alert-circle" size={16} color="#B91C1C" />
+                <Ionicons name="alert-circle" size={16} color="#D93434" />
                 <Text style={styles.rejectBannerText}>
                   A document was rejected. Re-upload it below to resubmit your KYC for review.
                 </Text>
               </View>
             ) : (
               <View style={styles.lockBanner}>
-                <Ionicons name="lock-closed" size={16} color="#B45309" />
+                <Ionicons name="lock-closed" size={16} color="#8A6700" />
                 <Text style={styles.lockBannerText}>
                   Your KYC documents are on file and managed by your shop. Contact your shop owner to make changes.
                 </Text>
@@ -164,7 +164,7 @@ export default function TechnicianKycViewScreen({ route, navigation }) {
                   <View key={doc.id || doc.docType} style={styles.cardOuter}>
                     <View style={styles.cardHeader}>
                       <View style={styles.cardHeaderIcon}>
-                        <Ionicons name="person-circle-outline" size={16} color="#374151" />
+                        <Ionicons name="person-circle-outline" size={16} color="#4A4A4A" />
                       </View>
                       <Text style={styles.cardHeaderTitle} numberOfLines={1}>
                         {doc.title || TITLES[doc.docType] || doc.docType}
@@ -217,21 +217,21 @@ export default function TechnicianKycViewScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { padding: 14, paddingBottom: 32 },
+  safe: { flex: 1, backgroundColor: '#F8F8F8' },
+  content: { padding: 12, paddingBottom: 28 },
 
   statusCard: {
     flexDirection: 'row',
     borderRadius: 14,
-    padding: 14,
+    padding: 11,
     alignItems: 'center',
     gap: 12,
     marginBottom: 14,
   },
-  statusApproved: { backgroundColor: '#004C40' },
-  statusRejected: { backgroundColor: '#EF4444' },
-  statusPending:  { backgroundColor: '#00008B' },
-  statusNone:     { backgroundColor: '#6B7280' },
+  statusApproved: { backgroundColor: '#09AD2A' },
+  statusRejected: { backgroundColor: '#F84141' },
+  statusPending:  { backgroundColor: '#09AD2A' },
+  statusNone:     { backgroundColor: '#6E6E6E' },
   statusIconWrap: {
     width: 38,
     height: 38,
@@ -245,69 +245,69 @@ const styles = StyleSheet.create({
 
   lockBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FEF3C7', borderRadius: 12, padding: 12, marginBottom: 12,
-    borderWidth: 1, borderColor: '#FDE68A',
+    backgroundColor: '#FDF6E0', borderRadius: 12, padding: 10, marginBottom: 10,
+    borderWidth: 1, borderColor: '#F6DE8D',
   },
-  lockBannerText: { flex: 1, fontSize: rf(11.5), color: '#92400E', fontWeight: '600', lineHeight: rlh(16) },
+  lockBannerText: { flex: 1, fontSize: rf(11.5), color: '#8A6700', fontWeight: '600', lineHeight: rlh(16) },
 
   rejectBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FEE2E2', borderRadius: 12, padding: 12, marginBottom: 12,
-    borderWidth: 1, borderColor: '#FCA5A5',
+    backgroundColor: '#FEECEC', borderRadius: 12, padding: 10, marginBottom: 10,
+    borderWidth: 1, borderColor: '#FBD0D0',
   },
-  rejectBannerText: { flex: 1, fontSize: rf(11.5), color: '#991B1B', fontWeight: '600', lineHeight: rlh(16) },
+  rejectBannerText: { flex: 1, fontSize: rf(11.5), color: '#C62E2E', fontWeight: '600', lineHeight: rlh(16) },
   reuploadBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#DC2626', borderRadius: 999, paddingVertical: 12, marginTop: 14,
+    backgroundColor: '#F84141', borderRadius: 999, paddingVertical: 10, marginTop: 12,
   },
   reuploadBtnText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '800', letterSpacing: 0.5 },
 
   actionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  sectionLabel: { fontSize: rf(12), fontWeight: '700', color: '#374151', letterSpacing: 0.3, textTransform: 'uppercase' },
-  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#EEF2FF', borderRadius: 999 },
-  editBtnText: { fontSize: rf(11), color: '#00008B', fontWeight: '700' },
+  sectionLabel: { fontSize: rf(12), fontWeight: '700', color: '#4A4A4A', letterSpacing: 0.3, textTransform: 'uppercase' },
+  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#E6F7EA', borderRadius: 999 },
+  editBtnText: { fontSize: rf(11), color: '#09AD2A', fontWeight: '700' },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 },
-  cardOuter: { width: '48%', backgroundColor: '#FFFFFF', borderRadius: 10, padding: 8, marginBottom: 6 },
+  cardOuter: { width: '48%', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 7, marginBottom: 8, borderWidth: 1, borderColor: '#ECECEC' },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F3F3F3',
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 6,
     marginBottom: 8,
   },
   cardHeaderIcon: { width: 18, alignItems: 'center' },
-  cardHeaderTitle: { flex: 1, fontSize: rf(11), fontWeight: '700', color: '#111827' },
-  requiredStar: { color: '#DC2626', fontWeight: '800', fontSize: rf(12) },
+  cardHeaderTitle: { flex: 1, fontSize: rf(11), fontWeight: '700', color: '#1E1E1E' },
+  requiredStar: { color: '#F84141', fontWeight: '800', fontSize: rf(12) },
 
-  preview: { borderRadius: 8, overflow: 'hidden', backgroundColor: '#F9FAFB', minHeight: 110 },
-  previewImg: { width: '100%', height: 110, resizeMode: 'cover' },
-  pdfTile: { flexDirection: 'row', alignItems: 'center', padding: 10, gap: 8, minHeight: 110 },
-  pdfBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, backgroundColor: '#EF4444' },
+  preview: { borderRadius: 8, overflow: 'hidden', backgroundColor: '#F8F8F8', minHeight: 92 },
+  previewImg: { width: '100%', height: 92, resizeMode: 'cover' },
+  pdfTile: { flexDirection: 'row', alignItems: 'center', padding: 10, gap: 8, minHeight: 92 },
+  pdfBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, backgroundColor: '#F84141' },
   pdfBadgeText: { color: '#FFFFFF', fontSize: rf(10), fontWeight: '800' },
-  pdfName: { flex: 1, fontSize: rf(11), color: '#374151', fontWeight: '600' },
+  pdfName: { flex: 1, fontSize: rf(11), color: '#4A4A4A', fontWeight: '600' },
 
   cardFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
   pill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 },
-  pillApproved: { backgroundColor: '#004C40' },
-  pillRejected: { backgroundColor: '#EF4444' },
-  pillPending:  { backgroundColor: '#F59E0B' },
+  pillApproved: { backgroundColor: '#09AD2A' },
+  pillRejected: { backgroundColor: '#F84141' },
+  pillPending:  { backgroundColor: '#F3BF23' },
   pillText: { fontSize: rf(9), color: '#FFFFFF', fontWeight: '800' },
-  uploadedDate: { flex: 1, fontSize: rf(9), color: '#9CA3AF', fontWeight: '600' },
+  uploadedDate: { flex: 1, fontSize: rf(9), color: '#A3A3A3', fontWeight: '600' },
 
-  rejectReason: { fontSize: rf(10), color: '#DC2626', marginTop: 4, fontStyle: 'italic' },
+  rejectReason: { fontSize: rf(10), color: '#F84141', marginTop: 4, fontStyle: 'italic' },
 
   uploadBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#00008B',
+    backgroundColor: '#09AD2A',
     borderRadius: 999,
-    paddingVertical: 12,
+    paddingVertical: 10,
     marginTop: 14,
   },
   uploadBtnText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '800', letterSpacing: 0.5 },
@@ -317,9 +317,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#00008B',
+    backgroundColor: '#09AD2A',
     borderRadius: 999,
-    paddingVertical: 12,
+    paddingVertical: 10,
     marginTop: 14,
   },
   editLargeBtnText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '800', letterSpacing: 0.5 },

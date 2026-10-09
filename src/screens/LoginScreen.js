@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -8,14 +9,21 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, ArrowRight } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  ArrowLeft, ArrowRight, CalendarCheck, Phone, Settings, ShieldCheck, Smartphone, Truck, Wrench,
+} from 'lucide-react-native';
 import { login, requestOtp } from '../api/auth';
 import { AUTH_BASE } from '../api/config';
-import { Button } from '../components/rnr';
 import { rf, rlh, rs } from '../utils/responsive';
+import { normalizeIndianMobile } from '../utils/mobile';
+import { logProfileDebug } from '../utils/profileDebug';
+import BrandMark from '../components/BrandMark';
 
 /**
  * Employee sign-in: mobile number → OTP. Two steps live in this one screen
@@ -39,12 +47,22 @@ const OTP_LENGTH = 6;
 const RESEND_SECONDS = 30;
 const MOBILE_DIGITS = 10;
 
-const NAVY = '#00008B';
-const TEXT = '#0F172A';
-const MUTED = '#64748B';
-const BORDER = '#E2E8F0';
-const AMBER = '#F59E0B';
-const DANGER = '#EF4444';
+// Brand palette: green, red, yellow, ink + light neutrals (same as Home).
+const GREEN = '#09AD2A';
+const GREEN_DARK = '#078F22';
+const RED = '#F84141';
+const YELLOW = '#F3BF23';
+const INK = '#1E1E1E';
+const BG = '#F8F8F8';
+const SURFACE = '#F3F3F3';
+const GREEN_TINT = '#E6F7EA';
+const RED_TINT = '#FEECEC';
+const YELLOW_TINT = '#FDF6E0';
+const TEXT = INK;
+const MUTED = '#6E6E6E';
+const BORDER = '#E6E6E6';
+const DANGER = RED;
+const MAX_WIDTH = 480;
 
 export default function LoginScreen({ onLogin }) {
   const insets = useSafeAreaInsets();
@@ -95,13 +113,15 @@ export default function LoginScreen({ onLogin }) {
   const sendOtp = async ({ resend = false } = {}) => {
     setError(null);
     setNote(null);
-    if (mobile.length !== MOBILE_DIGITS) {
+    const normalized = normalizeIndianMobile(mobile);
+    if (!normalized) {
       setError(`Enter your ${MOBILE_DIGITS}-digit mobile number`);
       return;
     }
+    if (normalized !== mobile) setMobile(normalized);
     try {
       setLoading(true);
-      await requestOtp(mobile);
+      await requestOtp(normalized);
       setSeconds(RESEND_SECONDS);
       if (resend) setNote('A new code has been sent.');
       else setStep('OTP');
@@ -125,6 +145,19 @@ export default function LoginScreen({ onLogin }) {
     try {
       setLoading(true);
       const data = await login(mobile, { otp: entered });
+      logProfileDebug('login ok', {
+        enteredMobile: mobile,
+        loginResponse: {
+          userId: data?.userId ?? null,
+          shopId: data?.shopId ?? null,
+          roles: data?.roles ?? null,
+          roleLabel: data?.roleLabel ?? null,
+          mobile: data?.mobile ?? null,
+          email: data?.email ?? null,
+          technicianId: data?.technicianId ?? null,
+          keys: data ? Object.keys(data) : [],
+        },
+      });
       onLogin(data);
     } catch (e) {
       setError(describeError(e, 'Authentication failed'));
@@ -154,80 +187,183 @@ export default function LoginScreen({ onLogin }) {
     setNote(null);
   };
 
+  const { width: winW } = useWindowDimensions();
+  const contentW = Math.min(winW, MAX_WIDTH) - rs(40);
+
   return (
     <KeyboardAvoidingView
       style={styles.page}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <Backdrop />
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: insets.top + rs(24), paddingBottom: insets.bottom + rs(28) },
+          { paddingTop: insets.top + rs(16), paddingBottom: insets.bottom + rs(20) },
         ]}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {step === 'MOBILE' ? (
-          <MobileStep
-            mobile={mobile}
-            setMobile={setMobile}
-            loading={loading}
-            error={error}
-            onSubmit={sendOtp}
-          />
-        ) : (
-          <OtpStep
-            mobile={mobile}
-            otp={otp}
-            otpRef={otpRef}
-            onOtpChange={onOtpChange}
-            onSubmit={() => verify()}
-            onBack={backToMobile}
-            onResend={() => sendOtp({ resend: true })}
-            seconds={seconds}
-            loading={loading}
-            error={error}
-            note={note}
-          />
-        )}
+        <View style={{ width: contentW }}>
+          {step === 'MOBILE' ? (
+            <MobileStep
+              mobile={mobile}
+              setMobile={setMobile}
+              loading={loading}
+              error={error}
+              onSubmit={sendOtp}
+              wide={contentW >= 340}
+            />
+          ) : (
+            <OtpStep
+              mobile={mobile}
+              otp={otp}
+              otpRef={otpRef}
+              onOtpChange={onOtpChange}
+              onSubmit={() => verify()}
+              onBack={backToMobile}
+              onResend={() => sendOtp({ resend: true })}
+              seconds={seconds}
+              loading={loading}
+              error={error}
+              note={note}
+            />
+          )}
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
+/* --------------------------------------------------------------- backdrop */
+
+// Soft green shapes in the corners — decorative only.
+function Backdrop() {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={[styles.blob, { top: -rs(80), right: -rs(90), width: rs(300), height: rs(300), backgroundColor: '#EAF7EC' }]} />
+      <View style={[styles.blob, { top: rs(40), left: -rs(120), width: rs(220), height: rs(220), backgroundColor: '#F1F8F2' }]} />
+      <View style={[styles.blob, { bottom: -rs(110), left: -rs(80), width: rs(220), height: rs(220), backgroundColor: '#CDEFD3' }]} />
+      <View style={[styles.blob, { bottom: -rs(60), left: -rs(30), width: rs(130), height: rs(130), backgroundColor: '#9FDFAB', opacity: 0.55 }]} />
+      <View style={[styles.blob, { bottom: -rs(110), right: -rs(80), width: rs(220), height: rs(220), backgroundColor: '#CDEFD3' }]} />
+      <View style={[styles.blob, { bottom: -rs(60), right: -rs(30), width: rs(130), height: rs(130), backgroundColor: '#9FDFAB', opacity: 0.55 }]} />
+    </View>
+  );
+}
+
+// Repair-themed illustration built from shapes + icons (no image assets):
+// a phone showing the logo on a pedestal, with wrench / phone / gear badges.
+function HeroArt({ size }) {
+  const phoneW = size * 0.46;
+  const phoneH = phoneW * 1.9;
+  const badge = size * 0.27;
+  return (
+    <View pointerEvents="none" style={{ width: size, height: size * 1.12 }}>
+      <View style={[styles.blob, { top: size * 0.02, right: -size * 0.1, width: size * 0.95, height: size * 0.95, backgroundColor: GREEN_TINT }]} />
+      <View style={[styles.blob, { top: size * 0.38, left: size * 0.02, width: size * 0.5, height: size * 0.5, backgroundColor: YELLOW_TINT }]} />
+      {/* pedestal */}
+      <View style={{ position: 'absolute', bottom: size * 0.02, left: size * 0.16, width: size * 0.78, height: size * 0.16, borderRadius: size * 0.4, backgroundColor: '#FFFFFF', shadowColor: INK, shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 4 }} />
+      {/* phone */}
+      <View style={{
+        position: 'absolute', bottom: size * 0.1, right: size * 0.16, width: phoneW, height: phoneH,
+        borderRadius: phoneW * 0.2, backgroundColor: INK, padding: phoneW * 0.06, transform: [{ rotate: '10deg' }],
+        shadowColor: INK, shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 4, height: 8 }, elevation: 6,
+      }}>
+        <LinearGradient colors={['#F3FBF4', '#DFF4E3']} style={{ flex: 1, borderRadius: phoneW * 0.15, alignItems: 'center', justifyContent: 'center' }}>
+          <Image source={require('../../assets/logo.png')} style={{ width: phoneW * 0.6, height: phoneW * 0.6 }} resizeMode="contain" />
+        </LinearGradient>
+      </View>
+      {/* badges */}
+      <View style={[styles.badge, { width: badge, height: badge, borderRadius: badge / 2, top: size * 0.06, left: size * 0.04, backgroundColor: RED }]}>
+        <Wrench size={badge * 0.46} color="#FFFFFF" strokeWidth={2.4} />
+      </View>
+      <View style={[styles.badge, { width: badge, height: badge, borderRadius: badge / 2, top: size * 0.42, right: -size * 0.04, backgroundColor: YELLOW }]}>
+        <Smartphone size={badge * 0.46} color="#FFFFFF" strokeWidth={2.4} />
+      </View>
+      <View style={{ position: 'absolute', bottom: size * 0.08, right: size * 0.02 }}>
+        <Settings size={size * 0.26} color={GREEN_DARK} fill={GREEN} strokeWidth={1.6} />
+      </View>
+    </View>
+  );
+}
+
 /* ------------------------------------------------------------------ step 1 */
 
-function MobileStep({ mobile, setMobile, loading, error, onSubmit }) {
+function MobileStep({ mobile, setMobile, loading, error, onSubmit, wide }) {
+  const art = wide ? rs(170) : rs(130);
   return (
     <View>
-      <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+      {/* Hero: logo + heading on the left, illustration on the right */}
+      <View style={styles.hero}>
+        <View style={{ position: 'absolute', right: -rs(6), top: 0 }}>
+          <HeroArt size={art} />
+        </View>
+        <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+        <Text style={styles.h1}>
+          Login with{'\n'}
+          <Text style={{ color: GREEN }}>mobile number</Text>
+        </Text>
+        <Text style={styles.sub}>Welcome to GGFIX Employee App</Text>
+      </View>
 
-      <Text style={styles.h1}>Login with{'\n'}mobile number</Text>
-      <Text style={styles.sub}>Welcome to our app !</Text>
-
-      <View style={styles.inputRow}>
+      {/* Login card */}
+      <View style={styles.card}>
+        <Text style={styles.label}>Mobile number</Text>
         <View style={styles.numberCard}>
+          <Phone size={rs(19)} color={MUTED} strokeWidth={2} />
+          <View style={styles.inputDivider} />
           <TextInput
             value={mobile}
-            onChangeText={(v) => setMobile(v.replace(/[^0-9]/g, '').slice(0, MOBILE_DIGITS))}
+            onChangeText={(v) => setMobile(v.replace(/[^\d+]/g, '').slice(0, 13))}
             placeholder="9876543210"
-            placeholderTextColor="#94A3B8"
+            placeholderTextColor="#A3A3A3"
             keyboardType="number-pad"
-            maxLength={MOBILE_DIGITS}
+            maxLength={16}
             autoFocus
             returnKeyType="done"
             onSubmitEditing={onSubmit}
             style={styles.numberInput}
           />
         </View>
+
+        <ErrorBox msg={error} />
+
+        <PrimaryButton label="LOGIN" loading={loading} onPress={onSubmit} />
+
+        <View style={styles.orRow}>
+          <View style={styles.orLine} />
+          <Text style={styles.orText}>STAFF ONLY</Text>
+          <View style={styles.orLine} />
+        </View>
+        <Text style={styles.cardNote}>
+          For <Text style={styles.cardNoteStrong}>Technician · Pickup Person · Staff</Text> accounts
+        </Text>
       </View>
 
-      <ErrorBox msg={error} />
-
-      <PrimaryButton label="LOGIN" loading={loading} onPress={onSubmit} />
+      {/* Feature row */}
+      <View style={styles.features}>
+        <Feature icon={CalendarCheck} bg={GREEN_TINT} fg={GREEN} label={'Mark\nattendance'} />
+        <View style={styles.featureDivider} />
+        <Feature icon={Truck} bg={YELLOW_TINT} fg="#C99500" label={'Manage\npickups'} />
+        <View style={styles.featureDivider} />
+        <Feature icon={ShieldCheck} bg={RED_TINT} fg={RED} label={'Trusted\n& secure'} />
+      </View>
 
       <Text style={styles.footnote}>
-        Technician · Pickup Person · Staff only. Customers should use the Globo Green customer app.
+        Customers should use the Globo Green customer app.
       </Text>
+    </View>
+  );
+}
+
+function Feature({ icon: Icon, bg, fg, label }) {
+  const dot = rs(48);
+  return (
+    <View style={styles.feature}>
+      <View style={{ width: dot, height: dot, borderRadius: dot / 2, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={rs(22)} color={fg} strokeWidth={2.2} />
+      </View>
+      <Text style={styles.featureText}>{label}</Text>
     </View>
   );
 }
@@ -242,52 +378,74 @@ function OtpStep({
 
   return (
     <View>
-      <Pressable onPress={onBack} hitSlop={12} style={styles.backBtn}>
+      <Pressable onPress={onBack} hitSlop={12} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Back">
         <ArrowLeft size={rs(20)} color={TEXT} />
       </Pressable>
 
-      <Text style={styles.h1Center}>Verify Phone</Text>
-      <Text style={styles.subCenter}>Code is sent to {mobile}</Text>
+      <BrandMark size={80} />
+      <Text style={[styles.h1Center, { marginTop: rs(16) }]}>
+        Verify <Text style={{ color: GREEN }}>Phone</Text>
+      </Text>
+      <Text style={styles.subCenter}>We have sent a {OTP_LENGTH}-digit code to</Text>
+      <View style={styles.phonePill}>
+        <Phone size={rs(16)} color={MUTED} strokeWidth={2.2} />
+        <Text style={styles.phonePillText}>{mobile}</Text>
+        <TouchableOpacity onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel="Edit number">
+          <Text style={styles.phonePillEdit}>Edit</Text>
+        </TouchableOpacity>
+      </View>
 
-      {/* The visible boxes are display-only; one transparent input sits on top
-          of the whole row so backspace, paste and SMS autofill all behave like
-          a normal single field instead of six that fight over focus. */}
-      <Pressable onPress={() => otpRef.current?.focus()} style={styles.otpRow}>
-        {boxes.map((_, i) => {
-          const char = otp[i] || '';
-          const active = otp.length === i;
-          return (
-            <View key={i} style={[styles.otpBox, active && styles.otpBoxActive]}>
-              <Text style={char ? styles.otpChar : styles.otpCharEmpty}>{char || '0'}</Text>
-            </View>
-          );
-        })}
-        <TextInput
-          ref={otpRef}
-          value={otp}
-          onChangeText={onOtpChange}
-          keyboardType="number-pad"
-          maxLength={OTP_LENGTH}
-          autoFocus
-          caretHidden
-          textContentType="oneTimeCode"
-          autoComplete="sms-otp"
-          style={styles.otpHiddenInput}
-        />
-      </Pressable>
-
-      {note ? <Text style={styles.note}>{note}</Text> : null}
-      <ErrorBox msg={error} />
-
-      <PrimaryButton label="VERIFY" loading={loading} onPress={onSubmit} />
-
-      <View style={styles.resendRow}>
-        <Text style={styles.resendMuted}>Not yet code? </Text>
-        <Pressable onPress={onResend} disabled={!canResend} hitSlop={8}>
-          <Text style={[styles.resendLink, !canResend && styles.resendLinkOff]}>
-            {seconds > 0 ? `Resend in ${seconds}s` : 'Resend Now'}
-          </Text>
+      <View style={styles.card}>
+        {/* The visible boxes are display-only; one transparent input sits on top
+            of the whole row so backspace, paste and SMS autofill all behave like
+            a normal single field instead of six that fight over focus. */}
+        <Pressable onPress={() => otpRef.current?.focus()} style={styles.otpRow}>
+          {boxes.map((_, i) => {
+            const char = otp[i] || '';
+            const active = otp.length === i;
+            return (
+              <View key={i} style={[styles.otpBox, active && styles.otpBoxActive]}>
+                <Text style={char ? styles.otpChar : styles.otpCharEmpty}>{char || '0'}</Text>
+              </View>
+            );
+          })}
+          <TextInput
+            ref={otpRef}
+            value={otp}
+            onChangeText={onOtpChange}
+            keyboardType="number-pad"
+            maxLength={OTP_LENGTH}
+            autoFocus
+            caretHidden
+            textContentType="oneTimeCode"
+            autoComplete="sms-otp"
+            style={styles.otpHiddenInput}
+          />
         </Pressable>
+
+        {note ? <Text style={styles.note}>{note}</Text> : null}
+        <ErrorBox msg={error} />
+
+        <PrimaryButton label="VERIFY" loading={loading} onPress={onSubmit} />
+
+        <View style={styles.resendRow}>
+          <Text style={styles.resendMuted}>Didn’t receive the code? </Text>
+          <TouchableOpacity onPress={onResend} disabled={!canResend} hitSlop={8} activeOpacity={0.7}>
+            <Text style={[styles.resendLink, !canResend && seconds <= 0 && styles.resendLinkOff]}>
+              {seconds > 0 ? `Resend in ${seconds}s` : 'Resend now'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.safeCard}>
+        <View style={styles.safeIcon}>
+          <ShieldCheck size={rs(20)} color={GREEN} strokeWidth={2.2} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.safeTitle}>Your number is safe with us</Text>
+          <Text style={styles.safeSub}>We use secure and encrypted verification</Text>
+        </View>
       </View>
     </View>
   );
@@ -297,24 +455,25 @@ function OtpStep({
 
 function PrimaryButton({ label, loading, onPress }) {
   return (
-    <Button
+    <TouchableOpacity
       onPress={onPress}
-      loading={loading}
-      fullWidth
-      elevated={false}
-      // twMerge drops Button's own `rounded-2xl`/`py-3.5`/`bg-primary` in favour of
-      // these, so the CTA keeps the design's squarer 10px corners at a fixed 56px
-      // height and the deep green fill instead of the app's #00008B navy.
-      // The hex must stay literal here — Tailwind's JIT only compiles arbitrary
-      // values it can see as source text, so a constant would emit no class.
-      className="rounded-[10px] py-0 bg-[#004C40]"
-      style={styles.cta}
+      disabled={loading}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      activeOpacity={0.9}
+      style={[styles.cta, loading && { opacity: 0.75 }]}
     >
-      <View style={styles.ctaInner}>
-        <Text style={styles.ctaText}>{label}</Text>
-        <ArrowRight size={rs(18)} color="#FFFFFF" strokeWidth={2} />
-      </View>
-    </Button>
+      <LinearGradient colors={['#12BE36', GREEN, GREEN_DARK]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.ctaInner}>
+        {loading ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <>
+            <Text style={styles.ctaText}>{label}</Text>
+            <ArrowRight size={rs(20)} color="#FFFFFF" strokeWidth={2.4} />
+          </>
+        )}
+      </LinearGradient>
+    </TouchableOpacity>
   );
 }
 
@@ -327,86 +486,116 @@ function ErrorBox({ msg }) {
   );
 }
 
+const cardShadow = {
+  shadowColor: INK, shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5,
+};
+
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: '#FFFFFF' },
-  scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: rs(24) },
-
-  // The PNG is a teal roundel sitting on an opaque WHITE 1024x1024 canvas with
-  // its own padding, so the mark only fills ~78% of the box — at the old rs(52)
-  // the visible circle was ~40dp. `contain` (not `cover`) because the canvas is
-  // square and cover would crop it if the box ever stops being 1:1. No
-  // borderRadius: it would round the white canvas, not the circle, and the page
-  // is already #FFFFFF so there is nothing to round.
-  logo: { height: rs(100), width: rs(100), marginBottom: rs(22), alignSelf: 'center' },
-
-  h1: { fontSize: rf(28), lineHeight: rlh(36), fontWeight: '800', color: TEXT, letterSpacing: -0.4 },
-  h1Center: { fontSize: rf(26), lineHeight: rlh(32), fontWeight: '800', color: TEXT, textAlign: 'center' },
-  sub: { fontSize: rf(13.5), lineHeight: rlh(20), color: MUTED, marginTop: rs(8) },
-  subCenter: { fontSize: rf(13.5), lineHeight: rlh(20), color: MUTED, textAlign: 'center', marginTop: rs(8) },
-
-  inputRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(28) },
-  numberCard: {
-    flex: 1,
-    height: rs(54),
-    justifyContent: 'center',
-    paddingHorizontal: rs(14),
-    borderRadius: rs(12),
-    borderWidth: 1,
-    borderColor: BORDER,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+  page: { flex: 1, backgroundColor: BG },
+  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
+  blob: { position: 'absolute', borderRadius: 9999 },
+  badge: {
+    position: 'absolute', alignItems: 'center', justifyContent: 'center',
+    shadowColor: INK, shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4,
   },
-  numberInput: { fontSize: rf(15.5), fontWeight: '600', color: TEXT, padding: 0 },
 
-  backBtn: { alignSelf: 'flex-start', height: rs(36), width: rs(36), alignItems: 'center', justifyContent: 'center', marginBottom: rs(8), marginLeft: -rs(8) },
+  // The PNG is a teal roundel on an opaque white square canvas, so `contain`
+  // keeps the whole mark visible without cropping.
+  logo: { height: rs(96), width: rs(96), marginBottom: rs(18) },
 
-  otpRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: rs(26) },
+  hero: { minHeight: rs(250), justifyContent: 'flex-end', paddingBottom: rs(4) },
+  h1: { fontSize: rf(30), lineHeight: rlh(37), fontWeight: '900', color: TEXT, letterSpacing: -0.4 },
+  h1Center: { fontSize: rf(28), lineHeight: rlh(34), fontWeight: '900', color: TEXT, textAlign: 'center' },
+  sub: { fontSize: rf(14.5), lineHeight: rlh(20), color: MUTED, marginTop: rs(6) },
+  subCenter: { fontSize: rf(14), lineHeight: rlh(20), color: MUTED, textAlign: 'center', marginTop: rs(6) },
+
+  card: {
+    marginTop: rs(22), backgroundColor: '#FFFFFF', borderRadius: rs(26),
+    paddingHorizontal: rs(18), paddingVertical: rs(20), ...cardShadow,
+  },
+  label: { fontSize: rf(13.5), color: MUTED, marginBottom: rs(8), marginLeft: rs(2) },
+  numberCard: {
+    flexDirection: 'row', alignItems: 'center',
+    height: rs(56), paddingHorizontal: rs(16), borderRadius: rs(16),
+    borderWidth: 1, borderColor: BORDER, backgroundColor: '#FFFFFF',
+  },
+  inputDivider: { width: 1, height: rs(24), backgroundColor: BORDER, marginHorizontal: rs(14) },
+  numberInput: { flex: 1, fontSize: rf(17), fontWeight: '600', color: TEXT, padding: 0, letterSpacing: 0.5 },
+
+  orRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(20) },
+  orLine: { flex: 1, height: 1, backgroundColor: BORDER },
+  orText: { fontSize: rf(11.5), fontWeight: '700', color: MUTED, marginHorizontal: rs(12), letterSpacing: 1 },
+  cardNote: { fontSize: rf(13), color: TEXT, textAlign: 'center', marginTop: rs(10) },
+  cardNoteStrong: { fontWeight: '800', color: GREEN_DARK },
+
+  features: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', marginTop: rs(22) },
+  feature: { flex: 1, alignItems: 'center' },
+  featureDivider: { width: 1, height: rs(46), backgroundColor: BORDER, marginTop: rs(10) },
+  featureText: { fontSize: rf(13), lineHeight: rlh(17), color: TEXT, textAlign: 'center', marginTop: rs(8) },
+
+  backBtn: {
+    alignSelf: 'flex-start', height: rs(42), width: rs(42), borderRadius: rs(21), alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFFFFF', marginBottom: rs(12), ...cardShadow,
+  },
+
+  otpRow: { flexDirection: 'row', justifyContent: 'space-between' },
   otpBox: {
     flex: 1,
     height: rs(56),
     marginHorizontal: rs(4),
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: rs(12),
+    borderRadius: rs(14),
     borderWidth: 1,
-    borderColor: BORDER,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    borderColor: '#EDEDED',
+    backgroundColor: '#F7F7F7',
+    shadowColor: INK, shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
-  otpBoxActive: { borderColor: NAVY, borderWidth: 1.5 },
-  otpChar: { fontSize: rf(20), fontWeight: '700', color: TEXT },
-  otpCharEmpty: { fontSize: rf(20), fontWeight: '700', color: '#CBD5E1' },
+  otpBoxActive: { borderColor: GREEN, borderWidth: 2, backgroundColor: '#FFFFFF' },
+  otpChar: { fontSize: rf(20), fontWeight: '800', color: TEXT },
+  otpCharEmpty: { fontSize: rf(20), fontWeight: '700', color: '#CFCFCF' },
   otpHiddenInput: { ...StyleSheet.absoluteFillObject, opacity: 0, color: 'transparent' },
 
-  note: { fontSize: rf(12.5), color: '#004C40', marginTop: rs(10), textAlign: 'center' },
+  note: { fontSize: rf(12.5), color: GREEN_DARK, fontWeight: '600', marginTop: rs(12), textAlign: 'center' },
 
-  cta: { height: rs(56), borderRadius: rs(10), marginTop: rs(26), paddingVertical: 0 },
-  ctaInner: { flexDirection: 'row', alignItems: 'center' },
-  ctaText: { color: '#FFFFFF', fontSize: rf(14.5), fontWeight: '800', letterSpacing: 1.6, marginRight: rs(10) },
+  cta: {
+    height: rs(56), borderRadius: 999, marginTop: rs(18), overflow: 'hidden',
+    shadowColor: GREEN, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6,
+  },
+  ctaInner: { flex: 1, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  ctaText: { color: '#FFFFFF', fontSize: rf(16), fontWeight: '900', letterSpacing: 2, marginRight: rs(12) },
 
-  resendRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: rs(30) },
-  resendMuted: { fontSize: rf(12.5), color: MUTED },
-  resendLink: { fontSize: rf(12.5), fontWeight: '700', color: AMBER },
+  phonePill: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'center', marginTop: rs(10),
+    backgroundColor: '#FFFFFF', borderRadius: rs(14), borderWidth: 1, borderColor: BORDER,
+    paddingHorizontal: rs(14), height: rs(44), minWidth: rs(230),
+    shadowColor: INK, shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
+  },
+  phonePillText: { flex: 1, fontSize: rf(15), fontWeight: '600', color: TEXT, marginLeft: rs(10), letterSpacing: 0.5 },
+  phonePillEdit: { fontSize: rf(13.5), fontWeight: '800', color: GREEN_DARK, marginLeft: rs(12) },
+  safeCard: {
+    flexDirection: 'row', alignItems: 'center', marginTop: rs(18), backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: rs(18), borderWidth: 1, borderColor: '#EEF2EE', paddingHorizontal: rs(14), paddingVertical: rs(12),
+  },
+  safeIcon: { width: rs(40), height: rs(40), borderRadius: rs(20), backgroundColor: GREEN_TINT, alignItems: 'center', justifyContent: 'center', marginRight: rs(12) },
+  safeTitle: { fontSize: rf(13.5), fontWeight: '800', color: TEXT },
+  safeSub: { fontSize: rf(11.5), color: MUTED, marginTop: 2 },
+  resendRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: rs(18) },
+  resendMuted: { fontSize: rf(13), color: MUTED },
+  resendLink: { fontSize: rf(13), fontWeight: '800', color: GREEN_DARK },
+
   resendLinkOff: { color: MUTED, fontWeight: '600' },
 
-  footnote: { fontSize: rf(11), lineHeight: rlh(16), color: MUTED, textAlign: 'center', marginTop: rs(28) },
+  footnote: { fontSize: rf(11.5), lineHeight: rlh(16), color: MUTED, textAlign: 'center', marginTop: rs(18) },
 
   errorBox: {
-    marginTop: rs(14),
+    marginTop: rs(12),
     borderRadius: rs(12),
     borderWidth: 1,
-    borderColor: 'rgba(239,68,68,0.3)',
-    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderColor: 'rgba(248,65,65,0.35)',
+    backgroundColor: RED_TINT,
     paddingHorizontal: rs(12),
     paddingVertical: rs(9),
   },
-  errorText: { fontSize: rf(12), lineHeight: rlh(17), color: DANGER },
+  errorText: { fontSize: rf(12.5), lineHeight: rlh(17), color: '#C62828' },
 });

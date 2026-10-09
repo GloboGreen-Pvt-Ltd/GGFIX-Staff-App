@@ -7,13 +7,30 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  CalendarDays, Check, ClipboardList, Clock3, FileText, Plus, X,
+} from 'lucide-react-native';
 import { getEmployeeLeaveRequests } from '../api/technician';
 import { useTechnicianId } from '../auth/useTechnicianId';
-import { rf } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
+import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
+import { MINT, MonthCard, MetricCard, SectionCard, EmptyState } from '../components/MintKit';
+
+const MAX_CONTENT_WIDTH = 720;
+
+// Presentation only: summary-tile tints.
+const TINTS = {
+  leave:      { bg: '#FFF6F6', border: '#FBE0E0', tile: '#FEECEC', icon: '#F84141', wave: '#FDE3E3' },
+  processing: { bg: '#FFFBEF', border: '#F8EBC2', tile: '#F3BF23', icon: '#FFFFFF', wave: '#FBEFC9' },
+  rejected:   { bg: '#FFF6F6', border: '#FBE0E0', tile: '#F84141', icon: '#FFFFFF', wave: '#FDDCDC' },
+  approved:   { bg: '#F3FBF4', border: '#DDF1E1', tile: '#09AD2A', icon: '#FFFFFF', wave: '#D9F2DE' },
+};
+const PILL_TEXT = { APPROVED: '#09AD2A', REJECTED: '#F84141', PROCESSING: '#8A6700' };
 
 // Pretty-print leaveType enum from backend (CASUAL_LEAVE → Casual Leave).
 const LEAVE_TYPE_LABELS = {
@@ -49,6 +66,8 @@ function formatDateTime(instant) {
 }
 
 export default function LeaveReportScreen({ navigation }) {
+  useHideNativeHeader(navigation);
+  const { width: winW } = useWindowDimensions();
   const technicianId = useTechnicianId();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -110,97 +129,102 @@ export default function LeaveReportScreen({ navigation }) {
     setYear(y);
   };
 
+  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(32);
+  const tileGap = rs(8);
+  const tileW = (contentW - tileGap * 3) / 4;
+
   if (!technicianId) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.center}><ActivityIndicator color="#00008B" /></View>
+        <MintBackdrop />
+        <MintScreenHeader title="Leave Report" navigation={navigation} />
+        <View style={styles.center}><ActivityIndicator color={MINT.deep} /></View>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <MintBackdrop />
+      <MintScreenHeader title="Leave Report" navigation={navigation} />
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} colors={[MINT.deep]} tintColor={MINT.deep} />}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.statsCard}>
-          <View style={styles.statsHeader}>
-            <Text style={styles.statsHeaderTitle}>This Month</Text>
-            <View style={styles.monthPill}>
-              <Text style={styles.monthPillText}>{MONTHS[month - 1]} {year}</Text>
-              <TouchableOpacity onPress={() => stepMonth(-1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                <Ionicons name="chevron-back" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
-              <View style={styles.monthPillSep} />
-              <TouchableOpacity onPress={() => stepMonth(1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        <View style={{ width: contentW }}>
+          <MonthCard
+            subtitle="View your leave summary for this month"
+            monthLabel={`${MONTHS[month - 1]} ${year}`}
+            onPrev={() => stepMonth(-1)}
+            onNext={() => stepMonth(1)}
+            inline={contentW >= 420}
+          />
+
+          <View style={[styles.statTilesRow, { gap: tileGap }]}>
+            <MetricCard width={tileW} icon={CalendarDays} label="Leave" value={pad2(counts.Leave)} tint={TINTS.leave} />
+            <MetricCard width={tileW} icon={Clock3} label="Processing" value={pad2(counts.Processing)} tint={TINTS.processing} />
+            <MetricCard width={tileW} icon={X} label="Rejected" value={pad2(counts.Rejected)} tint={TINTS.rejected} />
+            <MetricCard width={tileW} icon={Check} label="Approved" value={pad2(counts.Approved)} tint={TINTS.approved} />
           </View>
 
-          <View style={styles.statTilesRow}>
-            <StatTile value={pad2(counts.Leave)}      label="Leave"      bg="#EC4899" />
-            <StatTile value={pad2(counts.Processing)} label="Processing" bg="#F97316" />
-            <StatTile value={pad2(counts.Rejected)}   label="Rejected"   bg="#EF4444" />
-            <StatTile value={pad2(counts.Approved)}   label="Approved"   bg="#1E3A8A" />
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.applyBtn}
-          onPress={() => navigation.navigate('TechnicianApplyLeave')}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="add" size={16} color="#FFFFFF" />
-          <Text style={styles.applyBtnText}>Apply for leave</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.sectionHeader}>Recent Leave</Text>
-        {loading && list.length === 0 ? (
-          <ActivityIndicator size="small" color="#00008B" style={{ marginVertical: 16 }} />
-        ) : recent ? (
-          <LeaveCard item={recent} />
-        ) : (
-          <Text style={styles.empty}>No recent leave.</Text>
-        )}
-
-        <Text style={styles.sectionHeader}>Previous Leave</Text>
-        <View style={styles.filterRow}>
-          {FILTERS.map((f) => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.filterChip, filter === f && styles.filterChipActive]}
-              onPress={() => setFilter(f)}
-              activeOpacity={0.85}
+          <TouchableOpacity
+            style={styles.applyBtn}
+            onPress={() => navigation.navigate('TechnicianApplyLeave')}
+            activeOpacity={0.85}
+          >
+            <LinearGradient
+              colors={[MINT.primary, '#089E26']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.applyBtnInner}
             >
-              <Text style={[styles.filterChipText, filter === f && styles.filterChipTextActive]}>
-                {f}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+              <View pointerEvents="none" style={styles.applyWave} />
+              <Plus size={rs(18)} color="#FFFFFF" strokeWidth={2.6} />
+              <Text style={styles.applyBtnText}>Apply for leave</Text>
+            </LinearGradient>
+          </TouchableOpacity>
 
-        {filteredPrevious.length === 0 ? (
-          <Text style={styles.empty}>No previous leave requests.</Text>
-        ) : (
-          filteredPrevious.map((item) => <LeaveCard key={item.id} item={item} />)
-        )}
+          <SectionCard compact title="Recent Leave" style={styles.section}>
+            {loading && list.length === 0 ? (
+              <ActivityIndicator size="small" color={MINT.deep} style={{ marginVertical: rs(16) }} />
+            ) : recent ? (
+              <LeaveCard item={recent} />
+            ) : (
+              <EmptyState compact icon={ClipboardList} accent={Clock3} text="No recent leave." />
+            )}
+          </SectionCard>
+
+          <SectionCard compact title="Previous Leave" style={styles.section}>
+            <View style={styles.filterRow}>
+              {FILTERS.map((f) => (
+                <TouchableOpacity
+                  key={f}
+                  style={[styles.filterChip, filter === f && styles.filterChipActive]}
+                  onPress={() => setFilter(f)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[styles.filterChipText, filter === f && styles.filterChipTextActive]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
+                    {f}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {filteredPrevious.length === 0 ? (
+              <EmptyState compact icon={FileText} text="No previous leave requests." />
+            ) : (
+              filteredPrevious.map((item) => <LeaveCard key={item.id} item={item} />)
+            )}
+          </SectionCard>
+        </View>
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function StatTile({ value, label, bg }) {
-  return (
-    <View style={styles.statTileWrap}>
-      <View style={[styles.statTileTop, { backgroundColor: bg }]}>
-        <Text style={styles.statTileTopText}>{label}</Text>
-      </View>
-      <View style={styles.statTileBottom}>
-        <Text style={styles.statTileValue}>{value}</Text>
-      </View>
-    </View>
   );
 }
 
@@ -234,7 +258,7 @@ function LeaveCard({ item }) {
             <Text style={styles.leaveDate}>{dateRangeLabel}</Text>
           </View>
           <View style={[styles.statusPill, pillStyle]}>
-            <Text style={styles.statusPillText}>{pillLabel}</Text>
+            <Text style={[styles.statusPillText, { color: PILL_TEXT[status] || PILL_TEXT.PROCESSING }]}>{pillLabel}</Text>
           </View>
         </View>
 
@@ -294,58 +318,60 @@ function LeaveCard({ item }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { padding: 12, paddingBottom: 32 },
+  safe: { flex: 1, backgroundColor: MINT.bg },
+  content: { alignItems: 'center', paddingTop: rs(4), paddingBottom: rs(24) },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  statsCard: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14 },
-  statsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  statsHeaderTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
+  statTilesRow: { flexDirection: 'row', marginTop: rs(8) },
 
-  monthPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E1EAC', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, gap: 6 },
-  monthPillText: { color: '#FFFFFF', fontSize: rf(11), fontWeight: '700' },
-  monthPillSep: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)' },
+  applyBtn: {
+    marginTop: rs(8), borderRadius: rs(14),
+    shadowColor: MINT.deep, shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3,
+  },
+  applyBtnInner: {
+    height: rs(42), borderRadius: rs(14), overflow: 'hidden',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(10),
+  },
+  applyWave: {
+    position: 'absolute', right: -rs(30), top: -rs(40), width: rs(130), height: rs(110), borderRadius: rs(65),
+    backgroundColor: 'rgba(255,255,255,0.10)',
+  },
+  applyBtnText: { color: '#FFFFFF', fontSize: rf(14), fontWeight: '800' },
 
-  statTilesRow: { flexDirection: 'row', gap: 8 },
-  statTileWrap: { flex: 1, borderRadius: 10, overflow: 'hidden', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB' },
-  statTileTop: { paddingVertical: 5, alignItems: 'center' },
-  statTileTopText: { color: '#FFFFFF', fontSize: rf(10), fontWeight: '700' },
-  statTileBottom: { paddingVertical: 8, alignItems: 'center', backgroundColor: '#FFFFFF' },
-  statTileValue: { fontSize: rf(18), fontWeight: '800', color: '#111827' },
+  section: { marginTop: rs(8) },
 
-  applyBtn: { marginTop: 12, backgroundColor: '#00008B', paddingVertical: 11, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  applyBtnText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '700' },
+  filterRow: { flexDirection: 'row', gap: rs(6), marginBottom: rs(8) },
+  filterChip: {
+    flex: 1, height: rs(30), borderRadius: 999, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: MINT.border, paddingHorizontal: rs(6),
+  },
+  filterChipActive: { backgroundColor: MINT.primary, borderColor: MINT.primary },
+  filterChipText: { fontSize: rf(11.5), color: MINT.muted, fontWeight: '600' },
+  filterChipTextActive: { color: '#FFFFFF', fontWeight: '700' },
 
-  sectionHeader: { fontSize: rf(13), fontWeight: '700', color: '#111827', marginTop: 14, marginBottom: 8 },
+  leaveCard: {
+    flexDirection: 'row', backgroundColor: MINT.softMint, borderRadius: rs(12), borderWidth: 1, borderColor: '#DDF1E1',
+    marginBottom: rs(8), overflow: 'hidden',
+  },
+  leaveAccent: { width: rs(3), backgroundColor: MINT.bright },
+  leaveInner: { flex: 1, padding: rs(9) },
+  leaveTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: rs(8) },
+  leaveTypeText: { fontSize: rf(11.5), fontWeight: '700', color: MINT.primary, marginBottom: 2 },
+  leaveDate: { fontSize: rf(13), fontWeight: '700', color: MINT.text },
 
-  filterRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
-  filterChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB' },
-  filterChipActive: { backgroundColor: '#00008B', borderColor: '#00008B' },
-  filterChipText: { fontSize: rf(11), color: '#6B7280', fontWeight: '600' },
-  filterChipTextActive: { color: '#FFFFFF' },
+  metaBlock: { marginTop: rs(7), paddingTop: rs(7), borderTopWidth: 1, borderTopColor: '#E6F2E8' },
+  metaLabel: { fontSize: rf(11), color: MINT.muted, fontWeight: '600', marginBottom: 2 },
+  metaValue: { fontSize: rf(12), color: MINT.text, fontWeight: '600' },
+  metaTimestamp: { fontSize: rf(11), color: MINT.muted, marginTop: 4 },
 
-  leaveCard: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 10, marginBottom: 8, overflow: 'hidden' },
-  leaveAccent: { width: 3, backgroundColor: '#1E1EAC' },
-  leaveInner: { flex: 1, padding: 10 },
-  leaveTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 },
-  leaveTypeText: { fontSize: rf(12), fontWeight: '700', color: '#00008B', marginBottom: 2 },
-  leaveDate: { fontSize: rf(12), fontWeight: '700', color: '#111827' },
+  statusPill: { paddingHorizontal: rs(8), paddingVertical: rs(3), borderRadius: 999 },
+  pillProcessing: { backgroundColor: '#FDF6E0' },
+  pillApproved: { backgroundColor: '#E6F7EA' },
+  pillRejected: { backgroundColor: '#FEECEC' },
+  statusPillText: { fontSize: rf(10.5), fontWeight: '700' },
 
-  metaBlock: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  metaLabel: { fontSize: rf(10), color: '#9CA3AF', fontWeight: '600', marginBottom: 2 },
-  metaValue: { fontSize: rf(11), color: '#111827', fontWeight: '600' },
-  metaTimestamp: { fontSize: rf(10), color: '#6B7280', marginTop: 4 },
-
-  statusPill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
-  pillProcessing: { backgroundColor: '#F97316' },
-  pillApproved: { backgroundColor: '#004C40' },
-  pillRejected: { backgroundColor: '#EF4444' },
-  statusPillText: { color: '#FFFFFF', fontSize: rf(10), fontWeight: '700' },
-
-  leaveCols: { flexDirection: 'row', marginTop: 8, gap: 8 },
+  leaveCols: { flexDirection: 'row', marginTop: rs(7), gap: rs(8) },
   leaveCol: { flex: 1 },
-  leaveColValue: { fontSize: rf(11), fontWeight: '700', color: '#111827' },
-  leaveColLabel: { fontSize: rf(9), color: '#9CA3AF', marginTop: 2 },
-
-  empty: { fontSize: rf(12), color: '#6B7280', textAlign: 'center', paddingVertical: 14 },
+  leaveColValue: { fontSize: rf(12), fontWeight: '700', color: MINT.text },
+  leaveColLabel: { fontSize: rf(10.5), color: MINT.muted, marginTop: 2 },
 });

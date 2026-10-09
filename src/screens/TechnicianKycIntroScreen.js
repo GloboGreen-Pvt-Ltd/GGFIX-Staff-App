@@ -8,19 +8,19 @@ import { rf, rlh } from '../utils/responsive';
 // Brand green — matches the tab bar / My Account / My Profile.
 // Teal ramp, not three copies of one colour: these feed a 3-stop LinearGradient
 // and identical stops render as a flat block. Solid fills elsewhere in the file
-// still use the brand #004C40 via GREEN_DARK.
-const GREEN = '#005C4E';
-const GREEN_DARK = '#004C40';
-const GREEN_LIGHT = '#00695C';
-const GREEN_SOFT = '#DCFCE7';
-const TEXT = '#0F172A';
-const MUTED = '#64748B';
-const SUBTLE = '#94A3B8';
-const BORDER = '#E6EAF1';
+// still use the brand #09AD2A via GREEN_DARK.
+const GREEN = '#089E26';
+const GREEN_DARK = '#09AD2A';
+const GREEN_LIGHT = '#0BBF30';
+const GREEN_SOFT = '#E6F7EA';
+const TEXT = '#1E1E1E';
+const MUTED = '#6E6E6E';
+const SUBTLE = '#A3A3A3';
+const BORDER = '#ECECEC';
 
 const DOCS = [
-  { key: 'aadhar', icon: 'id-card-outline', title: 'Aadhar Card', desc: 'Front & back — identity proof', color: '#2563EB', soft: '#EFF6FF' },
-  { key: 'pan',    icon: 'card-outline',    title: 'PAN Card',    desc: 'For tax verification',       color: '#A21CAF', soft: '#FDF4FF' },
+  { key: 'aadhar', icon: 'id-card-outline', title: 'Aadhar Card', desc: 'Front & back — identity proof', color: '#09AD2A', soft: '#E6F7EA' },
+  { key: 'pan',    icon: 'card-outline',    title: 'PAN Card',    desc: 'For tax verification',       color: '#8A6700', soft: '#FDF6E0' },
 ];
 
 const STEPS = [
@@ -127,9 +127,9 @@ export default function TechnicianKycIntroScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
+  safe: { flex: 1, backgroundColor: '#F8F8F8' },
   scroll: { flex: 1 },
-  content: { padding: 16, paddingBottom: 36 },
+  content: { padding: 12, paddingBottom: 28 },
 
   // Hero
   hero: {
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.20)',
     alignItems: 'center', justifyContent: 'center', marginBottom: 14,
   },
-  heroTitle: { fontSize: rf(19), fontWeight: '800', color: '#FFFFFF' },
+  heroTitle: { fontSize: rf(17), fontWeight: '800', color: '#FFFFFF' },
   heroSubtitle: { fontSize: rf(12.5), color: 'rgba(255,255,255,0.92)', marginTop: 5, lineHeight: rlh(18) },
   heroChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 14,
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: BORDER,
     padding: 12, marginBottom: 10,
-    shadowColor: '#0F172A', shadowOpacity: 0.03, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+    shadowColor: '#1E1E1E', shadowOpacity: 0.03, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
   docIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   docTitle: { fontSize: rf(14), fontWeight: '800', color: TEXT },
@@ -179,8 +179,8 @@ const styles = StyleSheet.create({
 
   // How-it-works stepper
   card: {
-    backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: BORDER, padding: 16,
-    shadowColor: '#0F172A', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 1,
+    backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: BORDER, padding: 12,
+    shadowColor: '#1E1E1E', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 1,
   },
   stepRow: { flexDirection: 'row' },
   stepColLeft: { width: 30, alignItems: 'center' },
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     backgroundColor: GREEN,
     borderRadius: 14,
-    paddingVertical: 15,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -215,5 +215,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
-  buttonText: { fontSize: rf(15), fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.3 },
+  buttonText: { fontSize: rf(14), fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.3 },
 });

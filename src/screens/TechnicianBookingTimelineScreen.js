@@ -21,16 +21,24 @@ import {
 } from './common/serviceHistoryPhases';
 import { rf } from '../utils/responsive';
 
-const BRAND_GREEN_DARK = '#004C40';
+// Screen palette — GGFIX green / red on light neutrals, the same set the
+// restyled Home and Ticket Detail screens use.
+const GREEN = '#09AD2A';
+const GREEN_TINT = '#E6F7EA';
+const RED = '#F84141';
+const INK = '#1E1E1E';
+const MUTED = '#6E6E6E';
+const BG = '#F8F8F8';
+const BORDER = '#ECECEC';
 
 const cardShadow = {
   borderWidth: 1,
-  borderColor: '#E2E8E2',
-  shadowColor: '#172117',
-  shadowOpacity: 0.05,
-  shadowRadius: 10,
-  shadowOffset: { width: 0, height: 3 },
-  elevation: 2,
+  borderColor: BORDER,
+  shadowColor: INK,
+  shadowOpacity: 0.04,
+  shadowRadius: 6,
+  shadowOffset: { width: 0, height: 2 },
+  elevation: 1,
 };
 
 // Splits a tracking id into its letter prefix and trailing digits so the header
@@ -48,16 +56,16 @@ function splitTrackingId(id) {
 // screens/common/serviceHistoryPhases.
 function SectionHeader({ icon: Icon, label }) {
   return (
-    <View className="flex-row items-center mb-3">
+    <View className="flex-row items-center" style={{ marginBottom: 10 }}>
       <View
-        className="w-7 h-7 rounded-full items-center justify-center mr-2"
-        style={{ backgroundColor: '#E6F7E3' }}
+        className="rounded-full items-center justify-center mr-2"
+        style={{ width: 26, height: 26, backgroundColor: GREEN_TINT }}
       >
-        <Icon size={14} color={BRAND_GREEN_DARK} />
+        <Icon size={13} color={GREEN} />
       </View>
       <Text
-        className="font-extrabold tracking-widest text-gray-900"
-        style={{ fontSize: rf(11), letterSpacing: 1.2 }}
+        className="font-extrabold tracking-widest"
+        style={{ fontSize: rf(10.5), letterSpacing: 1.2, color: INK }}
       >
         {label}
       </Text>
@@ -80,17 +88,18 @@ export default function TechnicianBookingTimelineScreen({ route }) {
 
   const load = useCallback(async () => {
     if (!ticketId) return;
-    try {
-      const [t, ev] = await Promise.all([
-        getTicket(ticketId).catch(() => null),
-        listTicketEvents(ticketId).catch(() => []),
-      ]);
-      setTicket(t);
-      setEvents(Array.isArray(ev) ? ev : (ev?.content ?? []));
-      setError(null);
-    } catch (e) {
-      setError(e?.message || 'Failed to load history');
-    }
+    // Each half fails independently; a failed poll keeps the last good data
+    // instead of blanking the rail, and the error banner says what happened.
+    let failure = null;
+    const [t, ev] = await Promise.all([
+      getTicket(ticketId).catch((e) => { failure = e; return undefined; }),
+      listTicketEvents(ticketId).catch((e) => { failure = e; return undefined; }),
+    ]);
+    if (t !== undefined) setTicket(t);
+    if (ev !== undefined) setEvents(Array.isArray(ev) ? ev : (ev?.content ?? []));
+    setError(failure
+      ? `${failure.message || 'Failed to load history'}${failure.status ? ` (HTTP ${failure.status})` : ''}`
+      : null);
   }, [ticketId]);
 
   useFocusEffect(useCallback(() => {
@@ -104,9 +113,9 @@ export default function TechnicianBookingTimelineScreen({ route }) {
 
   if (loading) {
     return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: '#F0F8EF' }}>
-        <ActivityIndicator color={BRAND_GREEN_DARK} />
-        <Text className="text-text-muted mt-2" style={{ fontSize: rf(12) }}>Loading history…</Text>
+      <View className="flex-1 items-center justify-center" style={{ backgroundColor: BG }}>
+        <ActivityIndicator color={GREEN} />
+        <Text className="mt-2" style={{ fontSize: rf(12), color: MUTED }}>Loading history…</Text>
       </View>
     );
   }
@@ -115,43 +124,43 @@ export default function TechnicianBookingTimelineScreen({ route }) {
   const tid = splitTrackingId(ticket?.trackingId || ticketId);
 
   return (
-    <View className="flex-1" style={{ backgroundColor: '#F0F8EF' }}>
+    <View className="flex-1" style={{ backgroundColor: BG }}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* White header (slim — replaces the old green gradient hero) */}
+      {/* Slim white header: back button, title, ticket id pill */}
       <View
         style={{
           backgroundColor: '#FFFFFF',
           paddingTop: insets.top + 6,
-          paddingBottom: 14,
-          paddingHorizontal: 16,
+          paddingBottom: 10,
+          paddingHorizontal: 14,
           borderBottomWidth: 1,
-          borderBottomColor: '#E2E8E2',
+          borderBottomColor: BORDER,
         }}
       >
         <View className="flex-row items-center">
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             activeOpacity={0.7}
-            className="w-10 h-10 rounded-full items-center justify-center mr-3"
-            style={{ backgroundColor: '#EFF5EE' }}
+            className="rounded-full items-center justify-center mr-3"
+            style={{ width: 38, height: 38, backgroundColor: '#F3FBF4', borderWidth: 1, borderColor: '#E1F3E5' }}
           >
-            <ChevronLeft size={22} color="#172117" />
+            <ChevronLeft size={21} color={INK} strokeWidth={2.4} />
           </TouchableOpacity>
           <Text
-            className="flex-1 text-text font-extrabold"
-            style={{ fontSize: rf(17) }}
+            className="flex-1 font-extrabold"
+            style={{ fontSize: rf(16), color: INK }}
             numberOfLines={1}
           >
             Service History
           </Text>
           <View
             className="px-2.5 py-1 rounded-full"
-            style={{ maxWidth: 180, backgroundColor: '#E6F7E3' }}
+            style={{ maxWidth: 180, backgroundColor: GREEN_TINT }}
           >
-            <Text className="font-extrabold" style={{ fontSize: rf(11) }} numberOfLines={1}>
-              <Text style={{ color: '#172117' }}>#{tid.prefix}</Text>
-              <Text style={{ color: BRAND_GREEN_DARK }}>{tid.digits}</Text>
+            <Text className="font-extrabold" style={{ fontSize: rf(10.5) }} numberOfLines={1}>
+              <Text style={{ color: INK }}>#{tid.prefix}</Text>
+              <Text style={{ color: GREEN }}>{tid.digits}</Text>
             </Text>
           </View>
         </View>
@@ -160,53 +169,53 @@ export default function TechnicianBookingTimelineScreen({ route }) {
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 28 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={BRAND_GREEN_DARK}
-            colors={[BRAND_GREEN_DARK]}
+            tintColor={GREEN}
+            colors={[GREEN]}
           />
         }
       >
         <View style={{ width: contentW, alignSelf: 'center' }}>
           {/* Current status card */}
-          <View className="px-4" style={{ marginTop: 12 }}>
-            <View className="bg-white rounded-2xl p-4" style={cardShadow}>
+          <View style={{ paddingHorizontal: 12, marginTop: 10 }}>
+            <View className="bg-white" style={[{ borderRadius: 14, padding: 12 }, cardShadow]}>
               <View className="flex-row items-center">
                 <View
-                  className="w-12 h-12 rounded-full items-center justify-center mr-3"
-                  style={{ backgroundColor: '#E6F7E3' }}
+                  className="rounded-full items-center justify-center mr-2.5"
+                  style={{ width: 38, height: 38, backgroundColor: GREEN_TINT }}
                 >
-                  <Radio size={20} color={BRAND_GREEN_DARK} />
+                  <Radio size={17} color={GREEN} />
                 </View>
                 <View className="flex-1">
                   <Text
-                    className="uppercase font-bold text-gray-400"
-                    style={{ fontSize: rf(10.5), letterSpacing: 0.7 }}
+                    className="uppercase font-bold"
+                    style={{ fontSize: rf(9.5), letterSpacing: 0.7, color: '#A3A3A3' }}
                   >
                     Current Status
                   </Text>
-                  <Text className="font-extrabold text-gray-900 mt-0.5" style={{ fontSize: rf(15) }}>
+                  <Text className="font-extrabold mt-0.5" style={{ fontSize: rf(14), color: INK }}>
                     {currentLabel || 'Booking Placed'}
                   </Text>
                 </View>
                 <View
-                  className="w-8 h-8 rounded-full items-center justify-center"
-                  style={{ backgroundColor: '#E6F7E3' }}
+                  className="rounded-full items-center justify-center"
+                  style={{ width: 28, height: 28, backgroundColor: GREEN_TINT }}
                 >
-                  <Text className="font-extrabold" style={{ fontSize: rf(13), color: BRAND_GREEN_DARK }}>
+                  <Text className="font-extrabold" style={{ fontSize: rf(12), color: GREEN }}>
                     {events.length}
                   </Text>
                 </View>
               </View>
               <View
-                className="mt-3 pt-3 flex-row items-center"
-                style={{ borderTopWidth: 1, borderTopColor: '#EFF5EE' }}
+                className="flex-row items-center"
+                style={{ marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F3F3' }}
               >
-                <RotateCw size={11} color="#8FA08F" />
-                <Text className="ml-1.5 text-gray-500" style={{ fontSize: rf(10.5) }}>
+                <RotateCw size={11} color="#A3A3A3" />
+                <Text className="ml-1.5" style={{ fontSize: rf(10), color: MUTED }}>
                   {events.length} event{events.length === 1 ? '' : 's'} • Updated live • Pull to refresh
                 </Text>
               </View>
@@ -214,12 +223,12 @@ export default function TechnicianBookingTimelineScreen({ route }) {
           </View>
 
           {error ? (
-            <View className="px-4 mt-4">
+            <View style={{ paddingHorizontal: 12, marginTop: 10 }}>
               <View
-                className="rounded-2xl px-4 py-3"
-                style={{ backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' }}
+                className="px-3 py-2.5"
+                style={{ borderRadius: 12, backgroundColor: '#FEECEC', borderWidth: 1, borderColor: '#FBD0D0' }}
               >
-                <Text className="font-semibold" style={{ fontSize: rf(12.5), color: '#B91C1C' }}>
+                <Text className="font-semibold" style={{ fontSize: rf(12), color: RED }}>
                   {error}
                 </Text>
               </View>
@@ -227,8 +236,8 @@ export default function TechnicianBookingTimelineScreen({ route }) {
           ) : null}
 
           {/* Timeline */}
-          <View className="px-4" style={{ marginTop: 12 }}>
-            <View className="bg-white rounded-2xl p-4" style={cardShadow}>
+          <View style={{ paddingHorizontal: 12, marginTop: 10 }}>
+            <View className="bg-white" style={[{ borderRadius: 14, padding: 12 }, cardShadow]}>
               <SectionHeader icon={History} label="SERVICE TIMELINE" />
               <ServiceHistoryTimeline
                 events={events}

@@ -7,14 +7,39 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  Calendar, ChevronLeft, ChevronRight, Clock, ClockAlert, CircleCheck, LogIn, LogOut, Timer,
+} from 'lucide-react-native';
 import { useSelector } from 'react-redux';
 import { ticketApi } from '../api/client';
-import { useTechnicianId } from '../auth/useTechnicianId';
+import { useTechnicianIdState } from '../auth/useTechnicianId';
+import TechIdPending from '../components/TechIdPending';
 import { selectSession } from '../store/authSlice';
-import { rf } from '../utils/responsive';
+import { rf, rlh, rs } from '../utils/responsive';
+import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
+
+// Screen palette (GGFIX green + mint).
+const C = {
+  green: '#09AD2A',
+  deep: '#09AD2A',
+  primary: '#09AD2A',
+  mint: '#E6F7EA',
+  softMint: '#F3FBF4',
+  bg: '#F8F8F8',
+  card: '#FFFFFF',
+  border: '#E6E6E6',
+  text: '#1E1E1E',
+  muted: '#6E6E6E',
+  red: '#F84141',
+  softRed: '#FEECEC',
+  // Blue isn't in the palette — neutral grey + ink instead.
+  blue: '#1E1E1E',
+  softBlue: '#F3F3F3',
+};
+const MAX_CONTENT_WIDTH = 720;
 
 // Fallback duty start when the technician hasn't configured one yet. Matches
 // the placeholder in TechnicianProfileScreen so the per-day "Late HR's"
@@ -84,8 +109,10 @@ function pad2(n) {
   return String(n).padStart(2, '0');
 }
 
-export default function DailyAttendanceScreen() {
-  const technicianId = useTechnicianId();
+export default function DailyAttendanceScreen({ navigation }) {
+  useHideNativeHeader(navigation);
+  const { width: winW } = useWindowDimensions();
+  const { id: technicianId, failed: techIdFailed, retry: retryTechId } = useTechnicianIdState();
   const session = useSelector(selectSession);
   const dutyCheckIn = session?.defaultCheckIn || DEFAULT_DUTY_CHECK_IN;
   const now = new Date();
@@ -144,10 +171,18 @@ export default function DailyAttendanceScreen() {
     setYear(y);
   };
 
+  const contentW = Math.min(winW, MAX_CONTENT_WIDTH);
+  // Month controls sit beside the title on wide screens, on their own row on phones.
+  const monthInline = contentW >= 600;
+  // Status pill sits right of the date on wide cards, under it on narrow ones.
+  const pillInline = contentW >= 430;
+
   if (!technicianId) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.center}><ActivityIndicator color="#00008B" /></View>
+        <MintBackdrop />
+        <MintScreenHeader title="Daily Attendance" navigation={navigation} />
+        <TechIdPending failed={techIdFailed} onRetry={retryTechId} />
       </SafeAreaView>
     );
   }
@@ -158,35 +193,54 @@ export default function DailyAttendanceScreen() {
   const leaves = data?.leaveDays ?? 0;
   const holidays = data?.holidayCount ?? 0;
 
+  const monthControls = (
+    <View style={[styles.monthControls, !monthInline && styles.monthControlsStacked]}>
+      <TouchableOpacity onPress={() => stepMonth(-1)} style={styles.monthStepBtn} hitSlop={6} accessibilityLabel="Previous month">
+        <ChevronLeft size={rs(18)} color={C.text} strokeWidth={2.4} />
+      </TouchableOpacity>
+      <View style={[styles.monthPill, !monthInline && { flex: 1 }]}>
+        <Calendar size={rs(15)} color={C.green} />
+        <Text style={styles.monthPillText} numberOfLines={1}>{MONTHS[month - 1]} {year}</Text>
+      </View>
+      <TouchableOpacity onPress={() => stepMonth(1)} style={styles.monthStepBtn} hitSlop={6} accessibilityLabel="Next month">
+        <ChevronRight size={rs(18)} color={C.text} strokeWidth={2.4} />
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <MintBackdrop />
+      <MintScreenHeader title="Daily Attendance" navigation={navigation} />
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} colors={[C.deep]} tintColor={C.deep} />}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.dailySection}>
-          <View style={styles.dailyHeader}>
-            <Text style={styles.dailyTitle}>This Month</Text>
-            <View style={styles.dailyMonthPill}>
-              <TouchableOpacity onPress={() => stepMonth(-1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                <Ionicons name="chevron-back" size={12} color="#111827" />
-              </TouchableOpacity>
-              <Text style={styles.dailyMonthText}>{MONTHS[month - 1]} {year}</Text>
-              <TouchableOpacity onPress={() => stepMonth(1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                <Ionicons name="chevron-forward" size={12} color="#111827" />
-              </TouchableOpacity>
-              <View style={styles.dailyMonthBtn}>
-                <Ionicons name="calendar" size={12} color="#FFFFFF" />
+        <View style={{ width: contentW - rs(32) }}>
+          {/* This Month selector */}
+          <View style={styles.monthCard}>
+            <View style={styles.monthCardTop}>
+              <View style={styles.monthIconTile}>
+                <Calendar size={rs(20)} color={C.green} strokeWidth={2.2} />
               </View>
+              <View style={styles.monthTitleWrap}>
+                <Text style={styles.monthTitle} numberOfLines={1}>This Month</Text>
+                <Text style={styles.monthSubtitle} numberOfLines={2}>View your daily attendance records</Text>
+              </View>
+              {monthInline ? monthControls : null}
             </View>
+            {monthInline ? null : monthControls}
           </View>
 
           {loading && !data ? (
-            <ActivityIndicator size="large" color="#00008B" style={{ marginVertical: 24 }} />
+            <ActivityIndicator size="large" color={C.deep} style={{ marginVertical: rs(24) }} />
           ) : (data?.dailyRecords && data.dailyRecords.length > 0) ? (
-            data.dailyRecords.map((day) => <DayCard key={day.date} day={day} dutyCheckIn={dutyCheckIn} />)
+            data.dailyRecords.map((day) => <DayCard key={day.date} day={day} dutyCheckIn={dutyCheckIn} pillInline={pillInline} />)
           ) : (
-            <Text style={styles.empty}>No attendance records for this month.</Text>
+            <View style={styles.emptyCard}>
+              <Text style={styles.empty}>No attendance records for this month.</Text>
+            </View>
           )}
         </View>
       </ScrollView>
@@ -194,46 +248,77 @@ export default function DailyAttendanceScreen() {
   );
 }
 
-function StatRing({ value, label, color }) {
+// Day-of-week + day-of-month for the date tile, parsed locally like formatDateLabel.
+function dateTileParts(day) {
+  const parts = String(day?.date || '').split('-');
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  const dd = Number(parts[2]);
+  if (!y || !m || !dd) return null;
+  return { dow: DOW[new Date(y, m - 1, dd).getDay()], dd: pad2(dd) };
+}
+
+function StatusPill({ icon: Icon, bg, color, iconColor, text }) {
   return (
-    <View style={styles.statRingWrap}>
-      <View style={[styles.statRing, { borderColor: color }]}>
-        <Text style={styles.statRingValue}>{value}</Text>
-      </View>
-      <Text style={[styles.statRingLabel, { color }]}>{label}</Text>
+    <View style={[styles.statusPill, { backgroundColor: bg }]}>
+      {Icon ? <Icon size={rs(13)} color={iconColor || color} strokeWidth={2.4} /> : null}
+      <Text style={[styles.statusPillText, { color }]} numberOfLines={1}>{text}</Text>
     </View>
   );
 }
 
-function DayCard({ day, dutyCheckIn }) {
+function DayTop({ day, pillInline, children }) {
+  const tile = dateTileParts(day);
+  return (
+    <View style={styles.dayTopRow}>
+      {tile ? (
+        <View style={styles.dateTile}>
+          <Text style={styles.dateTileDow}>{tile.dow}</Text>
+          <Text style={styles.dateTileNum}>{tile.dd}</Text>
+        </View>
+      ) : null}
+      <View style={[styles.dayTopMain, pillInline && styles.dayTopMainInline]}>
+        <Text style={[styles.dayDate, pillInline && { flexShrink: 1, marginRight: rs(8) }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+          {formatDateLabel(day)}
+        </Text>
+        <View style={[styles.dayPills, !pillInline && { marginTop: rs(6) }]}>{children}</View>
+      </View>
+    </View>
+  );
+}
+
+function Metric({ icon: Icon, bg, iconBg, iconColor, value, valueColor, label }) {
+  return (
+    <View style={[styles.metric, { backgroundColor: bg }]}>
+      <View style={[styles.metricIcon, { backgroundColor: iconBg }]}>
+        <Icon size={rs(14)} color={iconColor} strokeWidth={2.2} />
+      </View>
+      <Text style={[styles.metricValue, { color: valueColor }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
+      <Text style={styles.metricLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{label}</Text>
+    </View>
+  );
+}
+
+function DayCard({ day, dutyCheckIn, pillInline }) {
   const status = (day.status || 'GENERAL').toUpperCase();
-  const dateLabel = formatDateLabel(day);
   if (status === 'LEAVE') {
     return (
-      <View style={[styles.dayCard, styles.dayCardLeave]}>
-        <View style={styles.dayLeftAccent} />
+      <View style={styles.dayCard}>
         <View style={styles.dayInner}>
-          <View style={styles.dayTopRow}>
-            <Text style={styles.dayDate}>{dateLabel}</Text>
-            <View style={[styles.dayPill, styles.dayPillLeave]}>
-              <Text style={styles.dayPillTextOn}>Leave</Text>
-            </View>
-          </View>
+          <DayTop day={day} pillInline={pillInline}>
+            <StatusPill icon={Calendar} bg="#FEF6E4" color="#B45309" text="Leave" />
+          </DayTop>
         </View>
       </View>
     );
   }
   if (status === 'WEEK_OFF') {
     return (
-      <View style={[styles.dayCard, styles.dayCardWeekOff]}>
-        <View style={styles.dayLeftAccent} />
+      <View style={styles.dayCard}>
         <View style={styles.dayInner}>
-          <View style={styles.dayTopRow}>
-            <Text style={styles.dayDate}>{dateLabel}</Text>
-            <View style={[styles.dayPill, styles.dayPillWeekOff]}>
-              <Text style={styles.dayPillTextOn}>Week Off</Text>
-            </View>
-          </View>
+          <DayTop day={day} pillInline={pillInline}>
+            <StatusPill icon={Calendar} bg="#FDEBF4" color="#BE185D" text="Week Off" />
+          </DayTop>
         </View>
       </View>
     );
@@ -246,52 +331,30 @@ function DayCard({ day, dutyCheckIn }) {
   const isLate = status === 'LATE' || lateMinutes > 0;
   const isPermission = status === 'PERMISSION';
   const lateLabel = lateMinutes > 0 ? formatDuration(lateMinutes) : null;
+  const onTimeColor = C.text;
   return (
     <View style={styles.dayCard}>
-      <View style={[styles.dayLeftAccent, isLate && { backgroundColor: '#DC2626' }]} />
+      {isLate ? <View style={styles.dayLeftAccent} /> : null}
       <View style={styles.dayInner}>
-        <View style={styles.dayTopRow}>
-          <Text style={styles.dayDate}>{dateLabel}</Text>
-          <View style={styles.dayTopRight}>
-            {isLate ? (
-              <View style={[styles.dayPill, styles.dayPillLate]}>
-                <Text style={styles.dayPillTextOn}>Late{lateLabel ? ` • ${lateLabel}` : ''}</Text>
-              </View>
-            ) : (
-              <View style={[styles.dayPill, styles.dayPillGeneral]}>
-                <Text style={styles.dayPillText}>General</Text>
-              </View>
-            )}
-            {isPermission ? (
-              <View style={[styles.dayPill, styles.dayPillPermission]}>
-                <Text style={styles.dayPillText}>{day.notes || 'Permission'}</Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-        <View style={styles.dayCols}>
-          <View style={styles.dayCol}>
-            <Text style={[styles.dayColValue, isLate && styles.dayColValueLate]}>
-              {formatTime12(day.checkInTime)}
-            </Text>
-            <Text style={styles.dayColLabel}>Check In</Text>
-          </View>
-          <View style={styles.dayCol}>
-            <Text style={styles.dayColValue}>{formatTime12(day.checkOutTime)}</Text>
-            <Text style={styles.dayColLabel}>Check Out</Text>
-          </View>
-          <View style={styles.dayCol}>
-            <Text style={[styles.dayColValue, isLate && styles.dayColValueLate]}>
-              {formatWorkingHours(day.workingHours)}
-            </Text>
-            <Text style={styles.dayColLabel}>Working HR's</Text>
-          </View>
-          <View style={styles.dayCol}>
-            <Text style={[styles.dayColValue, lateMinutes > 0 && styles.dayColValueLate]}>
-              {lateMinutes > 0 ? formatDuration(lateMinutes) : '—'}
-            </Text>
-            <Text style={styles.dayColLabel}>Late HR's</Text>
-          </View>
+        <DayTop day={day} pillInline={pillInline}>
+          {isLate ? (
+            <StatusPill icon={Clock} bg={C.softRed} color={C.red} text={`Late${lateLabel ? ` • ${lateLabel}` : ''}`} />
+          ) : (
+            <StatusPill icon={CircleCheck} bg={C.mint} iconColor={C.green} color={C.text} text="General" />
+          )}
+          {isPermission ? (
+            <StatusPill icon={Timer} bg={C.softBlue} color={C.blue} text={day.notes || 'Permission'} />
+          ) : null}
+        </DayTop>
+        <View style={styles.metricsRow}>
+          <Metric icon={LogIn} bg={C.softRed} iconBg="#FDDCDC" iconColor={C.red}
+                  value={formatTime12(day.checkInTime)} valueColor={isLate ? C.red : onTimeColor} label="Check In" />
+          <Metric icon={LogOut} bg={C.softMint} iconBg={C.mint} iconColor={C.deep}
+                  value={formatTime12(day.checkOutTime)} valueColor={onTimeColor} label="Check Out" />
+          <Metric icon={Clock} bg={C.softBlue} iconBg="#E6E6E6" iconColor={C.blue}
+                  value={formatWorkingHours(day.workingHours)} valueColor={isLate ? C.red : onTimeColor} label="Working HR's" />
+          <Metric icon={ClockAlert} bg={C.softRed} iconBg="#FDDCDC" iconColor={C.red}
+                  value={lateMinutes > 0 ? formatDuration(lateMinutes) : '—'} valueColor={lateMinutes > 0 ? C.red : onTimeColor} label="Late HR's" />
         </View>
       </View>
     </View>
@@ -343,86 +406,73 @@ function formatDateLabel(day) {
   return `${dow}, ${pad2(dd)} ${MONTHS_SHORT[m - 1]} ${y}`;
 }
 
+const cardShadow = {
+  shadowColor: '#1E1E1E', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+};
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { padding: 12, paddingBottom: 24 },
+  safe: { flex: 1, backgroundColor: C.bg },
+  content: { alignItems: 'center', paddingTop: rs(2), paddingBottom: rs(16) },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  error: { fontSize: rf(14), color: '#DC2626' },
 
-  card: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  cardTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-
+  // This Month card
+  monthCard: {
+    backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border,
+    paddingVertical: rs(9), paddingHorizontal: rs(12), marginBottom: rs(8), ...cardShadow,
+  },
+  monthCardTop: { flexDirection: 'row', alignItems: 'center' },
+  monthIconTile: {
+    width: rs(38), height: rs(38), borderRadius: rs(11), backgroundColor: C.mint,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  monthTitleWrap: { flex: 1, flexShrink: 1, marginLeft: rs(10), marginRight: rs(8) },
+  monthTitle: { fontSize: rf(16), fontWeight: '800', color: C.text },
+  monthSubtitle: { fontSize: rf(11.5), color: C.muted, marginTop: 1 },
+  monthControls: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
+  monthControlsStacked: { marginTop: rs(8) },
+  monthStepBtn: {
+    width: rs(32), height: rs(32), borderRadius: rs(16), backgroundColor: C.card,
+    borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center',
+  },
   monthPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1E3A8A',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    gap: 6,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6),
+    backgroundColor: C.mint, borderWidth: 1, borderColor: '#CDEFD5', borderRadius: 999,
+    paddingHorizontal: rs(14), paddingVertical: rs(6),
   },
-  monthPillText: { color: '#FFFFFF', fontSize: rf(11), fontWeight: '700' },
-  monthPillSep: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)' },
+  monthPillText: { fontSize: rf(13), fontWeight: '700', color: C.text, flexShrink: 1 },
 
-  statRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  statRingWrap: { alignItems: 'center', flex: 1 },
-  statRing: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
+  // Day card
+  dayCard: {
+    flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border,
+    marginBottom: rs(7), overflow: 'hidden', ...cardShadow,
   },
-  statRingValue: { fontSize: rf(12), fontWeight: '800', color: '#111827' },
-  statRingLabel: { fontSize: rf(10), fontWeight: '700', marginTop: 4 },
+  dayLeftAccent: { width: rs(4), backgroundColor: C.red },
+  dayInner: { flex: 1, padding: rs(9) },
+  dayTopRow: { flexDirection: 'row', alignItems: 'center' },
+  dateTile: {
+    minWidth: rs(44), paddingHorizontal: rs(6), paddingVertical: rs(4), borderRadius: rs(11),
+    backgroundColor: C.softMint, borderWidth: 1, borderColor: '#E1F3E5', alignItems: 'center', marginRight: rs(9),
+  },
+  dateTileDow: { fontSize: rf(10), fontWeight: '700', color: C.muted, letterSpacing: 0.5 },
+  dateTileNum: { fontSize: rf(18), fontWeight: '800', color: C.text, marginTop: -2 },
+  dayTopMain: { flex: 1 },
+  dayTopMainInline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  dayDate: { fontSize: rf(14.5), fontWeight: '800', color: C.text },
+  dayPills: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(5) },
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(5), alignSelf: 'flex-start',
+    paddingHorizontal: rs(9), paddingVertical: rs(3), borderRadius: 999, maxWidth: '100%',
+  },
+  statusPillText: { fontSize: rf(11.5), fontWeight: '700', flexShrink: 1 },
 
-  calendar: { marginTop: 4, marginBottom: 8 },
-  calRowHeader: { flexDirection: 'row', marginBottom: 6 },
-  calRow: { flexDirection: 'row' },
-  calCell: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
-  calHeaderCell: { flex: 1, textAlign: 'center', fontSize: rf(10), fontWeight: '800', color: '#374151' },
-  calHeaderSunday: { color: '#DC2626' },
-  calCellNum: { fontSize: rf(13), fontWeight: '600', color: '#111827' },
-  calCellSunday: { color: '#DC2626' },
-  calDot: { width: 6, height: 6, borderRadius: 3, marginTop: 2 },
+  metricsRow: { flexDirection: 'row', gap: rs(5), marginTop: rs(7) },
+  metric: { flex: 1, borderRadius: rs(11), paddingHorizontal: rs(6), paddingVertical: rs(6) },
+  metricIcon: { width: rs(24), height: rs(24), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center' },
+  metricValue: { fontSize: rf(13.5), fontWeight: '800', marginTop: rs(4) },
+  metricLabel: { fontSize: rf(10), lineHeight: rlh(13), color: C.muted, marginTop: 1 },
 
-  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { fontSize: rf(11), color: '#374151', fontWeight: '500' },
-
-  dailySection: { marginTop: 14 },
-  dailyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  dailyTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  dailyMonthPill: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dailyMonthText: { fontSize: rf(12), fontWeight: '700', color: '#111827' },
-  dailyMonthBtn: { backgroundColor: '#1E1EAC', width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-
-  dayCard: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 10, marginBottom: 8, overflow: 'hidden' },
-  dayCardLeave: { backgroundColor: '#FCA5A5' },
-  dayCardWeekOff: { backgroundColor: '#F9A8D4' },
-  dayLeftAccent: { width: 3, backgroundColor: '#1E1EAC' },
-  dayInner: { flex: 1, padding: 10 },
-  dayTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  dayTopRight: { flexDirection: 'row', gap: 6 },
-  dayDate: { fontSize: rf(12), fontWeight: '700', color: '#111827' },
-  dayPill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
-  dayPillGeneral: { backgroundColor: '#DCFCE7' },
-  dayPillPermission: { backgroundColor: '#FEE2E2' },
-  dayPillLeave: { backgroundColor: '#EF4444' },
-  dayPillLate: { backgroundColor: '#DC2626' },
-  dayPillWeekOff: { backgroundColor: '#DB2777' },
-  dayPillText: { fontSize: rf(10), fontWeight: '700', color: '#111827' },
-  dayPillTextOn: { fontSize: rf(10), fontWeight: '700', color: '#FFFFFF' },
-
-  dayCols: { flexDirection: 'row', marginTop: 8 },
-  dayCol: { flex: 1 },
-  dayColValue: { fontSize: rf(12), fontWeight: '700', color: '#004C40' },
-  dayColValueLate: { color: '#DC2626' },
-  dayColLabel: { fontSize: rf(10), color: '#6B7280', marginTop: 2 },
-
-  empty: { fontSize: rf(13), color: '#6B7280', textAlign: 'center', paddingVertical: 20 },
+  emptyCard: {
+    backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border, ...cardShadow,
+  },
+  empty: { fontSize: rf(13), color: C.muted, textAlign: 'center', paddingVertical: rs(20) },
 });

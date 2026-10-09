@@ -7,15 +7,37 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  Calendar, CalendarCheck, CalendarDays, ChartColumn, ChevronLeft, ChevronRight,
+  ClipboardList, Clock, Clock3, UserRound,
+} from 'lucide-react-native';
 import { useSelector } from 'react-redux';
 import { ticketApi } from '../api/client';
-import { useTechnicianId } from '../auth/useTechnicianId';
+import { useTechnicianIdState } from '../auth/useTechnicianId';
+import TechIdPending from '../components/TechIdPending';
 import { selectSession } from '../store/authSlice';
 import { effectiveLateMinutes } from './DailyAttendanceScreen';
-import { rf } from '../utils/responsive';
+import { rf, rlh, rs } from '../utils/responsive';
+import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
+
+// Screen palette (GGFIX green + mint).
+const C = {
+  deep: '#09AD2A',
+  primary: '#09AD2A',
+  bright: '#09AD2A',
+  mint: '#E6F7EA',
+  softMint: '#F3FBF4',
+  bg: '#F8F8F8',
+  card: '#FFFFFF',
+  border: '#E6E6E6',
+  text: '#1E1E1E',
+  muted: '#6E6E6E',
+  softRed: '#FEECEC',
+};
+const MAX_CONTENT_WIDTH = 720;
 
 // Monthly Summary = the Attendance Overview card (stat rings + calendar +
 // legend). The day-by-day "Attendance Monthly" list lives on the separate
@@ -28,26 +50,28 @@ const MONTHS = [
 const DOW = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 const STATUS_COLORS = {
-  LEAVE: '#DB2777',
-  LATE: '#EAB308',
-  PERMISSION: '#F97316',
-  WEEK_OFF: '#F472B6',
-  HOLIDAY: '#004C40',
+  LEAVE: '#F84141',
+  LATE: '#F3BF23',
+  PERMISSION: '#1E1E1E',
+  WEEK_OFF: '#BDBDBD',
+  HOLIDAY: '#09AD2A',
 };
 const RING_COLORS = {
-  present: '#004C40',
-  late: '#EAB308',
-  permission: '#F97316',
-  leaves: '#DB2777',
-  holidays: '#1E3A8A',
+  present: '#09AD2A',
+  late: '#F3BF23',
+  permission: '#1E1E1E',
+  leaves: '#F84141',
+  holidays: '#8C8C8C',
 };
 
 function pad2(n) {
   return String(n).padStart(2, '0');
 }
 
-export default function MonthlySummaryScreen() {
-  const technicianId = useTechnicianId();
+export default function MonthlySummaryScreen({ navigation }) {
+  useHideNativeHeader(navigation);
+  const { width: winW } = useWindowDimensions();
+  const { id: technicianId, failed: techIdFailed, retry: retryTechId } = useTechnicianIdState();
   const session = useSelector(selectSession);
   const dutyCheckIn = session?.defaultCheckIn || '09:30:00';
   const now = new Date();
@@ -105,14 +129,6 @@ export default function MonthlySummaryScreen() {
     setMonth(m);
     setYear(y);
   };
-
-  if (!technicianId) {
-    return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.center}><ActivityIndicator color="#00008B" /></View>
-      </SafeAreaView>
-    );
-  }
 
   // Aggregate the overview rings from the day-by-day records rather than
   // trusting backend-supplied totals. Going row-by-row keeps the rings in
@@ -184,67 +200,107 @@ export default function MonthlySummaryScreen() {
       .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   }, [data, dutyCheckIn]);
 
+  if (!technicianId) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <MintBackdrop />
+        <MintScreenHeader title="Monthly Summary" navigation={navigation} />
+        <TechIdPending failed={techIdFailed} onRetry={retryTechId} />
+      </SafeAreaView>
+    );
+  }
+
+  // Layout maths: 5 KPI cards always share one row; widths come from the card's
+  // inner width so the fifth card never clips.
+  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(32);
+  const cardInnerW = contentW - rs(12) * 2 - 2;
+  const kpiGap = rs(8);
+  const kpiW = (cardInnerW - kpiGap * 4) / 5;
+  const ringSize = Math.min(kpiW - rs(10), rs(54));
+  // Month control sits top-right when there's room, under the title otherwise.
+  const monthInline = contentW >= 400;
+
+  const monthControl = (
+    <View style={[styles.monthPill, !monthInline && styles.monthPillStacked]}>
+      <Calendar size={rs(16)} color="#FFFFFF" />
+      <Text style={[styles.monthPillText, !monthInline && { flex: 1 }]} numberOfLines={1}>{MONTHS[month - 1]} {year}</Text>
+      <View style={styles.monthStepGroup}>
+        <TouchableOpacity onPress={() => stepMonth(-1)} hitSlop={6} style={styles.monthStepBtn} accessibilityLabel="Previous month">
+          <ChevronLeft size={rs(17)} color="#FFFFFF" strokeWidth={2.4} />
+        </TouchableOpacity>
+        <View style={styles.monthPillSep} />
+        <TouchableOpacity onPress={() => stepMonth(1)} hitSlop={6} style={styles.monthStepBtn} accessibilityLabel="Next month">
+          <ChevronRight size={rs(17)} color="#FFFFFF" strokeWidth={2.4} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <MintBackdrop />
+      <MintScreenHeader title="Monthly Summary" navigation={navigation} />
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} colors={[C.deep]} tintColor={C.deep} />}
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.card}>
-          <View style={styles.headerRow}>
-            <Text style={styles.cardTitle}>Attendance{'\n'}Overview</Text>
-            <View style={styles.monthPill}>
-              <Text style={styles.monthPillText}>{MONTHS[month - 1]} {year}</Text>
-              <TouchableOpacity onPress={() => stepMonth(-1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                <Ionicons name="chevron-back" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
-              <View style={styles.monthPillSep} />
-              <TouchableOpacity onPress={() => stepMonth(1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-                <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
-              </TouchableOpacity>
+        <View style={{ width: contentW }}>
+          {/* Attendance Overview + month selector + KPI cards */}
+          <View style={styles.card}>
+            <View style={styles.headerRow}>
+              <View style={styles.headerTitleWrap}>
+                <View style={styles.iconTile}>
+                  <ChartColumn size={rs(22)} color={C.bright} strokeWidth={2.6} />
+                </View>
+                <Text style={styles.cardTitle} numberOfLines={2}>Attendance{'\n'}Overview</Text>
+              </View>
+              {monthInline ? monthControl : null}
             </View>
+            {monthInline ? null : monthControl}
+
+            {loading && !data ? (
+              <ActivityIndicator size="large" color={C.deep} style={{ marginVertical: rs(24) }} />
+            ) : (
+              <View style={[styles.statRow, { gap: kpiGap }]}>
+                <KpiCard width={kpiW} ring={ringSize} icon={UserRound} value={present} label="Present" color={RING_COLORS.present} bg="#E6F7EA" />
+                <KpiCard width={kpiW} ring={ringSize} icon={Clock3} value={`${late} Hrs`} label="Late" color={RING_COLORS.late} bg="#FDF6E0" />
+                <KpiCard width={kpiW} ring={ringSize} icon={ClipboardList} value={pad2(permission)} label="Permission" color={RING_COLORS.permission} bg="#F3F3F3" />
+                <KpiCard width={kpiW} ring={ringSize} icon={CalendarDays} value={pad2(leaves)} label="Leaves" color={RING_COLORS.leaves} bg="#FEECEC" />
+                <KpiCard width={kpiW} ring={ringSize} icon={CalendarCheck} value={pad2(holidays)} label="Holidays" color={RING_COLORS.holidays} bg="#F3F3F3" />
+              </View>
+            )}
           </View>
 
-          {loading && !data ? (
-            <ActivityIndicator size="large" color="#00008B" style={{ marginVertical: 24 }} />
-          ) : (
-            <>
-              <View style={styles.statRow}>
-                <StatRing value={present} label="Present" color={RING_COLORS.present} />
-                <StatRing value={`${late} Hrs`} label="Late" color={RING_COLORS.late} />
-                <StatRing value={pad2(permission)} label="Permission" color={RING_COLORS.permission} />
-                <StatRing value={pad2(leaves)} label="Leaves" color={RING_COLORS.leaves} />
-                <StatRing value={pad2(holidays)} label="Holidays" color={RING_COLORS.holidays} />
-              </View>
-
-              <View style={styles.calendar}>
-                <View style={styles.calRowHeader}>
-                  {DOW.map((d, i) => (
-                    <Text key={d} style={[styles.calHeaderCell, i === 0 && styles.calHeaderSunday]}>
-                      {d}
-                    </Text>
-                  ))}
-                </View>
-                {grid.map((week, wi) => (
-                  <View key={wi} style={styles.calRow}>
-                    {week.map((cell, ci) => {
-                      if (!cell) return <View key={ci} style={styles.calCell} />;
-                      const isSunday = ci === 0;
-                      const status = (cell.record?.status || '').toUpperCase();
-                      const effectiveStatus = status || (isSunday ? 'WEEK_OFF' : null);
-                      const dotColor = STATUS_COLORS[effectiveStatus];
-                      return (
-                        <View key={ci} style={styles.calCell}>
-                          <Text style={[styles.calCellNum, isSunday && styles.calCellSunday]}>
-                            {cell.day}
-                          </Text>
-                          {dotColor ? <View style={[styles.calDot, { backgroundColor: dotColor }]} /> : null}
-                        </View>
-                      );
-                    })}
-                  </View>
+          {/* Calendar + legend */}
+          {loading && !data ? null : (
+            <View style={[styles.card, { marginTop: rs(8) }]}>
+              <View style={styles.calRowHeader}>
+                {DOW.map((d, i) => (
+                  <Text key={d} style={[styles.calHeaderCell, i === 0 && styles.calHeaderSunday]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                    {d}
+                  </Text>
                 ))}
               </View>
+              {grid.map((week, wi) => (
+                <View key={wi} style={styles.calRow}>
+                  {week.map((cell, ci) => {
+                    if (!cell) return <View key={ci} style={styles.calCell} />;
+                    const isSunday = ci === 0;
+                    const status = (cell.record?.status || '').toUpperCase();
+                    const effectiveStatus = status || (isSunday ? 'WEEK_OFF' : null);
+                    const dotColor = STATUS_COLORS[effectiveStatus];
+                    return (
+                      <View key={ci} style={styles.calCell}>
+                        <Text style={[styles.calCellNum, isSunday && styles.calCellSunday]}>
+                          {cell.day}
+                        </Text>
+                        <View style={[styles.calDot, dotColor ? { backgroundColor: dotColor } : null]} />
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
 
               <View style={styles.legendRow}>
                 {[
@@ -260,32 +316,38 @@ export default function MonthlySummaryScreen() {
                   </View>
                 ))}
               </View>
-            </>
+            </View>
+          )}
+
+          {!loading && lateDays.length > 0 && (
+            <View style={[styles.card, { marginTop: rs(8) }]}>
+              <View style={styles.lateHeader}>
+                <View style={styles.lateIcon}>
+                  <Clock size={rs(20)} color={C.deep} strokeWidth={2.4} />
+                </View>
+                <Text style={styles.lateTitle} numberOfLines={2}>Late Days Breakdown</Text>
+                <View style={styles.lateTotalPill}>
+                  <Text style={styles.lateTotalText} numberOfLines={1}>Total {late} Hrs</Text>
+                </View>
+              </View>
+              {lateDays.map((r) => (
+                <View key={r.date} style={styles.lateRow}>
+                  <View style={styles.lateRowIcon}>
+                    <Calendar size={rs(18)} color={C.deep} strokeWidth={2.2} />
+                  </View>
+                  <View style={styles.lateRowLeft}>
+                    <Text style={styles.lateRowDate} numberOfLines={1}>{formatLateDate(r.date)}</Text>
+                    <Text style={styles.lateRowSub} numberOfLines={1}>Check-in {formatTime12(r.checkInTime)}</Text>
+                  </View>
+                  <View style={styles.lateRowPill}>
+                    <Text style={styles.lateRowPillText} numberOfLines={1}>{formatDuration(r._effectiveLateMinutes)}</Text>
+                  </View>
+                  <ChevronRight size={rs(18)} color="#98A2B3" style={{ marginLeft: rs(6) }} />
+                </View>
+              ))}
+            </View>
           )}
         </View>
-
-        {!loading && lateDays.length > 0 && (
-          <View style={[styles.card, { marginTop: 12 }]}>
-            <View style={styles.lateHeader}>
-              <View style={styles.lateAccent} />
-              <Text style={styles.cardTitle}>Late Days Breakdown</Text>
-              <View style={styles.lateTotalPill}>
-                <Text style={styles.lateTotalText}>Total {late} Hrs</Text>
-              </View>
-            </View>
-            {lateDays.map((r) => (
-              <View key={r.date} style={styles.lateRow}>
-                <View style={styles.lateRowLeft}>
-                  <Text style={styles.lateRowDate}>{formatLateDate(r.date)}</Text>
-                  <Text style={styles.lateRowSub}>Check-in {formatTime12(r.checkInTime)}</Text>
-                </View>
-                <View style={styles.lateRowPill}>
-                  <Text style={styles.lateRowPillText}>{formatDuration(r._effectiveLateMinutes)}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -323,75 +385,105 @@ function formatLateDate(iso) {
   return `${dow}, ${pad2(dd)} ${mon} ${y}`;
 }
 
-function StatRing({ value, label, color }) {
+function KpiCard({ width, ring, icon: Icon, value, label, color, bg }) {
   return (
-    <View style={styles.statRingWrap}>
-      <View style={[styles.statRing, { borderColor: color }]}>
-        <Text style={styles.statRingValue}>{value}</Text>
+    <View style={[styles.kpiCard, { width, backgroundColor: bg }]}>
+      <View style={[styles.kpiRing, { width: ring, height: ring, borderRadius: ring / 2, borderColor: color }]}>
+        <Icon size={Math.max(12, ring * 0.24)} color={color} strokeWidth={2.4} />
+        <Text style={styles.kpiValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{value}</Text>
       </View>
-      <Text style={[styles.statRingLabel, { color }]}>{label}</Text>
+      <Text style={styles.kpiLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65}>{label}</Text>
     </View>
   );
 }
 
+const cardShadow = {
+  shadowColor: '#1E1E1E', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+};
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { padding: 12, paddingBottom: 32 },
+  safe: { flex: 1, backgroundColor: C.bg },
+  content: { alignItems: 'center', paddingTop: rs(2), paddingBottom: rs(16) },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  card: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 14 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  cardTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
+  card: {
+    backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border,
+    padding: rs(10), ...cardShadow,
+  },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerTitleWrap: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: rs(8) },
+  iconTile: {
+    width: rs(36), height: rs(36), borderRadius: rs(11), backgroundColor: C.mint,
+    alignItems: 'center', justifyContent: 'center', marginRight: rs(9),
+  },
+  cardTitle: { fontSize: rf(16), fontWeight: '800', color: C.text, lineHeight: rlh(20), flexShrink: 1 },
 
   monthPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1E3A8A',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    gap: 6,
+    flexDirection: 'row', alignItems: 'center', gap: rs(6),
+    backgroundColor: C.deep, borderRadius: rs(12),
+    paddingLeft: rs(10), paddingRight: rs(4), paddingVertical: rs(4),
   },
-  monthPillText: { color: '#FFFFFF', fontSize: rf(11), fontWeight: '700' },
-  monthPillSep: { width: 1, height: 12, backgroundColor: 'rgba(255,255,255,0.3)' },
-
-  statRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  statRingWrap: { alignItems: 'center', flex: 1 },
-  statRing: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
+  monthPillStacked: { marginTop: rs(8) },
+  monthPillText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '700', flexShrink: 1 },
+  monthStepGroup: {
+    flexDirection: 'row', alignItems: 'center', borderRadius: rs(10),
+    backgroundColor: 'rgba(255,255,255,0.16)',
   },
-  statRingValue: { fontSize: rf(12), fontWeight: '800', color: '#111827' },
-  statRingLabel: { fontSize: rf(10), fontWeight: '700', marginTop: 4 },
+  monthStepBtn: { paddingHorizontal: rs(7), paddingVertical: rs(4) },
+  monthPillSep: { width: 1, height: rs(14), backgroundColor: 'rgba(255,255,255,0.35)' },
 
-  calendar: { marginTop: 4, marginBottom: 8 },
-  calRowHeader: { flexDirection: 'row', marginBottom: 6 },
+  statRow: { flexDirection: 'row', marginTop: rs(10) },
+  kpiCard: { alignItems: 'center', borderRadius: rs(14), paddingVertical: rs(7) },
+  kpiRing: {
+    borderWidth: 3, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFFFFF', paddingHorizontal: 3,
+  },
+  kpiValue: { fontSize: rf(12), fontWeight: '800', color: C.text, marginTop: 1 },
+  kpiLabel: { fontSize: rf(11), fontWeight: '700', color: C.text, marginTop: rs(5), paddingHorizontal: 2 },
+
+  calRowHeader: {
+    flexDirection: 'row', backgroundColor: '#F3F3F3', borderRadius: rs(11),
+    paddingVertical: rs(6), marginBottom: rs(4),
+  },
   calRow: { flexDirection: 'row' },
-  calCell: { flex: 1, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
-  calHeaderCell: { flex: 1, textAlign: 'center', fontSize: rf(10), fontWeight: '800', color: '#374151' },
-  calHeaderSunday: { color: '#DC2626' },
-  calCellNum: { fontSize: rf(13), fontWeight: '600', color: '#111827' },
-  calCellSunday: { color: '#DC2626' },
-  calDot: { width: 6, height: 6, borderRadius: 3, marginTop: 2 },
+  calCell: { flex: 1, height: rs(38), alignItems: 'center', justifyContent: 'center' },
+  calHeaderCell: { flex: 1, textAlign: 'center', fontSize: rf(10.5), fontWeight: '700', color: C.text },
+  calHeaderSunday: { color: '#F84141' },
+  calCellNum: { fontSize: rf(13.5), fontWeight: '600', color: C.text },
+  calCellSunday: { color: '#F84141' },
+  calDot: { width: rs(6), height: rs(6), borderRadius: rs(3), marginTop: rs(2) },
 
-  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { fontSize: rf(11), color: '#374151', fontWeight: '500' },
+  legendRow: {
+    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: rs(10), rowGap: rs(4),
+    backgroundColor: '#F8F8F8', borderRadius: rs(11), paddingVertical: rs(7), paddingHorizontal: rs(6), marginTop: rs(6),
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: rs(4) },
+  legendDot: { width: rs(8), height: rs(8), borderRadius: rs(4) },
+  legendText: { fontSize: rf(11), color: C.text, fontWeight: '500' },
 
-  lateHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  lateAccent: { width: 3, height: 16, borderRadius: 2, backgroundColor: '#DC2626', marginRight: 8 },
-  lateTotalPill: { marginLeft: 'auto', backgroundColor: '#FEE2E2', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  lateTotalText: { fontSize: rf(11), fontWeight: '700', color: '#B91C1C' },
-  lateRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#F3F4F6' },
-  lateRowLeft: { flex: 1 },
-  lateRowDate: { fontSize: rf(12), fontWeight: '700', color: '#111827' },
-  lateRowSub: { fontSize: rf(10), color: '#6B7280', marginTop: 2 },
-  lateRowPill: { backgroundColor: '#FEF2F2', borderColor: '#FECACA', borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  lateRowPillText: { fontSize: rf(12), fontWeight: '800', color: '#DC2626' },
+  lateHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: rs(2) },
+  lateIcon: {
+    width: rs(32), height: rs(32), borderRadius: rs(16), backgroundColor: C.mint,
+    alignItems: 'center', justifyContent: 'center', marginRight: rs(9),
+  },
+  lateTitle: { flex: 1, flexShrink: 1, fontSize: rf(15), fontWeight: '800', color: C.text, marginRight: rs(8) },
+  lateTotalPill: { backgroundColor: C.softRed, paddingHorizontal: rs(10), paddingVertical: rs(4), borderRadius: 999 },
+  lateTotalText: { fontSize: rf(12), fontWeight: '700', color: '#F84141' },
+  lateRow: {
+    flexDirection: 'row', alignItems: 'center', marginTop: rs(7), minHeight: rs(52),
+    borderWidth: 1, borderColor: '#ECECEC', borderRadius: rs(13), paddingHorizontal: rs(10), paddingVertical: rs(7),
+    backgroundColor: C.card,
+  },
+  lateRowIcon: {
+    width: rs(32), height: rs(32), borderRadius: rs(16), backgroundColor: C.mint,
+    alignItems: 'center', justifyContent: 'center', marginRight: rs(10),
+  },
+  lateRowLeft: { flex: 1, marginRight: rs(8) },
+  lateRowDate: { fontSize: rf(13.5), fontWeight: '700', color: C.text },
+  lateRowSub: { fontSize: rf(11.5), color: C.muted, marginTop: 1 },
+  lateRowPill: {
+    backgroundColor: C.softRed, borderColor: '#FBD0D0', borderWidth: 1,
+    paddingHorizontal: rs(10), paddingVertical: rs(3), borderRadius: rs(10),
+  },
+  lateRowPillText: { fontSize: rf(12.5), fontWeight: '800', color: '#F84141' },
 });

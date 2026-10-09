@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
-  Pressable,
   Modal,
   Platform,
   TextInput,
@@ -25,6 +24,13 @@ import {
 import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
 import { rf } from '../utils/responsive';
+
+// GGFIX palette, same as Ticket Detail.
+const C = {
+  green: '#09AD2A', greenTint: '#E6F7EA', red: '#F84141',
+  ink: '#1E1E1E', muted: '#6E6E6E', faint: '#A3A3A3',
+  bg: '#F8F8F8', border: '#ECECEC', line: '#D4D4D4',
+};
 
 // "New Issue Solution Pack Upload" screen.
 //
@@ -107,19 +113,24 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
 
   const pickFromDocument = useCallback(async (kind) => {
     const mimeMap = { audio: 'audio/*', video: 'video/*' };
-    const res = await DocumentPicker.getDocumentAsync({
-      copyToCacheDirectory: true,
-      type: mimeMap[kind],
-    });
-    if (res.canceled) return;
-    const a = res.assets?.[0];
-    if (!a?.uri) return;
-    const payload = { uri: a.uri, name: a.name, type: a.mimeType };
-    if (kind === 'audio') setAudio(payload);
-    else if (kind === 'video') setVideo(payload);
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        type: mimeMap[kind],
+      });
+      if (res.canceled) return;
+      const a = res.assets?.[0];
+      if (!a?.uri) return;
+      const payload = { uri: a.uri, name: a.name || `${kind}-${Date.now()}`, type: a.mimeType || `${kind}/*` };
+      if (kind === 'audio') setAudio(payload);
+      else if (kind === 'video') setVideo(payload);
+    } catch (e) {
+      notify('Could not open files', e?.message || 'Please try again.');
+    }
   }, []);
 
   const pickImage = useCallback(async (index) => {
+    try {
     if (Platform.OS !== 'web') {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
@@ -130,7 +141,7 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
     // allowsEditing:false disables the system crop step. We also omit `aspect`
     // so the image is preserved at its original ratio.
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.8,
     });
@@ -139,18 +150,26 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
     if (!a?.uri) return;
     setImages((prev) => {
       const next = [...prev];
-      next[index] = { uri: a.uri, name: a.fileName, type: a.mimeType };
+      next[index] = { uri: a.uri, name: a.fileName || `image-${index + 1}.jpg`, type: a.mimeType || 'image/jpeg' };
       return next;
     });
+    } catch (e) {
+      notify('Could not open gallery', e?.message || 'Please try again.');
+    }
   }, []);
 
   // ---------- submit ----------
 
-  const canSubmit = brand?.id && model?.id && mainCat?.id && (audio || video || images.some(Boolean));
+  const hasFile = !!(audio || video || images.some(Boolean));
+  const canSubmit = !!mainCat?.id && hasFile;
 
   const handleSubmit = async () => {
-    if (!canSubmit) {
-      notify('Missing fields', 'Pick an issue category and attach at least one file.');
+    if (!mainCat?.id) {
+      notify('Select a category', 'Pick the issue main category first.');
+      return;
+    }
+    if (!hasFile) {
+      notify('Attach a file', 'Add at least one audio, video or image.');
       return;
     }
     setSubmitting(true);
@@ -191,10 +210,10 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
         description: null,
         fileUrl: files[0]?.url || null,
         fileName: files[0]?.name || null,
-        brandId: brand.id,
-        modelId: model.id,
-        brandName: brand.name,
-        modelName: model.name,
+        brandId: brand?.id || null,
+        modelId: model?.id || null,
+        brandName: brand?.name || null,
+        modelName: model?.name || defaults?.deviceName || null,
         issueCategory: mainCat.name,
         issueSubcategory: subCat?.name || null,
         issueName: issueName.trim() || null,
@@ -205,6 +224,7 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
       notify('Solution pack uploaded', 'Saved as a new solution for this ticket.');
       navigation.goBack();
     } catch (e) {
+      console.warn('[upload] solution pack failed', e?.status, e?.message);
       notify('Upload failed', e?.message || 'Could not save solution pack');
     } finally {
       setSubmitting(false);
@@ -212,17 +232,17 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
   };
 
   return (
-    <View className="flex-1 bg-background">
-      <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+    <View className="flex-1" style={{ backgroundColor: C.bg }}>
+      <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
         {/* Brand / Model — read-only, derived from the ticket */}
         <View className="flex-row -mx-1 mb-3">
           <View className="flex-1 px-1">
             <Text className="text-text-muted mb-1" style={{ fontSize: rf(11) }}>Device Brand</Text>
-            <ReadonlyField label={brand?.name || 'Loading…'} />
+            <ReadonlyField label={brand?.name || (defaults?.brand?.id ? 'Loading…' : '—')} />
           </View>
           <View className="flex-1 px-1">
             <Text className="text-text-muted mb-1" style={{ fontSize: rf(11) }}>Device Model</Text>
-            <ReadonlyField label={model?.name || 'Loading…'} />
+            <ReadonlyField label={model?.name || (defaults?.model?.id ? 'Loading…' : (defaults?.deviceName || '—'))} />
           </View>
         </View>
 
@@ -238,22 +258,27 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
             const selected = mainCat?.id === c.id;
             return (
               <View key={c.id} className="w-1/2 px-1 mb-2">
-                <Pressable
+                <TouchableOpacity
                   onPress={() => setMainCat({ id: c.id, name: c.name })}
+                  activeOpacity={0.7}
                   className="flex-row items-center"
+                  style={{
+                    backgroundColor: selected ? C.greenTint : '#FFFFFF', borderWidth: 1,
+                    borderColor: selected ? C.green : C.border, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 8,
+                  }}
                 >
                   <View
                     style={{
                       width: 16, height: 16, borderRadius: 8,
                       borderWidth: 2,
-                      borderColor: selected ? '#1E3A8A' : '#94A3B8',
+                      borderColor: selected ? C.green : C.line,
                       alignItems: 'center', justifyContent: 'center',
                     }}
                   >
-                    {selected ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#1E3A8A' }} /> : null}
+                    {selected ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: C.green }} /> : null}
                   </View>
-                  <Text className="ml-2 text-text" style={{ fontSize: rf(12) }}>{c.name}</Text>
-                </Pressable>
+                  <Text className="ml-2 flex-1" style={{ fontSize: rf(12), color: C.ink, fontWeight: selected ? '700' : '500' }} numberOfLines={2}>{c.name}</Text>
+                </TouchableOpacity>
               </View>
             );
           })}
@@ -275,24 +300,25 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
           value={issueName}
           onChangeText={setIssueName}
           placeholder="e.g. Backlight dead after water damage"
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor={C.faint}
           maxLength={200}
-          className="rounded-xl text-text"
           style={{
             borderWidth: 1,
-            borderColor: '#CBD5E1',
+            borderColor: C.border,
             backgroundColor: '#FFFFFF',
-            paddingHorizontal: 12,
-            paddingVertical: 10,
+            borderRadius: 10,
+            paddingHorizontal: 10,
+            paddingVertical: 8,
             fontSize: rf(12.5),
+            color: C.ink,
           }}
         />
 
         {/* Solution Documents */}
-        <Text className="font-bold text-text mt-5 mb-2" style={{ fontSize: rf(13) }}>Solution Document's</Text>
+        <Text className="font-bold text-text mt-4 mb-2" style={{ fontSize: rf(13) }}>Solution Documents</Text>
 
         <AttachmentRow
-          icon={<Mic size={16} color="#0F172A" />}
+          icon={<Mic size={15} color={C.green} />}
           label="Audio"
           asset={audio}
           onPick={() => pickFromDocument('audio')}
@@ -301,7 +327,7 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
         />
 
         <AttachmentRow
-          icon={<VideoIcon size={16} color="#0F172A" />}
+          icon={<VideoIcon size={15} color={C.green} />}
           label="Video"
           asset={video}
           onPick={() => pickFromDocument('video')}
@@ -310,18 +336,19 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
         />
 
         <View className="flex-row items-center mt-3 mb-2">
-          <ImageIcon size={16} color="#0F172A" />
+          <ImageIcon size={15} color={C.green} />
           <Text className="font-bold text-text ml-2" style={{ fontSize: rf(13) }}>Images</Text>
         </View>
         <View className="flex-row -mx-1">
           {images.map((img, i) => (
             <View key={i} className="flex-1 px-1">
-              <Pressable
+              <TouchableOpacity
                 onPress={() => img ? null : pickImage(i)}
-                className="rounded-xl items-center justify-center"
+                activeOpacity={img ? 1 : 0.7}
                 style={{
-                  borderWidth: 1, borderStyle: 'dashed', borderColor: '#CBD5E1',
-                  backgroundColor: '#FFFFFF', height: 90,
+                  borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                  borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.line,
+                  backgroundColor: '#FFFFFF', height: 80,
                 }}
               >
                 {img ? (
@@ -337,24 +364,26 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
                   </View>
                 ) : (
                   <View className="items-center">
-                    <Plus size={18} color="#94A3B8" />
-                    <Text className="text-text-muted mt-1" style={{ fontSize: rf(9) }}>Add image</Text>
+                    <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
+                      <Plus size={16} color="#FFFFFF" />
+                    </View>
+                    <Text style={{ fontSize: rf(9.5), color: C.muted, marginTop: 4, fontWeight: '600' }}>Add image</Text>
                   </View>
                 )}
-              </Pressable>
+              </TouchableOpacity>
             </View>
           ))}
         </View>
 
-        <View className="items-center mt-6">
+        <View className="mt-5">
           <TouchableOpacity
             onPress={handleSubmit}
-            disabled={submitting || !canSubmit}
-            className="rounded-xl"
+            disabled={submitting}
+            activeOpacity={0.85}
             style={{
-              backgroundColor: '#1E1EAC',
-              paddingHorizontal: 36, paddingVertical: 11,
-              opacity: submitting || !canSubmit ? 0.6 : 1,
+              backgroundColor: C.green, borderRadius: 12, alignItems: 'center',
+              paddingVertical: 11,
+              opacity: submitting ? 0.6 : canSubmit ? 1 : 0.75,
             }}
           >
             {submitting
@@ -378,8 +407,8 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
 function ReadonlyField({ label }) {
   return (
     <View
-      className="rounded-md bg-card px-3 py-2"
-      style={{ borderWidth: 1, borderColor: '#E2E8F0' }}
+      className="px-3 py-2"
+      style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, backgroundColor: '#F3F3F3' }}
     >
       <Text className="text-text" style={{ fontSize: rf(12) }} numberOfLines={1}>{label}</Text>
     </View>
@@ -391,18 +420,19 @@ function DropdownTrigger({ label, onPress, disabled }) {
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled}
-      className="flex-row items-center justify-between rounded-md bg-card px-3 py-2"
-      style={{ borderWidth: 1, borderColor: '#CBD5E1', opacity: disabled ? 0.5 : 1 }}
+      activeOpacity={0.7}
+      className="flex-row items-center justify-between px-3 py-2"
+      style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, backgroundColor: '#FFFFFF', opacity: disabled ? 0.5 : 1 }}
     >
       <Text className="text-text flex-1" style={{ fontSize: rf(12) }} numberOfLines={1}>{label}</Text>
-      <ChevronDown size={14} color="#0F172A" />
+      <ChevronDown size={14} color={C.ink} />
     </TouchableOpacity>
   );
 }
 
 function AttachmentRow({ icon, label, asset, onPick, onClear, previewIcon }) {
   return (
-    <View className="mb-3">
+    <View className="mb-2.5">
       <View className="flex-row items-center mb-1">
         {icon}
         <Text className="font-bold text-text ml-2" style={{ fontSize: rf(13) }}>{label}</Text>
@@ -410,27 +440,30 @@ function AttachmentRow({ icon, label, asset, onPick, onClear, previewIcon }) {
       {asset ? (
         <View
           className="flex-row items-center rounded-xl px-3 py-2"
-          style={{ borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#FFFFFF' }}
+          style={{ borderWidth: 1, borderColor: C.border, backgroundColor: '#FFFFFF' }}
         >
           <View
-            style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#3B82F6', alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}
           >
             {previewIcon}
           </View>
           <Text className="text-text ml-3 flex-1" style={{ fontSize: rf(12) }} numberOfLines={1}>{asset.name || 'Attached'}</Text>
           <TouchableOpacity onPress={onClear} hitSlop={6}>
-            <X size={14} color="#64748B" />
+            <X size={14} color={C.muted} />
           </TouchableOpacity>
         </View>
       ) : (
-        <Pressable
+        <TouchableOpacity
           onPress={onPick}
-          className="rounded-xl flex-row items-center justify-center"
-          style={{ borderWidth: 1, borderStyle: 'dashed', borderColor: '#CBD5E1', backgroundColor: '#FFFFFF', paddingVertical: 14 }}
+          activeOpacity={0.7}
+          style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 12,
+            borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.line, backgroundColor: '#FFFFFF', paddingVertical: 11,
+          }}
         >
-          <Plus size={16} color="#94A3B8" />
-          <Text className="text-text-muted ml-2" style={{ fontSize: rf(12) }}>Attach {label.toLowerCase()}</Text>
-        </Pressable>
+          <Plus size={16} color={C.green} />
+          <Text style={{ fontSize: rf(12), color: C.green, fontWeight: '700', marginLeft: 6 }}>Attach {label.toLowerCase()}</Text>
+        </TouchableOpacity>
       )}
     </View>
   );
@@ -444,7 +477,7 @@ function PickerModal({ visible, title, options, onPick, onClose }) {
           <View className="flex-row items-center justify-between mb-3">
             <Text className="font-extrabold text-text" style={{ fontSize: rf(15) }}>{title}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={8}>
-              <X size={18} color="#0F172A" />
+              <X size={18} color={C.ink} />
             </TouchableOpacity>
           </View>
           {options.length === 0 ? (
@@ -456,7 +489,7 @@ function PickerModal({ visible, title, options, onPick, onClose }) {
                   key={String(opt.key)}
                   onPress={() => onPick(opt)}
                   className="px-3 py-3"
-                  style={{ borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
+                  style={{ borderBottomWidth: 1, borderBottomColor: '#F3F3F3' }}
                 >
                   <Text className="text-text" style={{ fontSize: rf(13) }}>{opt.label}</Text>
                 </TouchableOpacity>

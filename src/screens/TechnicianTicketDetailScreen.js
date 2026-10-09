@@ -12,7 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Audio } from 'expo-av';
+import { Audio } from '../utils/audio';
 import {
   Smartphone, Search, UploadCloud, Pencil, X, Check,
   Mic, Play, Pause, Trash2, Plus, Image as ImageIcon,
@@ -25,7 +25,8 @@ import {
 import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
 import { rf } from '../utils/responsive';
-import { normalizeDeviceImageUrl } from '../utils/images';
+import { resolveDeviceImageSource } from '../utils/images';
+import { listModelsForBrand } from '../api/master';
 import ImageViewerModal from '../components/ImageViewerModal';
 
 // Service Progress checklist rows shown above the Issue Reference buttons.
@@ -134,30 +135,52 @@ function photoUrl(item) {
   return item.url || item.uri || item.imageUrl || null;
 }
 
+// Screen palette — GGFIX green / red / yellow on light neutrals, the same set
+// the restyled Home and attendance screens use.
+const C = {
+  green: '#09AD2A',
+  greenTint: '#E6F7EA',
+  greenSoft: '#F3FBF4',
+  greenLine: '#CFEFD6',
+  red: '#F84141',
+  redTint: '#FEECEC',
+  redLine: '#FBD0D0',
+  yellow: '#F3BF23',
+  yellowTint: '#FDF6E0',
+  yellowSoft: '#FFFBEF',
+  yellowLine: '#F6DE8D',
+  yellowInk: '#8A6700',
+  ink: '#1E1E1E',
+  muted: '#6E6E6E',
+  faint: '#A3A3A3',
+  bg: '#F8F8F8',
+  surface: '#F3F3F3',
+  border: '#ECECEC',
+  line: '#D4D4D4',
+};
+
 // Section header: a small vertical accent bar + bold title + optional right
 // action. Used throughout the screen so every section reads with the same
-// visual rhythm (Swiggy / Zomato-style card sections).
-function SectionHeader({ title, accent = '#004C40', right = null }) {
+// visual rhythm.
+function SectionHeader({ title, accent = C.green, right = null }) {
   return (
-    <View className="flex-row items-center mb-2 mt-1">
-      <View
-        style={{ width: 4, height: 18, borderRadius: 2, backgroundColor: accent, marginRight: 8 }}
-      />
-      <Text className="font-extrabold text-text flex-1" style={{ fontSize: rf(14) }}>{title}</Text>
+    <View className="flex-row items-center" style={{ marginTop: 2, marginBottom: 6 }}>
+      <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: accent, marginRight: 7 }} />
+      <Text className="font-extrabold flex-1" style={{ fontSize: rf(13), color: C.ink }}>{title}</Text>
       {right}
     </View>
   );
 }
 
-// Card shell with the elevation / border combo used on every section. Keeps
-// the visual rhythm consistent and avoids re-typing the same className blob.
+// Card shell with the border / soft shadow used on every section. Keeps
+// the visual rhythm consistent and avoids re-typing the same style blob.
 function Card({ children, style }) {
   return (
     <View
-      className="bg-white rounded-2xl px-3 py-3 mb-4"
       style={[
-        { borderWidth: 1, borderColor: '#EEF2F7', shadowColor: '#0F172A',
-          shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+        { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 10, marginBottom: 12,
+          borderWidth: 1, borderColor: C.border, shadowColor: C.ink,
+          shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
           elevation: 1 },
         style,
       ]}
@@ -173,34 +196,34 @@ function Card({ children, style }) {
 // its own weight rather than being buried in the note text.
 function EstimateRow({
   icon: Icon, tint, iconColor, title, pill, pillTint, pillColor,
-  when, whenColor = '#0F172A', note, children,
+  when, whenColor = C.ink, note, children,
 }) {
   return (
     <View className="flex-row">
       <View
         className="rounded-full items-center justify-center"
-        style={{ width: 30, height: 30, backgroundColor: tint }}
+        style={{ width: 26, height: 26, backgroundColor: tint }}
       >
-        <Icon size={15} color={iconColor} />
+        <Icon size={13} color={iconColor} />
       </View>
-      <View className="flex-1 ml-3">
+      <View className="flex-1" style={{ marginLeft: 10 }}>
         <View className="flex-row items-center">
-          <Text className="font-extrabold text-text flex-1" style={{ fontSize: rf(12.5) }}>
+          <Text className="font-extrabold flex-1" style={{ fontSize: rf(12), color: C.ink }}>
             {title}
           </Text>
           {pill ? (
             <View className="rounded-full px-2 py-0.5 ml-2" style={{ backgroundColor: pillTint }}>
-              <Text className="font-extrabold" style={{ fontSize: rf(9.5), color: pillColor }}>
+              <Text className="font-extrabold" style={{ fontSize: rf(9), color: pillColor }}>
                 {pill}
               </Text>
             </View>
           ) : null}
         </View>
-        <Text className="font-extrabold mt-1" style={{ fontSize: rf(12), color: whenColor }}>
+        <Text className="font-extrabold" style={{ fontSize: rf(11.5), color: whenColor, marginTop: 3 }}>
           {when}
         </Text>
         {note ? (
-          <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(10.5) }}>{note}</Text>
+          <Text style={{ fontSize: rf(10), color: C.muted, marginTop: 2 }}>{note}</Text>
         ) : null}
         {children}
       </View>
@@ -208,32 +231,28 @@ function EstimateRow({
   );
 }
 
-// Empty image-upload slot. Big dashed circle with a prominent + icon and
-// "Add Photo" label below — replaces the previous tiny camera tile so the
-// tap target reads as an obvious "add" affordance.
-function AddPhotoSlot({ onPress, height = 110 }) {
+// Empty image-upload slot: dashed tile with a green + circle and an
+// "Add Photo" label, so the tap target reads as an obvious "add" affordance.
+function AddPhotoSlot({ onPress, height = 86 }) {
   return (
-    <Pressable
+    <TouchableOpacity
       onPress={onPress}
-      className="rounded-2xl items-center justify-center"
+      activeOpacity={0.8}
       style={{
-        borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#CBD5E1',
-        backgroundColor: '#F8FAFC', height,
+        height, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
+        borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.line, backgroundColor: C.bg,
       }}
     >
       <View
         style={{
-          width: 36, height: 36, borderRadius: 18,
-          backgroundColor: '#004C40',
+          width: 30, height: 30, borderRadius: 15, backgroundColor: C.green,
           alignItems: 'center', justifyContent: 'center',
-          shadowColor: '#004C40', shadowOpacity: 0.25, shadowRadius: 6,
-          shadowOffset: { width: 0, height: 3 }, elevation: 3,
         }}
       >
-        <Plus size={20} color="#FFFFFF" />
+        <Plus size={17} color="#FFFFFF" />
       </View>
-      <Text className="font-bold text-text-muted mt-2" style={{ fontSize: rf(10) }}>Add Photo</Text>
-    </Pressable>
+      <Text className="font-bold" style={{ fontSize: rf(9.5), color: C.muted, marginTop: 6 }}>Add Photo</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -404,6 +423,29 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
 
   // Ticket re-read that leaves the photo slots alone — load() rebuilds them
   // from the response and would drop a picked-but-unsaved image.
+  // Device thumbnail. Most tickets carry no deviceImageUrl of their own, so
+  // fall back to the master-catalogue model image (brandId → models → modelId).
+  const [deviceImage, setDeviceImage] = useState(null);
+  const [deviceImageFailed, setDeviceImageFailed] = useState(false);
+  useEffect(() => {
+    if (!ticket) return undefined;
+    let active = true;
+    setDeviceImageFailed(false);
+    const direct = resolveDeviceImageSource({
+      url: ticket.deviceImageUrl || ticket.modelImageUrl,
+      base64: ticket.deviceImageBase64 || ticket.modelImageBase64,
+    });
+    if (direct) { setDeviceImage(direct); return undefined; }
+    if (!ticket.brandId || !ticket.modelId) { setDeviceImage(null); return undefined; }
+    listModelsForBrand(ticket.brandId)
+      .then((models) => {
+        const m = (models || []).find((x) => x.id === ticket.modelId);
+        if (active) setDeviceImage(resolveDeviceImageSource({ url: m?.imageUrl, base64: m?.imageBase64 }));
+      })
+      .catch(() => { if (active) setDeviceImage(null); });
+    return () => { active = false; };
+  }, [ticket?.id, ticket?.deviceImageUrl, ticket?.modelImageUrl, ticket?.brandId, ticket?.modelId]);
+
   const refreshTicket = useCallback(async () => {
     if (!ticketId) return;
     try { setTicket(await getTicket(ticketId)); } catch (_) { /* keep current */ }
@@ -504,6 +546,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
   // ---------- Your-Side photo picker + submit ----------
 
   const pickPhoto = async (index, fromCamera = false) => {
+    try {
     if (Platform.OS !== 'web') {
       const perm = fromCamera
         ? await ImagePicker.requestCameraPermissionsAsync()
@@ -517,7 +560,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
       }
     }
     const opts = {
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.7,
     };
@@ -532,6 +575,9 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
       next[index] = { uri: asset.uri, remoteUrl: null, name: asset.fileName, type: asset.mimeType };
       return next;
     });
+    } catch (e) {
+      notify('Could not open camera/gallery', e?.message || 'Please try again.');
+    }
   };
 
   const promptPickPhoto = (index) => {
@@ -590,7 +636,9 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
       setPhotosEditing(uploaded.length === 0);
       notify('Saved', 'Your device images have been uploaded.');
     } catch (e) {
-      notify('Upload failed', e?.message || 'Could not save photos');
+      const msg = e?.message || 'Could not save photos';
+      console.warn('[upload] device photos failed', e?.status, msg);
+      notify('Upload failed', e?.status && !msg.includes('HTTP') ? `${msg} (HTTP ${e.status})` : msg);
     } finally {
       setPhotosSubmitting(false);
     }
@@ -603,6 +651,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
   // and the Submitted-Notes edit form share one picker instead of two copies
   // of the permission + launch dance.
   const pickImageInto = async (setSlots, index, fromCamera) => {
+    try {
     if (Platform.OS !== 'web') {
       const perm = fromCamera
         ? await ImagePicker.requestCameraPermissionsAsync()
@@ -616,7 +665,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
       }
     }
     const opts = {
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.7,
     };
@@ -633,6 +682,9 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
       next[index] = { uri: asset.uri, remoteUrl: null, name: asset.fileName, type: asset.mimeType };
       return next;
     });
+    } catch (e) {
+      notify('Could not open camera/gallery', e?.message || 'Please try again.');
+    }
   };
 
   const promptPickImageInto = (setSlots, index) => {
@@ -870,7 +922,8 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
     model: ticket?.modelId ? { id: ticket.modelId, name: ticket.modelName } : null,
     issueCategory: null,
     issueSubcategory: null,
-  }), [ticket?.brandId, ticket?.modelId, ticket?.brandName, ticket?.modelName]);
+    deviceName: ticket?.deviceDisplayName || null,
+  }), [ticket?.brandId, ticket?.modelId, ticket?.brandName, ticket?.modelName, ticket?.deviceDisplayName]);
 
   const openReferenceView = () => {
     navigation.navigate('SolutionPackReferenceView', { ticketId, defaults: solutionPackDefaults });
@@ -882,17 +935,17 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
 
   if (loading && !ticket) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator color="#00008B" />
+      <View className="flex-1 items-center justify-center" style={{ backgroundColor: C.bg }}>
+        <ActivityIndicator color={C.green} />
       </View>
     );
   }
 
   if (error || !ticket) {
     return (
-      <View className="flex-1 bg-background items-center justify-center px-6">
-        <Text className="text-danger font-bold mb-2">Ticket not found</Text>
-        <Text className="text-text-muted text-center" style={{ fontSize: rf(12) }}>{error || 'Try again from the task list.'}</Text>
+      <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: C.bg }}>
+        <Text className="font-bold mb-2" style={{ color: C.red }}>Ticket not found</Text>
+        <Text className="text-center" style={{ fontSize: rf(12), color: C.muted }}>{error || 'Try again from the task list.'}</Text>
       </View>
     );
   }
@@ -916,62 +969,64 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
   // still waiting.
   const approvalRowProps = estimateApproval.approvalIsCurrent
     ? {
-        icon: BadgeCheck, tint: '#DCFCE7', iconColor: '#004C40',
+        icon: BadgeCheck, tint: C.greenTint, iconColor: C.green,
         title: 'Customer Approved',
-        pill: 'APPROVED', pillTint: '#DCFCE7', pillColor: '#004C40',
+        pill: 'APPROVED', pillTint: C.greenTint, pillColor: C.green,
         when: fmtDateTime(estimateApproval.approved.createdAt) || 'Date not recorded',
-        whenColor: '#004C40',
+        whenColor: C.green,
         note: estimateApproval.approved.note,
       }
     : (!estimateApproval.approved && ticket.customerApproval === true)
     ? {
-        icon: BadgeCheck, tint: '#DCFCE7', iconColor: '#004C40',
+        icon: BadgeCheck, tint: C.greenTint, iconColor: C.green,
         title: 'Customer Approved',
-        pill: 'APPROVED', pillTint: '#DCFCE7', pillColor: '#004C40',
-        when: 'Approval date not recorded', whenColor: '#004C40',
+        pill: 'APPROVED', pillTint: C.greenTint, pillColor: C.green,
+        when: 'Approval date not recorded', whenColor: C.green,
         note: 'This booking was approved before approval times were tracked.',
       }
     : {
-        icon: Hourglass, tint: '#FEF3C7', iconColor: '#B45309',
+        icon: Hourglass, tint: C.yellowTint, iconColor: C.yellowInk,
         title: 'Customer Approval',
-        pill: 'PENDING', pillTint: '#FEF3C7', pillColor: '#B45309',
-        when: 'Not approved yet', whenColor: '#B45309',
+        pill: 'PENDING', pillTint: C.yellowTint, pillColor: C.yellowInk,
+        when: 'Not approved yet', whenColor: C.yellowInk,
         note: estimateApproval.approved
           ? `Approved on ${fmtDateTime(estimateApproval.approved.createdAt)}, but that was for the earlier estimate.`
           : 'Waiting for the customer to approve this estimate.',
       };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: '#FFFFFF' }}>
-      <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 80 }} showsVerticalScrollIndicator={false}>
-        {/* Device hero card — Swiggy-style: white card, large thumbnail, bold
-            device name, red pill for the compliance issue. */}
+    <View className="flex-1" style={{ backgroundColor: C.bg }}>
+      <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+        {/* Device hero card: thumbnail, bold device name, red pill for the
+            repair being done. */}
         <Card>
           <View className="flex-row items-center">
-            {normalizeDeviceImageUrl(ticket.deviceImageUrl) ? (
+            {deviceImage && !deviceImageFailed ? (
               <Image
-                source={{ uri: normalizeDeviceImageUrl(ticket.deviceImageUrl) }}
-                style={{ width: 64, height: 84, borderRadius: 12, backgroundColor: '#F1F5F9' }}
+                source={{ uri: deviceImage }}
+                resizeMode="contain"
+                onError={() => setDeviceImageFailed(true)}
+                style={{ width: 52, height: 64, borderRadius: 10, backgroundColor: C.surface }}
               />
             ) : (
               <View
-                style={{ width: 64, height: 84, borderRadius: 12, backgroundColor: '#F1F5F9' }}
+                style={{ width: 52, height: 64, borderRadius: 10, backgroundColor: C.surface }}
                 className="items-center justify-center"
               >
-                <Smartphone size={26} color="#94A3B8" />
+                <Smartphone size={22} color={C.faint} />
               </View>
             )}
-            <View className="flex-1 ml-3">
-              <Text className="font-bold text-text-muted uppercase tracking-wider" style={{ fontSize: rf(10) }}>Device</Text>
-              <Text className="font-extrabold text-text mt-0.5" style={{ fontSize: rf(15) }} numberOfLines={2}>
+            <View className="flex-1" style={{ marginLeft: 10 }}>
+              <Text className="font-bold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>Device</Text>
+              <Text className="font-extrabold mt-0.5" style={{ fontSize: rf(14), color: C.ink }} numberOfLines={2}>
                 {ticket.deviceDisplayName || '—'}
               </Text>
               {ticket.repairServicesSummary ? (
                 <View
-                  className="self-start rounded-full px-2 py-0.5 mt-2"
-                  style={{ backgroundColor: '#FEE2E2' }}
+                  className="self-start rounded-full px-2 py-0.5"
+                  style={{ backgroundColor: C.redTint, marginTop: 6 }}
                 >
-                  <Text className="font-extrabold" style={{ fontSize: rf(10), color: '#B91C1C' }} numberOfLines={1}>
+                  <Text className="font-extrabold" style={{ fontSize: rf(10), color: C.red }} numberOfLines={1}>
                     {ticket.repairServicesSummary}
                   </Text>
                 </View>
@@ -982,12 +1037,12 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
 
         {/* Customer-side device images. Read-only strip; if empty, show a
             friendly placeholder instead of a dashed empty box. */}
-        <SectionHeader title="Customer Device Images" accent="#3B82F6" />
+        <SectionHeader title="Customer Device Images" />
         <Card>
           {devicePhotos.length === 0 ? (
-            <View className="items-center py-3">
-              <ImageIcon size={22} color="#CBD5E1" />
-              <Text className="text-text-muted mt-1" style={{ fontSize: rf(11) }}>No images uploaded by the customer yet.</Text>
+            <View className="items-center" style={{ paddingVertical: 8 }}>
+              <ImageIcon size={18} color={C.faint} />
+              <Text style={{ fontSize: rf(10.5), color: C.muted, marginTop: 4 }}>No images uploaded by the customer yet.</Text>
             </View>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -996,7 +1051,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                   <Pressable key={i} onPress={() => setPhotoAt(i)}>
                     <Image
                       source={{ uri: url }}
-                      style={{ width: 88, height: 100, borderRadius: 12, marginRight: 8, backgroundColor: '#F1F5F9' }}
+                      style={{ width: 72, height: 80, borderRadius: 10, marginRight: 8, backgroundColor: C.surface }}
                     />
                   </Pressable>
                 ))}
@@ -1005,92 +1060,90 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
           )}
         </Card>
 
-        {/* Device Security + Missing/Damage Parts — paired card. Security
-            value is masked behind a tap-to-reveal so the PIN/pattern only
-            appears when the technician explicitly asks for it. */}
-        <SectionHeader title="Device Security & Missing / Damage Parts" accent="#DC2626" />
+        {/* Device Security + Missing/Damage Parts — paired card. */}
+        <SectionHeader title="Device Security & Missing / Damage Parts" accent={C.red} />
         <Card>
           {/* Security row */}
           <View className="flex-row items-center">
             <View
               className="rounded-full items-center justify-center"
-              style={{ width: 32, height: 32, backgroundColor: '#DCFCE7' }}
+              style={{ width: 28, height: 28, backgroundColor: C.greenTint }}
             >
-              <ShieldCheck size={16} color="#004C40" />
+              <ShieldCheck size={14} color={C.green} />
             </View>
-            <View className="flex-1 ml-3">
-              <Text className="font-bold text-text-muted uppercase tracking-wider" style={{ fontSize: rf(10) }}>
+            <View className="flex-1" style={{ marginLeft: 10 }}>
+              <Text className="font-bold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>
                 Device Security
               </Text>
               {ticket.deviceSecurityType && ticket.deviceSecurityType !== 'NONE' ? (
                 <View className="flex-row items-center mt-0.5">
-                  <Text className="font-extrabold text-text" style={{ fontSize: rf(13) }}>
+                  <Text className="font-extrabold" style={{ fontSize: rf(12.5), color: C.ink }}>
                     {ticket.deviceSecurityType}
                   </Text>
-                  <Text className="font-extrabold text-text mx-1" style={{ fontSize: rf(13) }}>·</Text>
+                  <Text className="font-extrabold mx-1" style={{ fontSize: rf(12.5), color: C.ink }}>·</Text>
                   <Text
-                    className="font-extrabold text-text"
-                    style={{ fontSize: rf(13), letterSpacing: 1 }}
+                    className="font-extrabold"
+                    style={{ fontSize: rf(12.5), color: C.ink, letterSpacing: 1 }}
                   >
                     {ticket.deviceSecurityValue || '—'}
                   </Text>
                 </View>
               ) : (
-                <Text className="font-bold text-text-muted mt-0.5" style={{ fontSize: rf(13) }}>No lock set</Text>
+                <Text className="font-bold mt-0.5" style={{ fontSize: rf(12.5), color: C.muted }}>No lock set</Text>
               )}
             </View>
           </View>
 
           {/* Divider */}
-          <View style={{ height: 1, backgroundColor: '#F1F5F9', marginVertical: 12 }} />
+          <View style={{ height: 1, backgroundColor: C.surface, marginVertical: 10 }} />
 
           {/* Missing / Damage parts row */}
           <View className="flex-row">
             <View
               className="rounded-full items-center justify-center"
-              style={{ width: 32, height: 32, backgroundColor: '#FEE2E2' }}
+              style={{ width: 28, height: 28, backgroundColor: C.redTint }}
             >
-              <PackageX size={16} color="#B91C1C" />
+              <PackageX size={14} color={C.red} />
             </View>
-            <View className="flex-1 ml-3">
-              <Text className="font-bold text-text-muted uppercase tracking-wider" style={{ fontSize: rf(10) }}>
+            <View className="flex-1" style={{ marginLeft: 10 }}>
+              <Text className="font-bold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>
                 Missing / Damage Parts
               </Text>
               {missingPartsLabels.length > 0 ? (
-                <View className="flex-row flex-wrap mt-1.5 -mx-0.5">
+                <View className="flex-row flex-wrap mt-1 -mx-0.5">
                   {missingPartsLabels.map((label, i) => (
                     <View
                       key={`${label}-${i}`}
-                      className="rounded-full px-2.5 py-1 mx-0.5 mb-1"
-                      style={{ backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' }}
+                      className="rounded-full px-2 py-0.5 mx-0.5 mb-1"
+                      style={{ backgroundColor: C.redTint, borderWidth: 1, borderColor: C.redLine }}
                     >
-                      <Text className="font-extrabold" style={{ fontSize: rf(11), color: '#B91C1C' }}>
+                      <Text className="font-extrabold" style={{ fontSize: rf(10.5), color: C.red }}>
                         {label}
                       </Text>
                     </View>
                   ))}
                 </View>
               ) : (
-                <Text className="font-bold text-text-muted mt-0.5" style={{ fontSize: rf(13) }}>Nil</Text>
+                <Text className="font-bold mt-0.5" style={{ fontSize: rf(12.5), color: C.muted }}>Nil</Text>
               )}
             </View>
           </View>
         </Card>
 
-        {/* Your-Side upload card. Three big "+" slots; once filled, the
-            technician must tap Submit to persist the URLs to the ticket. */}
+        {/* Your-Side upload card. Three "+" slots; once filled, the
+            technician must tap Save to persist the URLs to the ticket. */}
         <SectionHeader
           title="Your Side Device Images"
-          accent="#004C40"
           right={
             !photosEditing && yourPhotos.some((s) => s?.remoteUrl) ? (
               <TouchableOpacity
                 onPress={() => setPhotosEditing(true)}
-                className="flex-row items-center rounded-full px-3 py-1.5"
-                style={{ backgroundColor: '#E0E7FF' }}
+                activeOpacity={0.8}
+                className="flex-row items-center rounded-full px-2.5 py-1"
+                style={{ backgroundColor: C.greenTint }}
               >
-                <Pencil size={12} color="#1E1EAC" />
-                <Text className="font-extrabold ml-1" style={{ fontSize: rf(11), color: '#1E1EAC' }}>Edit</Text>
+                <Pencil size={11} color={C.green} />
+                <Text className="font-extrabold ml-1" style={{ fontSize: rf(10.5), color: C.green }}>Edit</Text>
               </TouchableOpacity>
             ) : null
           }
@@ -1101,8 +1154,8 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
               <View key={i} className="flex-1 px-1">
                 {slot ? (
                   <View
-                    className="rounded-2xl overflow-hidden"
-                    style={{ height: 110, backgroundColor: '#F1F5F9' }}
+                    className="overflow-hidden"
+                    style={{ height: 86, borderRadius: 12, backgroundColor: C.surface }}
                   >
                     <Image source={{ uri: slot.uri }} style={{ width: '100%', height: '100%' }} />
                     {photosEditing ? (
@@ -1110,11 +1163,11 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                         onPress={() => removePhoto(i)}
                         hitSlop={8}
                         style={{
-                          position: 'absolute', top: 6, right: 6,
-                          backgroundColor: 'rgba(15,23,42,0.75)', borderRadius: 14, padding: 4,
+                          position: 'absolute', top: 5, right: 5,
+                          backgroundColor: 'rgba(30,30,30,0.75)', borderRadius: 12, padding: 3,
                         }}
                       >
-                        <X size={14} color="#FFFFFF" />
+                        <X size={12} color="#FFFFFF" />
                       </TouchableOpacity>
                     ) : null}
                   </View>
@@ -1130,116 +1183,113 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
             <TouchableOpacity
               onPress={submitPhotos}
               disabled={photosSubmitting}
-              className="rounded-2xl items-center justify-center mt-3"
+              activeOpacity={0.85}
+              className="items-center justify-center"
               style={{
-                backgroundColor: '#004C40',
-                paddingVertical: 12,
+                backgroundColor: C.green, borderRadius: 12,
+                paddingVertical: 10, marginTop: 10,
                 opacity: photosSubmitting ? 0.6 : 1,
-                shadowColor: '#004C40', shadowOpacity: 0.25, shadowRadius: 6,
-                shadowOffset: { width: 0, height: 3 }, elevation: 3,
               }}
             >
               {photosSubmitting
                 ? <ActivityIndicator color="#FFFFFF" />
-                : <Text className="text-white font-extrabold" style={{ fontSize: rf(13) }}>Save Device Images</Text>}
+                : <Text className="text-white font-extrabold" style={{ fontSize: rf(12.5) }}>Save Device Images</Text>}
             </TouchableOpacity>
           ) : null}
         </Card>
 
         {/* Compliance Notes — single card with the textarea, voice-note row,
-            three image slots, and a full-width "Save Note" CTA at the bottom.
-            Mirrors the Swiggy "Add Instructions" pattern. */}
-        <SectionHeader title="Technician Issue Verified & Updated" accent="#F59E0B" />
+            three image slots, and a full-width "Save Note" CTA at the bottom. */}
+        <SectionHeader title="Technician Issue Verified & Updated" accent={C.yellow} />
         <Card>
           <TextInput
             value={note}
             onChangeText={setNote}
             multiline
             placeholder="Describe the issue you verified — what was found, what's been updated, anything the customer should know."
-            placeholderTextColor="#94A3B8"
-            className="text-text"
-            style={{ fontSize: rf(13),
-              backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0',
-              borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
-              minHeight: 90, textAlignVertical: 'top',
+            placeholderTextColor={C.faint}
+            style={{
+              fontSize: rf(12.5), color: C.ink,
+              backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
+              borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
+              minHeight: 72, textAlignVertical: 'top',
             }}
           />
 
-          {/* Voice note recorder — three visual states mirror owner-side
-              ServicePriceEstimateScreen so technicians get the same affordance:
-                (a) idle, no clip → big green "Record voice note" pill
-                (b) recording     → red pulse + mm:ss timer + Stop button
+          {/* Voice note recorder — three visual states:
+                (a) idle, no clip → green "Record voice note" button
+                (b) recording     → red dot + mm:ss timer + Stop button
                 (c) clip ready    → play/pause + status + remove */}
-          <Text className="font-extrabold text-text-muted tracking-widest mt-4 mb-2" style={{ fontSize: rf(10) }}>
+          <Text className="font-extrabold tracking-widest" style={{ fontSize: rf(9.5), color: C.muted, marginTop: 12, marginBottom: 6 }}>
             VOICE NOTE
           </Text>
           {isRecording ? (
             <View
-              className="flex-row items-center rounded-2xl px-3 py-2.5"
-              style={{ backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' }}
+              className="flex-row items-center rounded-xl px-2.5 py-2"
+              style={{ backgroundColor: C.redTint, borderWidth: 1, borderColor: C.redLine }}
             >
-              <View className="h-3 w-3 rounded-full mr-2" style={{ backgroundColor: '#EF4444' }} />
+              <View className="h-2.5 w-2.5 rounded-full mr-2" style={{ backgroundColor: C.red }} />
               <View className="flex-1">
-                <Text className="font-extrabold" style={{ fontSize: rf(12), color: '#DC2626' }}>Recording…</Text>
-                <Text className="font-bold" style={{ fontSize: rf(11), color: '#DC2626' }}>{recLabel}</Text>
+                <Text className="font-extrabold" style={{ fontSize: rf(11.5), color: C.red }}>Recording…</Text>
+                <Text className="font-bold" style={{ fontSize: rf(10.5), color: C.red }}>{recLabel}</Text>
               </View>
               <TouchableOpacity
                 onPress={stopNoteRecording}
-                className="flex-row items-center rounded-full px-3 py-2"
-                style={{ backgroundColor: '#EF4444' }}
+                activeOpacity={0.85}
+                className="flex-row items-center rounded-full px-3 py-1.5"
+                style={{ backgroundColor: C.red }}
               >
-                <Square size={12} color="#FFFFFF" fill="#FFFFFF" />
-                <Text className="text-white font-extrabold ml-1.5" style={{ fontSize: rf(12) }}>Stop</Text>
+                <Square size={11} color="#FFFFFF" fill="#FFFFFF" />
+                <Text className="text-white font-extrabold ml-1.5" style={{ fontSize: rf(11.5) }}>Stop</Text>
               </TouchableOpacity>
             </View>
           ) : (noteAudioUrl || noteAudioLocalUri) ? (
             <View
-              className="flex-row items-center rounded-2xl px-3 py-2.5"
-              style={{ backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0' }}
+              className="flex-row items-center rounded-xl px-2.5 py-2"
+              style={{ backgroundColor: C.greenSoft, borderWidth: 1, borderColor: C.greenLine }}
             >
               <TouchableOpacity
                 onPress={() => togglePlayAudio('draft', noteAudioUrl || noteAudioLocalUri)}
                 disabled={uploadingAudio}
-                className="h-10 w-10 rounded-full items-center justify-center"
-                style={{ backgroundColor: '#004C40', opacity: uploadingAudio ? 0.6 : 1 }}
+                activeOpacity={0.85}
+                className="rounded-full items-center justify-center"
+                style={{ width: 34, height: 34, backgroundColor: C.green, opacity: uploadingAudio ? 0.6 : 1 }}
               >
                 {playingId === 'draft'
-                  ? <Pause size={16} color="#FFFFFF" />
-                  : <Play size={16} color="#FFFFFF" />}
+                  ? <Pause size={15} color="#FFFFFF" />
+                  : <Play size={15} color="#FFFFFF" />}
               </TouchableOpacity>
               <View className="flex-1 ml-2.5">
-                <Text className="font-extrabold text-text" style={{ fontSize: rf(12.5) }}>Voice note attached</Text>
-                <Text className="text-text-muted" style={{ fontSize: rf(10.5) }}>
+                <Text className="font-extrabold" style={{ fontSize: rf(12), color: C.ink }}>Voice note attached</Text>
+                <Text style={{ fontSize: rf(10), color: C.muted }}>
                   {uploadingAudio
                     ? 'Uploading to cloud…'
                     : (noteAudioUrl ? 'Uploaded · tap play to preview' : 'Tap play to preview')}
                 </Text>
               </View>
               {uploadingAudio ? (
-                <ActivityIndicator color="#004C40" />
+                <ActivityIndicator color={C.green} />
               ) : (
                 <TouchableOpacity
                   onPress={clearNoteAudio}
-                  className="h-9 w-9 rounded-full items-center justify-center"
-                  style={{ backgroundColor: 'rgba(239, 68, 68, 0.12)' }}
+                  activeOpacity={0.8}
+                  className="rounded-full items-center justify-center"
+                  style={{ width: 30, height: 30, backgroundColor: C.redTint }}
                   hitSlop={6}
                 >
-                  <Trash2 size={14} color="#EF4444" />
+                  <Trash2 size={13} color={C.red} />
                 </TouchableOpacity>
               )}
             </View>
           ) : (
             <TouchableOpacity
               onPress={startNoteRecording}
-              className="flex-row items-center justify-center rounded-2xl py-3"
-              style={{
-                backgroundColor: '#004C40',
-                shadowColor: '#004C40', shadowOpacity: 0.25, shadowRadius: 6,
-                shadowOffset: { width: 0, height: 3 }, elevation: 3,
-              }}
+              activeOpacity={0.85}
+              className="flex-row items-center justify-center"
+              style={{ backgroundColor: C.green, borderRadius: 12, paddingVertical: 10 }}
             >
-              <Mic size={16} color="#FFFFFF" />
-              <Text className="text-white font-extrabold ml-2" style={{ fontSize: rf(13) }}>Record voice note</Text>
+              <Mic size={15} color="#FFFFFF" />
+              <Text className="text-white font-extrabold ml-2" style={{ fontSize: rf(12.5) }}>Record voice note</Text>
             </TouchableOpacity>
           )}
 
@@ -1250,11 +1300,11 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
             const filled = noteImages.filter((s) => !!s?.uri).length;
             return (
               <>
-                <View className="flex-row items-center justify-between mt-4 mb-2">
-                  <Text className="font-extrabold text-text-muted uppercase tracking-wider" style={{ fontSize: rf(11) }}>
+                <View className="flex-row items-center justify-between" style={{ marginTop: 12, marginBottom: 6 }}>
+                  <Text className="font-extrabold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>
                     Attach Photos
                   </Text>
-                  <Text className="font-bold text-text-muted" style={{ fontSize: rf(10) }}>
+                  <Text className="font-bold" style={{ fontSize: rf(10), color: C.muted }}>
                     {filled}/3
                   </Text>
                 </View>
@@ -1263,23 +1313,23 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                     <View key={i} className="flex-1 px-1">
                       {slot ? (
                         <View
-                          className="rounded-2xl overflow-hidden"
-                          style={{ height: 96, backgroundColor: '#F1F5F9' }}
+                          className="overflow-hidden"
+                          style={{ height: 80, borderRadius: 12, backgroundColor: C.surface }}
                         >
                           <Image source={{ uri: slot.uri }} style={{ width: '100%', height: '100%' }} />
                           <TouchableOpacity
                             onPress={() => removeNoteImage(i)}
                             hitSlop={8}
                             style={{
-                              position: 'absolute', top: 6, right: 6,
-                              backgroundColor: 'rgba(15,23,42,0.75)', borderRadius: 12, padding: 4,
+                              position: 'absolute', top: 5, right: 5,
+                              backgroundColor: 'rgba(30,30,30,0.75)', borderRadius: 12, padding: 3,
                             }}
                           >
                             <X size={12} color="#FFFFFF" />
                           </TouchableOpacity>
                         </View>
                       ) : (
-                        <AddPhotoSlot onPress={() => promptPickNoteImage(i)} height={96} />
+                        <AddPhotoSlot onPress={() => promptPickNoteImage(i)} height={80} />
                       )}
                     </View>
                   ))}
@@ -1292,25 +1342,24 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
           <TouchableOpacity
             onPress={submitNote}
             disabled={noteSubmitBlocked}
-            className="rounded-2xl items-center justify-center mt-4"
+            activeOpacity={0.85}
+            className="items-center justify-center"
             style={{
-              backgroundColor: '#004C40',
-              paddingVertical: 14,
+              backgroundColor: C.green, borderRadius: 12,
+              paddingVertical: 11, marginTop: 12,
               opacity: noteSubmitBlocked ? 0.5 : 1,
-              shadowColor: '#004C40', shadowOpacity: 0.3, shadowRadius: 8,
-              shadowOffset: { width: 0, height: 4 }, elevation: 4,
             }}
           >
             {noteSubmitting
               ? <ActivityIndicator color="#FFFFFF" />
               : (
-                <Text className="text-white font-extrabold" style={{ fontSize: rf(14) }}>
+                <Text className="text-white font-extrabold" style={{ fontSize: rf(13) }}>
                   Save Note{noteAttachmentCount ? ` (+${noteAttachmentCount} ${noteAttachmentCount === 1 ? 'attachment' : 'attachments'})` : ''}
                 </Text>
               )}
           </TouchableOpacity>
           {noteSubmitBlocked && !noteSubmitting ? (
-            <Text className="text-text-muted text-center mt-2" style={{ fontSize: rf(10) }}>
+            <Text className="text-center" style={{ fontSize: rf(10), color: C.muted, marginTop: 6 }}>
               {uploadingAudio
                 ? 'Uploading voice note…'
                 : isRecording
@@ -1330,26 +1379,29 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
             signed off on yet. */}
         {notesList.length > 0 || showEstimateBlock ? (
           <>
-            <SectionHeader title="Submitted Notes" accent="#0F172A" />
+            <SectionHeader title="Submitted Notes" accent={C.ink} />
             {showEstimateBlock ? (
               <View
-                className={`bg-white rounded-2xl p-3 ${notesList.length > 0 ? 'mb-2' : 'mb-4'}`}
-                style={{ borderWidth: 1, borderColor: '#EEF2F7' }}
+                style={{
+                  backgroundColor: '#FFFFFF', borderRadius: 14, padding: 10,
+                  borderWidth: 1, borderColor: C.border,
+                  marginBottom: notesList.length > 0 ? 8 : 12,
+                }}
               >
                 {estimateApproval.reEstimated ? (
                   <EstimateRow
                     icon={IndianRupee}
-                    tint="#FEF3C7"
-                    iconColor="#B45309"
+                    tint={C.yellowTint}
+                    iconColor={C.yellowInk}
                     title="Service Re-Estimated"
                     pill={estimatedPriceLabel}
-                    pillTint="#FEF3C7"
-                    pillColor="#B45309"
+                    pillTint={C.yellowTint}
+                    pillColor={C.yellowInk}
                     when={fmtDateTime(estimateApproval.reEstimated.createdAt) || 'Date not recorded'}
                     note={estimateApproval.reEstimated.note}
                   >
                     {priceItems.length > 0 ? (
-                      <View className="mt-2 rounded-xl px-2.5 py-2" style={{ backgroundColor: '#FFFFFF' }}>
+                      <View className="mt-1.5 rounded-lg px-2 py-1.5" style={{ backgroundColor: C.bg }}>
                         {priceItems.map((it, i) => (
                           <View
                             key={`${it.label}-${i}`}
@@ -1357,13 +1409,13 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                             style={{ paddingVertical: 2 }}
                           >
                             <Text
-                              className="flex-1 text-text-muted pr-2"
-                              style={{ fontSize: rf(10.5) }}
+                              className="flex-1 pr-2"
+                              style={{ fontSize: rf(10.5), color: C.muted }}
                               numberOfLines={1}
                             >
                               {it.label}
                             </Text>
-                            <Text className="font-bold text-text" style={{ fontSize: rf(10.5) }}>
+                            <Text className="font-bold" style={{ fontSize: rf(10.5), color: C.ink }}>
                               {formatINR(it.amount) || '—'}
                             </Text>
                           </View>
@@ -1374,13 +1426,13 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                 ) : null}
 
                 {estimateApproval.reEstimated ? (
-                  <View style={{ height: 1, backgroundColor: '#F1F5F9', marginVertical: 12 }} />
+                  <View style={{ height: 1, backgroundColor: C.surface, marginVertical: 10 }} />
                 ) : null}
 
                 <EstimateRow {...approvalRowProps} />
               </View>
             ) : null}
-            <View className={notesList.length > 0 ? 'mb-4' : undefined}>
+            <View style={notesList.length > 0 ? { marginBottom: 12 } : undefined}>
               {notesList.slice(0, 5).map((n) => {
                 const imgs = Array.isArray(n.imageUrls) ? n.imageUrls : [];
                 const audioKey = `note-${n.id}`;
@@ -1393,21 +1445,24 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                 return (
                   <View
                     key={n.id}
-                    className="bg-white rounded-2xl p-3 mb-2 flex-row"
-                    style={{ borderWidth: 1, borderColor: editing ? '#FDE68A' : '#EEF2F7' }}
+                    className="flex-row"
+                    style={{
+                      backgroundColor: '#FFFFFF', borderRadius: 12, padding: 10, marginBottom: 8,
+                      borderWidth: 1, borderColor: editing ? C.yellowLine : C.border,
+                    }}
                   >
                     <View
                       style={{
-                        width: 3, borderRadius: 2, marginRight: 10,
-                        backgroundColor: editing ? '#F59E0B' : '#004C40',
+                        width: 3, borderRadius: 2, marginRight: 9,
+                        backgroundColor: editing ? C.yellow : C.green,
                       }}
                     />
                     {editing ? (
                       /* ---- Edit mode: text, attachments, Save / Cancel ---- */
                       <View className="flex-1">
                         <Text
-                          className="font-extrabold text-text-muted uppercase tracking-wider mb-1.5"
-                          style={{ fontSize: rf(10) }}
+                          className="font-extrabold uppercase tracking-wider mb-1.5"
+                          style={{ fontSize: rf(9.5), color: C.muted }}
                         >
                           Editing note
                         </Text>
@@ -1416,13 +1471,12 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                           onChangeText={setEditNoteText}
                           multiline
                           placeholder="Update what you recorded for this ticket."
-                          placeholderTextColor="#94A3B8"
-                          className="text-text"
+                          placeholderTextColor={C.faint}
                           style={{
-                            fontSize: rf(13),
-                            backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0',
-                            borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
-                            minHeight: 80, textAlignVertical: 'top',
+                            fontSize: rf(12.5), color: C.ink,
+                            backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
+                            borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
+                            minHeight: 68, textAlignVertical: 'top',
                           }}
                         />
 
@@ -1434,22 +1488,24 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                           <View className="flex-row items-center mt-2">
                             <TouchableOpacity
                               onPress={() => togglePlayAudio(`edit-${n.id}`, editNoteAudioUrl)}
+                              activeOpacity={0.8}
                               className="flex-row items-center rounded-full px-2.5 py-1"
-                              style={{ borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#F8FAFC' }}
+                              style={{ borderWidth: 1, borderColor: C.line, backgroundColor: C.bg }}
                             >
                               {playingId === `edit-${n.id}`
-                                ? <Pause size={12} color="#0F172A" />
-                                : <Play size={12} color="#0F172A" />}
-                              <Text className="font-bold text-text ml-1" style={{ fontSize: rf(11) }}>Voice note</Text>
+                                ? <Pause size={12} color={C.ink} />
+                                : <Play size={12} color={C.ink} />}
+                              <Text className="font-bold ml-1" style={{ fontSize: rf(11), color: C.ink }}>Voice note</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={() => setEditNoteAudioUrl('')}
                               hitSlop={8}
+                              activeOpacity={0.8}
                               className="flex-row items-center rounded-full px-2.5 py-1 ml-2"
-                              style={{ backgroundColor: '#FEE2E2' }}
+                              style={{ backgroundColor: C.redTint }}
                             >
-                              <Trash2 size={11} color="#B91C1C" />
-                              <Text className="font-extrabold ml-1" style={{ fontSize: rf(10.5), color: '#B91C1C' }}>
+                              <Trash2 size={11} color={C.red} />
+                              <Text className="font-extrabold ml-1" style={{ fontSize: rf(10.5), color: C.red }}>
                                 Remove
                               </Text>
                             </TouchableOpacity>
@@ -1461,8 +1517,8 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                             <View key={i} className="flex-1 px-1">
                               {slot ? (
                                 <View
-                                  className="rounded-xl overflow-hidden"
-                                  style={{ height: 76, backgroundColor: '#F1F5F9' }}
+                                  className="overflow-hidden"
+                                  style={{ height: 68, borderRadius: 10, backgroundColor: C.surface }}
                                 >
                                   <Image source={{ uri: slot.uri }} style={{ width: '100%', height: '100%' }} />
                                   <TouchableOpacity
@@ -1470,7 +1526,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                                     hitSlop={8}
                                     style={{
                                       position: 'absolute', top: 4, right: 4,
-                                      backgroundColor: 'rgba(15,23,42,0.75)', borderRadius: 10, padding: 3,
+                                      backgroundColor: 'rgba(30,30,30,0.75)', borderRadius: 10, padding: 3,
                                     }}
                                   >
                                     <X size={11} color="#FFFFFF" />
@@ -1479,30 +1535,32 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                               ) : (
                                 <AddPhotoSlot
                                   onPress={() => promptPickImageInto(setEditNoteImages, i)}
-                                  height={76}
+                                  height={68}
                                 />
                               )}
                             </View>
                           ))}
                         </View>
 
-                        <View className="flex-row mt-3">
+                        <View className="flex-row mt-2.5">
                           <TouchableOpacity
                             onPress={cancelEditNote}
                             disabled={editNoteSaving}
-                            className="rounded-xl items-center justify-center px-4 py-2.5 mr-2"
-                            style={{ borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#FFFFFF' }}
+                            activeOpacity={0.8}
+                            className="items-center justify-center px-4 mr-2"
+                            style={{ borderRadius: 10, paddingVertical: 8, borderWidth: 1, borderColor: C.line, backgroundColor: '#FFFFFF' }}
                           >
-                            <Text className="font-extrabold text-text-muted" style={{ fontSize: rf(12) }}>
+                            <Text className="font-extrabold" style={{ fontSize: rf(12), color: C.muted }}>
                               Cancel
                             </Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             onPress={saveEditNote}
                             disabled={editNoteSaving || !editNoteText.trim()}
-                            className="flex-1 rounded-xl items-center justify-center py-2.5"
+                            activeOpacity={0.85}
+                            className="flex-1 items-center justify-center"
                             style={{
-                              backgroundColor: '#004C40',
+                              backgroundColor: C.green, borderRadius: 10, paddingVertical: 8,
                               opacity: editNoteSaving || !editNoteText.trim() ? 0.5 : 1,
                             }}
                           >
@@ -1520,18 +1578,19 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                       /* ---- Read-only ---- */
                       <View className="flex-1">
                         <View className="flex-row items-start">
-                          <Text className="text-text flex-1 pr-2" style={{ fontSize: rf(13) }}>{n.note}</Text>
+                          <Text className="flex-1 pr-2" style={{ fontSize: rf(12.5), color: C.ink }}>{n.note}</Text>
                           {/* Disabled while another note is open for editing so
                               two drafts can't fight over the single edit slot. */}
                           <TouchableOpacity
                             onPress={() => beginEditNote(n)}
                             disabled={!!editingNoteId}
                             hitSlop={8}
+                            activeOpacity={0.8}
                             className="flex-row items-center rounded-full px-2.5 py-1"
-                            style={{ backgroundColor: '#E0E7FF', opacity: editingNoteId ? 0.4 : 1 }}
+                            style={{ backgroundColor: C.greenTint, opacity: editingNoteId ? 0.4 : 1 }}
                           >
-                            <Pencil size={11} color="#1E1EAC" />
-                            <Text className="font-extrabold ml-1" style={{ fontSize: rf(10.5), color: '#1E1EAC' }}>
+                            <Pencil size={11} color={C.green} />
+                            <Text className="font-extrabold ml-1" style={{ fontSize: rf(10.5), color: C.green }}>
                               Edit
                             </Text>
                           </TouchableOpacity>
@@ -1540,13 +1599,14 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                           <View className="flex-row items-center mt-2">
                             <TouchableOpacity
                               onPress={() => togglePlayAudio(audioKey, n.audioUrl)}
+                              activeOpacity={0.8}
                               className="flex-row items-center rounded-full px-2.5 py-1"
-                              style={{ borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#F8FAFC' }}
+                              style={{ borderWidth: 1, borderColor: C.line, backgroundColor: C.bg }}
                             >
                               {playingId === audioKey
-                                ? <Pause size={12} color="#0F172A" />
-                                : <Play size={12} color="#0F172A" />}
-                              <Text className="font-bold text-text ml-1" style={{ fontSize: rf(11) }}>Voice note</Text>
+                                ? <Pause size={12} color={C.ink} />
+                                : <Play size={12} color={C.ink} />}
+                              <Text className="font-bold ml-1" style={{ fontSize: rf(11), color: C.ink }}>Voice note</Text>
                             </TouchableOpacity>
                           </View>
                         ) : null}
@@ -1557,13 +1617,13 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                                 <Image
                                   key={j}
                                   source={{ uri: u }}
-                                  style={{ width: 60, height: 60, borderRadius: 8, marginRight: 6 }}
+                                  style={{ width: 52, height: 52, borderRadius: 8, marginRight: 6 }}
                                 />
                               ))}
                             </View>
                           </ScrollView>
                         ) : null}
-                        <Text className="text-text-muted mt-1.5" style={{ fontSize: rf(10) }}>
+                        <Text style={{ fontSize: rf(10), color: C.muted, marginTop: 5 }}>
                           {fmtDateTime(n.createdAt)}
                           {edited ? `  ·  Edited ${fmtDateTime(n.updatedAt)}` : ''}
                         </Text>
@@ -1578,14 +1638,13 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
 
         {/* Service Progress checklist — matches the Service History timeline
             row-for-row. Each row has three visual states:
-              * idle    → numbered chip + label + faint chevron-style tick
-              * pending → tick goes green; [Done] (confirms emit) + [Cancel]
-                          (clears the tick) appear as a chip pair, Swiggy
-                          "Place Order / Cancel"-style
-              * done    → green DONE pill + small "Re-submit" link */}
-        <SectionHeader title="Service Progress" accent="#004C40" />
+              * idle    → numbered chip + label + Mark chip
+              * pending → chip turns yellow; [Done] (confirms emit) + [Cancel]
+                          (clears the tick) appear as a chip pair
+              * done    → green tick + DONE pill */}
+        <SectionHeader title="Service Progress" />
         <Card>
-          <Text className="text-text-muted mb-2" style={{ fontSize: rf(10.5) }}>
+          <Text style={{ fontSize: rf(10), color: C.muted, marginBottom: 2 }}>
             Tick a row and tap Done to record that step on the customer's Service History.
           </Text>
           {PROGRESS_ROWS.map((row, idx) => {
@@ -1602,58 +1661,59 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
               <View
                 key={row.key}
                 style={{
-                  paddingVertical: 12,
-                  borderTopWidth: idx > 0 ? 1 : 0, borderTopColor: '#F1F5F9',
+                  paddingVertical: 9,
+                  borderTopWidth: idx > 0 ? 1 : 0, borderTopColor: C.surface,
                 }}
               >
                 <View className="flex-row items-center">
-                {/* Numbered chip — green tint when done, gray otherwise. */}
+                {/* Numbered chip — green when done, yellow when ticked, grey otherwise. */}
                 <View
                   className="rounded-full items-center justify-center"
                   style={{
-                    width: 30, height: 30,
-                    backgroundColor: done ? '#DCFCE7' : checked ? '#FEF3C7' : '#F1F5F9',
+                    width: 26, height: 26,
+                    backgroundColor: done ? C.greenTint : checked ? C.yellowTint : C.surface,
                   }}
                 >
                   {done
-                    ? <Check size={14} color="#004C40" />
+                    ? <Check size={13} color={C.green} />
                     : (
                       <Text
                         className="font-extrabold"
-                        style={{ fontSize: rf(10), color: checked ? '#B45309' : '#64748B' }}
+                        style={{ fontSize: rf(9.5), color: checked ? C.yellowInk : C.muted }}
                       >
                         {stepNo}
                       </Text>
                     )}
                 </View>
 
-                <Pressable
+                <TouchableOpacity
                   onPress={done ? null : toggleTick}
-                  className="flex-1 ml-3"
-                  style={({ pressed }) => ({ opacity: pressed && !done ? 0.7 : 1 })}
+                  disabled={done}
+                  activeOpacity={0.7}
+                  style={{ flex: 1, marginLeft: 10 }}
                 >
                   <Text
-                    style={{ fontSize: rf(13) }}
-                    className={`${done ? 'font-extrabold' : 'font-bold'} text-text`}
+                    style={{ fontSize: rf(12.5), color: C.ink }}
+                    className={done ? 'font-extrabold' : 'font-bold'}
                     numberOfLines={1}
                   >
                     {row.label}
                   </Text>
                   {checked && !done ? (
-                    <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(10) }}>
+                    <Text className="mt-0.5" style={{ fontSize: rf(10), color: C.muted }}>
                       Tap Done to confirm.
                     </Text>
                   ) : done ? (
-                    <Text className="mt-0.5" style={{ fontSize: rf(10), color: '#004C40' }}>
+                    <Text className="mt-0.5" style={{ fontSize: rf(10), color: C.green }}>
                       {progressActor[row.key] === 'OWNER' ? 'Recorded by shop' : 'Recorded'}
                     </Text>
                   ) : null}
-                </Pressable>
+                </TouchableOpacity>
 
                 {/* Right action area: changes by state. */}
                 {done ? (
-                  <View className="rounded-full px-2.5 py-1" style={{ backgroundColor: '#DCFCE7' }}>
-                    <Text className="font-extrabold" style={{ fontSize: rf(10), color: '#004C40' }}>DONE</Text>
+                  <View className="rounded-full px-2.5 py-1" style={{ backgroundColor: C.greenTint }}>
+                    <Text className="font-extrabold" style={{ fontSize: rf(9.5), color: C.green }}>DONE</Text>
                   </View>
                 ) : checked ? (
                   <View className="flex-row items-center">
@@ -1661,13 +1721,12 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                     <TouchableOpacity
                       onPress={() => submitProgress(row)}
                       disabled={busy}
+                      activeOpacity={0.85}
                       className="rounded-full flex-row items-center"
                       style={{
-                        backgroundColor: '#004C40',
-                        paddingHorizontal: 14, paddingVertical: 7,
+                        backgroundColor: C.green,
+                        paddingHorizontal: 12, paddingVertical: 6,
                         opacity: busy ? 0.6 : 1,
-                        shadowColor: '#004C40', shadowOpacity: 0.3, shadowRadius: 4,
-                        shadowOffset: { width: 0, height: 2 }, elevation: 2,
                       }}
                     >
                       {busy
@@ -1683,28 +1742,30 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                     <TouchableOpacity
                       onPress={toggleTick}
                       disabled={busy}
-                      className="rounded-full flex-row items-center ml-2"
+                      activeOpacity={0.8}
+                      className="rounded-full flex-row items-center ml-1.5"
                       style={{
                         backgroundColor: '#FFFFFF',
-                        borderWidth: 1, borderColor: '#CBD5E1',
-                        paddingHorizontal: 12, paddingVertical: 6,
+                        borderWidth: 1, borderColor: C.line,
+                        paddingHorizontal: 10, paddingVertical: 5,
                       }}
                     >
-                      <X size={11} color="#64748B" />
-                      <Text className="font-extrabold ml-1" style={{ fontSize: rf(11), color: '#64748B' }}>Cancel</Text>
+                      <X size={11} color={C.muted} />
+                      <Text className="font-extrabold ml-1" style={{ fontSize: rf(11), color: C.muted }}>Cancel</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
                   // Idle: a Mark chip that ticks the row (same as tapping the label).
                   <TouchableOpacity
                     onPress={toggleTick}
+                    activeOpacity={0.8}
                     className="rounded-full"
                     style={{
-                      backgroundColor: '#F1F5F9',
-                      paddingHorizontal: 14, paddingVertical: 7,
+                      backgroundColor: C.surface,
+                      paddingHorizontal: 12, paddingVertical: 6,
                     }}
                   >
-                    <Text className="font-extrabold" style={{ fontSize: rf(11), color: '#475569' }}>Mark</Text>
+                    <Text className="font-extrabold" style={{ fontSize: rf(11), color: C.ink }}>Mark</Text>
                   </TouchableOpacity>
                 )}
                 </View>
@@ -1714,8 +1775,8 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                     what the customer + shop + technician timelines render
                     below the matching step row. */}
                 {showNoteInput ? (
-                  <View className="ml-[42px] mt-2">
-                    <Text className="font-extrabold text-text-muted uppercase tracking-wider mb-1" style={{ fontSize: rf(10) }}>
+                  <View style={{ marginLeft: 36, marginTop: 8 }}>
+                    <Text className="font-extrabold uppercase tracking-wider mb-1" style={{ fontSize: rf(9.5), color: C.muted }}>
                       Which spare part is waiting?
                     </Text>
                     <TextInput
@@ -1725,18 +1786,18 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                       }
                       multiline
                       placeholder="e.g. Display + battery on order from Samsung distributor, ETA 3 days."
-                      placeholderTextColor="#94A3B8"
+                      placeholderTextColor={C.faint}
                       editable={!busy}
-                      className="text-text"
-                      style={{ fontSize: rf(12),
-                        backgroundColor: '#FFFBEB',
-                        borderWidth: 1, borderColor: '#FDE68A',
+                      style={{
+                        fontSize: rf(12), color: C.ink,
+                        backgroundColor: C.yellowSoft,
+                        borderWidth: 1, borderColor: C.yellowLine,
                         borderRadius: 10,
-                        paddingHorizontal: 10, paddingVertical: 8,
-                        minHeight: 60, textAlignVertical: 'top',
+                        paddingHorizontal: 10, paddingVertical: 7,
+                        minHeight: 56, textAlignVertical: 'top',
                       }}
                     />
-                    <Text className="text-text-muted mt-1" style={{ fontSize: rf(9.5) }}>
+                    <Text className="mt-1" style={{ fontSize: rf(9.5), color: C.muted }}>
                       Shown to the customer, shop owner, and on your own history rail.
                     </Text>
                   </View>
@@ -1746,48 +1807,52 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
           })}
         </Card>
 
-        {/* Solution Pack — two big CTAs, one for viewing existing references
-            and one for uploading a new solution. Icon-in-circle + label. */}
-        <SectionHeader title="Solution Packs" accent="#3B82F6" />
+        {/* Solution Pack — two compact CTAs, one for viewing existing
+            references and one for uploading a new solution. */}
+        <SectionHeader title="Solution Packs" />
         <View className="flex-row -mx-1 mb-2">
           <View className="flex-1 px-1">
             <TouchableOpacity
               onPress={openReferenceView}
-              className="rounded-2xl"
+              activeOpacity={0.85}
+              className="flex-row items-center"
               style={{
-                backgroundColor: '#3B82F6', paddingVertical: 16, paddingHorizontal: 12,
-                shadowColor: '#3B82F6', shadowOpacity: 0.25, shadowRadius: 8,
-                shadowOffset: { width: 0, height: 4 }, elevation: 3,
+                backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: C.border,
+                paddingVertical: 10, paddingHorizontal: 10,
               }}
             >
               <View
-                className="w-9 h-9 rounded-full items-center justify-center mb-2"
-                style={{ backgroundColor: 'rgba(255,255,255,0.18)' }}
+                className="rounded-full items-center justify-center"
+                style={{ width: 32, height: 32, backgroundColor: C.greenTint }}
               >
-                <Search size={16} color="#FFFFFF" />
+                <Search size={15} color={C.green} />
               </View>
-              <Text className="text-white font-extrabold" style={{ fontSize: rf(13) }}>View Reference</Text>
-              <Text className="text-white opacity-80 mt-0.5" style={{ fontSize: rf(10) }}>Find an existing solution pack</Text>
+              <View className="flex-1" style={{ marginLeft: 8 }}>
+                <Text className="font-extrabold" style={{ fontSize: rf(12.5), color: C.ink }} numberOfLines={1}>View Reference</Text>
+                <Text style={{ fontSize: rf(9.5), color: C.muted, marginTop: 1 }} numberOfLines={2}>Find an existing solution pack</Text>
+              </View>
             </TouchableOpacity>
           </View>
           <View className="flex-1 px-1">
             <TouchableOpacity
               onPress={openUploadScreen}
-              className="rounded-2xl"
+              activeOpacity={0.85}
+              className="flex-row items-center"
               style={{
-                backgroundColor: '#1E1EAC', paddingVertical: 16, paddingHorizontal: 12,
-                shadowColor: '#1E1EAC', shadowOpacity: 0.25, shadowRadius: 8,
-                shadowOffset: { width: 0, height: 4 }, elevation: 3,
+                backgroundColor: C.green, borderRadius: 14, borderWidth: 1, borderColor: C.green,
+                paddingVertical: 10, paddingHorizontal: 10,
               }}
             >
               <View
-                className="w-9 h-9 rounded-full items-center justify-center mb-2"
-                style={{ backgroundColor: 'rgba(255,255,255,0.18)' }}
+                className="rounded-full items-center justify-center"
+                style={{ width: 32, height: 32, backgroundColor: 'rgba(255,255,255,0.2)' }}
               >
-                <UploadCloud size={16} color="#FFFFFF" />
+                <UploadCloud size={15} color="#FFFFFF" />
               </View>
-              <Text className="text-white font-extrabold" style={{ fontSize: rf(13) }}>Upload New</Text>
-              <Text className="text-white opacity-80 mt-0.5" style={{ fontSize: rf(10) }}>Share your fix with the team</Text>
+              <View className="flex-1" style={{ marginLeft: 8 }}>
+                <Text className="text-white font-extrabold" style={{ fontSize: rf(12.5) }} numberOfLines={1}>Upload New</Text>
+                <Text style={{ fontSize: rf(9.5), color: 'rgba(255,255,255,0.85)', marginTop: 1 }} numberOfLines={2}>Share your fix with the team</Text>
+              </View>
             </TouchableOpacity>
           </View>
         </View>

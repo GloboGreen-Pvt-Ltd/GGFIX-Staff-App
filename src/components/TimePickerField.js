@@ -100,7 +100,7 @@ function WheelColumn({ data, initialIndex, onSettle, width }) {
   );
 }
 
-function WheelModal({ visible, initial, onCancel, onSave }) {
+function WheelModal({ visible, initial, onCancel, onSave, accent }) {
   const start = toIndices(initial);
   // Live selection kept in refs so column scrolling doesn't re-render the modal.
   const hourIdx = useRef(start.hourIdx);
@@ -142,7 +142,7 @@ function WheelModal({ visible, initial, onCancel, onSave }) {
               <Text style={styles.cancelText}>Cancel</Text>
             </Pressable>
             <Pressable
-              style={styles.saveBtn}
+              style={[styles.saveBtn, accent && { backgroundColor: accent }]}
               hitSlop={8}
               onPress={() => onSave(fromIndices(hourIdx.current, minIdx.current, periodIdx.current))}
             >
@@ -155,11 +155,13 @@ function WheelModal({ visible, initial, onCancel, onSave }) {
   );
 }
 
-export default function TimePickerField({ value, placeholder = 'Select time', onChange }) {
+// `fieldStyle` optionally overrides the trigger field's look (e.g. a taller, rounder field);
+// `accent` optionally recolours the popup's Save button (defaults to navy).
+export default function TimePickerField({ value, placeholder = 'Select time', onChange, fieldStyle, accent }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Pressable style={styles.field} onPress={() => setOpen(true)}>
+      <Pressable style={[styles.field, fieldStyle]} onPress={() => setOpen(true)}>
         <Ionicons name="time-outline" size={16} color="#6B7280" />
         <Text style={[styles.fieldText, { color: value ? '#111827' : '#9CA3AF' }]} numberOfLines={1}>
           {value ? to12h(value) : placeholder}
@@ -177,6 +179,7 @@ export default function TimePickerField({ value, placeholder = 'Select time', on
         initial={value}
         onCancel={() => setOpen(false)}
         onSave={(v) => { onChange?.(v); setOpen(false); }}
+        accent={accent}
       />
     </>
   );

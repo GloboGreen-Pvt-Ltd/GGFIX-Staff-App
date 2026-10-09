@@ -8,13 +8,28 @@ import {
   ActivityIndicator,
   RefreshControl,
   Linking,
+  useWindowDimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { ArrowLeftRight, ClipboardList, Clock3, Package, PackageOpen, Send, ShoppingBag } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { listMyAssignedPickups, updatePickupStatus } from '../api/pickups';
 import { confirm, notify } from '../components/confirm';
 import { readPickupPersonLocation } from '../utils/pickupLocation';
-import { rf, rlh } from '../utils/responsive';
+import { rf, rlh, rs } from '../utils/responsive';
+import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
+import { MINT, MonthCard, MetricCard, SectionCard, EmptyState } from '../components/MintKit';
+
+const MAX_CONTENT_WIDTH = 720;
+const ORANGE = '#F97316';
+
+// Presentation only: summary-tile tints.
+const TINTS = {
+  assign:   { bg: '#F4FBF8', border: '#D9EEE4', tile: MINT.deep, icon: '#FFFFFF', wave: '#D6F1E5' },
+  reassign: { bg: '#FFF7EE', border: '#FCE3C8', tile: ORANGE,    icon: '#FFFFFF', wave: '#FDE3C6' },
+  total:    { bg: '#F4FBF8', border: '#D9EEE4', tile: MINT.primary, icon: '#FFFFFF', wave: '#D6F1E5' },
+};
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -121,6 +136,8 @@ function latestAssignmentEvent(events) {
 }
 
 export default function PickupAssignScreen({ navigation }) {
+  useHideNativeHeader(navigation);
+  const { width: winW } = useWindowDimensions();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -278,83 +295,74 @@ export default function PickupAssignScreen({ navigation }) {
     setYear(y);
   };
 
+  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(32);
+  const tileGap = rs(8);
+  const tileW = (contentW - tileGap * 2) / 3;
+
   return (
-    <View style={styles.safe}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <MintBackdrop />
+      <MintScreenHeader title="Assign Pickup" navigation={navigation} />
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} colors={[MINT.deep]} tintColor={MINT.deep} />}
+        showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.pageEyebrow}>Assigned Pickups</Text>
+        <View style={{ width: contentW }}>
+          <Text style={styles.pageEyebrow}>Assigned Pickups</Text>
 
-        <View style={styles.monthRow}>
-          <Text style={styles.monthLabel}>This Month</Text>
-          <View style={styles.monthPill}>
-            <TouchableOpacity onPress={() => stepMonth(-1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-              <Ionicons name="chevron-back" size={12} color="#FFFFFF" />
-            </TouchableOpacity>
-            <Text style={styles.monthPillText}>{MONTHS[month - 1]} {year}</Text>
-            <TouchableOpacity onPress={() => stepMonth(1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-              <Ionicons name="chevron-forward" size={12} color="#FFFFFF" />
-            </TouchableOpacity>
-            <View style={styles.calBadge}>
-              <Ionicons name="calendar" size={12} color="#FFFFFF" />
-            </View>
+          <MonthCard
+            subtitle="View your pickup assignment summary"
+            monthLabel={`${MONTHS[month - 1]} ${year}`}
+            onPrev={() => stepMonth(-1)}
+            onNext={() => stepMonth(1)}
+            inline={contentW >= 420}
+          />
+
+          <View style={[styles.statRow, { gap: tileGap }]}>
+            <MetricCard width={tileW} inline={tileW >= 140} icon={Package} label="Assign" value={String(counts.assign).padStart(3, '0')} tint={TINTS.assign} />
+            <MetricCard width={tileW} inline={tileW >= 140} icon={ArrowLeftRight} label="Re-Assign" value={String(counts.reassign).padStart(2, '0')} tint={TINTS.reassign} />
+            <MetricCard width={tileW} inline={tileW >= 140} icon={ShoppingBag} label="Total" value={String(counts.total).padStart(2, '0')} tint={TINTS.total} />
           </View>
+
+          <SectionCard compact title="Re-Assign" style={styles.section}>
+            {loading && list.length === 0 ? (
+              <ActivityIndicator color={MINT.deep} style={{ marginVertical: rs(16) }} />
+            ) : reassignList.length === 0 ? (
+              <EmptyState compact icon={PackageOpen} accent={Send} text="No pickups reassigned to you." />
+            ) : (
+              reassignList.map((b) => (
+                <PickupCard
+                  key={b.id}
+                  booking={b}
+                  variant="reassign"
+                  busy={advancingId === b.id}
+                  onAdvance={() => advance(b)}
+                  onHistory={() => navigation.navigate('PickupHistory', { booking: b })}
+                />
+              ))
+            )}
+          </SectionCard>
+
+          <SectionCard compact title="Recent Assign" style={styles.section}>
+            {recentList.length === 0 ? (
+              <EmptyState compact icon={ClipboardList} accent={Clock3} text="No active pickups this month." />
+            ) : (
+              recentList.map((b) => (
+                <PickupCard
+                  key={b.id}
+                  booking={b}
+                  variant="recent"
+                  busy={advancingId === b.id}
+                  onAdvance={() => advance(b)}
+                  onHistory={() => navigation.navigate('PickupHistory', { booking: b })}
+                />
+              ))
+            )}
+          </SectionCard>
         </View>
-
-        <View style={styles.statRow}>
-          <StatTile value={String(counts.assign).padStart(3, '0')} label="Assign" icon="cube" bg="#00008B" />
-          <StatTile value={String(counts.reassign).padStart(2, '0')} label="Re-Assign" icon="swap-horizontal" bg="#F59E0B" />
-          <StatTile value={String(counts.total).padStart(2, '0')} label="Total" icon="bag-handle" bg="#004C40" />
-        </View>
-
-        <Text style={styles.sectionHeader}>Re-Assign</Text>
-        {loading && list.length === 0 ? (
-          <ActivityIndicator color="#00008B" style={{ marginVertical: 16 }} />
-        ) : reassignList.length === 0 ? (
-          <Text style={styles.empty}>No pickups reassigned to you.</Text>
-        ) : (
-          reassignList.map((b) => (
-            <PickupCard
-              key={b.id}
-              booking={b}
-              variant="reassign"
-              busy={advancingId === b.id}
-              onAdvance={() => advance(b)}
-              onHistory={() => navigation.navigate('PickupHistory', { booking: b })}
-            />
-          ))
-        )}
-
-        <Text style={styles.sectionHeader}>Recent Assign</Text>
-        {recentList.length === 0 ? (
-          <Text style={styles.empty}>No active pickups this month.</Text>
-        ) : (
-          recentList.map((b) => (
-            <PickupCard
-              key={b.id}
-              booking={b}
-              variant="recent"
-              busy={advancingId === b.id}
-              onAdvance={() => advance(b)}
-              onHistory={() => navigation.navigate('PickupHistory', { booking: b })}
-            />
-          ))
-        )}
       </ScrollView>
-    </View>
-  );
-}
-
-function StatTile({ value, label, icon, bg }) {
-  return (
-    <View style={styles.statTile}>
-      <View style={[styles.statTilePill, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={12} color="#FFFFFF" />
-        <Text style={styles.statTilePillText}>{label}</Text>
-      </View>
-      <Text style={styles.statTileValue}>{value}</Text>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -374,7 +382,7 @@ function PickupCard({ booking, variant, busy, onAdvance, onHistory }) {
   const statusLabel = currentStatusLabel(booking.status);
   return (
     <View style={styles.taskCard}>
-      <View style={[styles.taskAccent, isReassign && { backgroundColor: '#F59E0B' }]} />
+      <View style={[styles.taskAccent, isReassign && { backgroundColor: ORANGE }]} />
       <View style={styles.taskInner}>
         <View style={styles.taskTopRow}>
           <Text style={styles.taskDate}>
@@ -445,14 +453,14 @@ function PickupCard({ booking, variant, busy, onAdvance, onHistory }) {
           />
           <ActionButton
             label="Directions"
-            bg="#00008B"
+            bg="#2563EB"
             icon="navigate"
             onPress={openInMaps}
             disabled={!booking.pickupAddressText}
           />
           <ActionButton
             label="History"
-            bg="#0F172A"
+            bg="#111827"
             icon="time"
             onPress={onHistory}
           />
@@ -477,87 +485,53 @@ function ActionButton({ label, bg, onPress, icon, disabled }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { padding: 14, paddingBottom: 32 },
+  safe: { flex: 1, backgroundColor: MINT.bg },
+  content: { alignItems: 'center', paddingTop: 0, paddingBottom: rs(24) },
 
-  pageEyebrow: { fontSize: rf(11), color: '#9CA3AF', marginBottom: 6, fontWeight: '500' },
+  pageEyebrow: { fontSize: rf(13), color: MINT.muted, marginTop: -rs(4), marginBottom: rs(6), fontWeight: '500' },
 
-  monthRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 14,
-    marginBottom: 10,
+  statRow: { flexDirection: 'row', marginTop: rs(8) },
+
+  section: { marginTop: rs(8) },
+
+  taskCard: {
+    flexDirection: 'row', backgroundColor: MINT.softMint, borderRadius: rs(16), borderWidth: 1, borderColor: '#E3EFE9',
+    marginBottom: rs(10), overflow: 'hidden',
   },
-  monthLabel: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  monthPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 999,
-    gap: 6,
-  },
-  monthPillText: { color: '#FFFFFF', fontSize: rf(11), fontWeight: '700' },
-  calBadge: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#1E1EAC', alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
+  taskAccent: { width: rs(4), backgroundColor: MINT.bright },
+  taskInner: { flex: 1, padding: rs(12) },
 
-  statRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  statTile: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    overflow: 'hidden',
-    paddingBottom: 10,
-    alignItems: 'center',
-  },
-  statTilePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 999,
-    marginTop: 8,
-  },
-  statTilePillText: { fontSize: rf(11), fontWeight: '700', color: '#FFFFFF' },
-  statTileValue: { fontSize: rf(22), fontWeight: '800', color: '#111827', marginTop: 6 },
+  taskTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: rs(8) },
+  taskDate: { flexShrink: 1, fontSize: rf(13), fontWeight: '700', color: MINT.text },
+  taskRef: { fontSize: rf(12), fontWeight: '700', color: MINT.primary },
 
-  sectionHeader: { fontSize: rf(14), fontWeight: '800', color: '#111827', marginTop: 4, marginBottom: 8 },
-
-  taskCard: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 12, marginBottom: 10, overflow: 'hidden' },
-  taskAccent: { width: 3, backgroundColor: '#1E1EAC' },
-  taskInner: { flex: 1, padding: 12 },
-
-  taskTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  taskDate: { fontSize: rf(12), fontWeight: '700', color: '#111827' },
-  taskRef: { fontSize: rf(11), fontWeight: '700', color: '#6B7280' },
-
-  taskDeviceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
-  taskDevice: { fontSize: rf(13), fontWeight: '700', color: '#111827', flex: 1, marginRight: 8 },
-  taskServices: { fontSize: rf(12), fontWeight: '600', color: '#111827', textAlign: 'right' },
+  taskDeviceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: rs(10) },
+  taskDevice: { fontSize: rf(14), fontWeight: '700', color: MINT.text, flex: 1, marginRight: rs(8) },
+  taskServices: { fontSize: rf(13), fontWeight: '600', color: MINT.text, textAlign: 'right', flexShrink: 1 },
 
   taskLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
-  taskLabelMuted: { fontSize: rf(10), color: '#9CA3AF' },
+  taskLabelMuted: { fontSize: rf(11), color: MINT.muted },
 
-  addressRow: { flexDirection: 'row', marginTop: 8, gap: 4 },
-  addressText: { flex: 1, fontSize: rf(11), color: '#4B5563', lineHeight: rlh(16) },
+  addressRow: { flexDirection: 'row', marginTop: rs(10), gap: rs(6) },
+  addressText: { flex: 1, fontSize: rf(12), color: '#475467', lineHeight: rlh(17) },
 
-  taskActions: { flexDirection: 'row', justifyContent: 'center', gap: 10, marginTop: 12 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 6, minWidth: 76, justifyContent: 'center' },
-  actionBtnText: { color: '#FFFFFF', fontSize: rf(12), fontWeight: '700' },
+  taskActions: { flexDirection: 'row', gap: rs(8), marginTop: rs(12) },
+  actionBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: rs(8), height: rs(40), borderRadius: rs(12),
+  },
+  actionBtnText: { color: '#FFFFFF', fontSize: rf(12.5), fontWeight: '700' },
 
-  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  statusPill: { backgroundColor: '#EEF2FF', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  statusPillText: { fontSize: rf(10), fontWeight: '800', color: '#3730A3', letterSpacing: 0.5 },
-  statusNextHint: { marginLeft: 8, fontSize: rf(10), color: '#6B7280', fontWeight: '600' },
-  statusDoneHint: { marginLeft: 8, fontSize: rf(10), color: '#004C40', fontWeight: '700' },
+  statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(12), flexWrap: 'wrap', rowGap: 4 },
+  statusPill: { backgroundColor: MINT.mint, paddingHorizontal: rs(10), paddingVertical: rs(4), borderRadius: 999 },
+  statusPillText: { fontSize: rf(11), fontWeight: '800', color: MINT.deep, letterSpacing: 0.3 },
+  statusNextHint: { marginLeft: rs(8), fontSize: rf(11.5), color: MINT.muted, fontWeight: '600' },
+  statusDoneHint: { marginLeft: rs(8), fontSize: rf(11.5), color: MINT.deep, fontWeight: '700' },
 
   advanceBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    marginTop: 10, backgroundColor: '#00008B', borderRadius: 8, paddingVertical: 10,
+    marginTop: rs(12), backgroundColor: MINT.primary, borderRadius: rs(14), height: rs(48),
+    shadowColor: MINT.deep, shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
-  advanceBtnText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '700' },
-
-  empty: { fontSize: rf(12), color: '#6B7280', textAlign: 'center', paddingVertical: 14 },
+  advanceBtnText: { color: '#FFFFFF', fontSize: rf(14), fontWeight: '800' },
 });

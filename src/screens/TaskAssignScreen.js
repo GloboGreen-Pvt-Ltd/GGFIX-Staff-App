@@ -15,6 +15,20 @@ import { confirm, notify } from '../components/confirm';
 import { rf } from '../utils/responsive';
 import { ticketRef } from '../utils/ticketRef';
 
+// Screen palette — GGFIX green / red / yellow on light neutrals, the same set
+// the restyled Home and Ticket Detail screens use.
+const C = {
+  green: '#09AD2A',
+  greenTint: '#E6F7EA',
+  red: '#F84141',
+  yellow: '#F3BF23',
+  ink: '#1E1E1E',
+  muted: '#6E6E6E',
+  faint: '#A3A3A3',
+  bg: '#F8F8F8',
+  border: '#ECECEC',
+};
+
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -147,7 +161,7 @@ export default function TaskAssignScreen({ navigation }) {
     <View style={styles.safe}>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.green} colors={[C.green]} />}
       >
         <Text style={styles.pageEyebrow}>Employee Working Hrs</Text>
 
@@ -156,29 +170,29 @@ export default function TaskAssignScreen({ navigation }) {
           <Text style={styles.monthLabel}>This Month</Text>
           <View style={styles.monthPill}>
             <TouchableOpacity onPress={() => stepMonth(-1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-              <Ionicons name="chevron-back" size={12} color="#FFFFFF" />
+              <Ionicons name="chevron-back" size={13} color={C.ink} />
             </TouchableOpacity>
             <Text style={styles.monthPillText}>{MONTHS[month - 1]} {year}</Text>
             <TouchableOpacity onPress={() => stepMonth(1)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
-              <Ionicons name="chevron-forward" size={12} color="#FFFFFF" />
+              <Ionicons name="chevron-forward" size={13} color={C.ink} />
             </TouchableOpacity>
             <View style={styles.calBadge}>
-              <Ionicons name="calendar" size={12} color="#FFFFFF" />
+              <Ionicons name="calendar" size={11} color="#FFFFFF" />
             </View>
           </View>
         </View>
 
         {/* Stat tiles */}
         <View style={styles.statRow}>
-          <StatTile value={String(counts.assign).padStart(3, '0')} label="Assign" icon="people" bg="#004C40" />
-          <StatTile value={String(counts.reassign).padStart(2, '0')} label="Re-Assign" icon="people" bg="#004C40" />
-          <StatTile value={String(counts.total).padStart(2, '0')} label="Total" icon="bag-handle" bg="#1E1EAC" />
+          <StatTile value={String(counts.assign).padStart(3, '0')} label="Assign" icon="people" bg={C.green} fg="#FFFFFF" />
+          <StatTile value={String(counts.reassign).padStart(2, '0')} label="Re-Assign" icon="people" bg={C.yellow} fg={C.ink} />
+          <StatTile value={String(counts.total).padStart(2, '0')} label="Total" icon="bag-handle" bg={C.ink} fg="#FFFFFF" />
         </View>
 
         {/* Re-Assign section */}
         <Text style={styles.sectionHeader}>Re-Assign</Text>
         {loading && list.length === 0 ? (
-          <ActivityIndicator color="#00008B" style={{ marginVertical: 16 }} />
+          <ActivityIndicator color={C.green} style={{ marginVertical: 16 }} />
         ) : reassignList.length === 0 ? (
           <Text style={styles.empty}>No tickets waiting for your acceptance.</Text>
         ) : (
@@ -216,12 +230,12 @@ export default function TaskAssignScreen({ navigation }) {
   );
 }
 
-function StatTile({ value, label, icon, bg }) {
+function StatTile({ value, label, icon, bg, fg }) {
   return (
     <View style={styles.statTile}>
       <View style={[styles.statTilePill, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={12} color="#FFFFFF" />
-        <Text style={styles.statTilePillText}>{label}</Text>
+        <Ionicons name={icon} size={11} color={fg} />
+        <Text style={[styles.statTilePillText, { color: fg }]}>{label}</Text>
       </View>
       <Text style={styles.statTileValue}>{value}</Text>
     </View>
@@ -232,7 +246,8 @@ function TaskCard({ ticket, busy, variant, onAccept, onReject, onView, onHistory
   const isReassign = variant === 'reassign';
   return (
     <View style={styles.taskCard}>
-      <View style={styles.taskAccent} />
+      {/* Yellow = waiting for your accept, green = accepted. */}
+      <View style={[styles.taskAccent, { backgroundColor: isReassign ? C.yellow : C.green }]} />
       <View style={styles.taskInner}>
         <View style={styles.taskTopRow}>
           <Text style={styles.taskDate}>{formatDate(ticket.createdAt)}</Text>
@@ -252,22 +267,22 @@ function TaskCard({ ticket, busy, variant, onAccept, onReject, onView, onHistory
             <>
               <ActionButton
                 label="Accepted"
-                bg="#004C40"
+                bg={C.green}
                 onPress={onAccept}
                 busy={busy}
               />
               <ActionButton
                 label="Not Accepted"
-                bg="#EF4444"
+                bg={C.red}
                 onPress={onReject}
                 busy={busy}
               />
             </>
           ) : (
             <>
-              <ActionButton label="Accepted" bg="#004C40" disabled />
-              <ActionButton label="View Details" bg="#00008B" onPress={onView} />
-              <ActionButton label="History" bg="#004C40" onPress={onHistory} />
+              <ActionButton label="Accepted" bg={C.greenTint} fg={C.green} disabled />
+              <ActionButton label="View Details" bg={C.green} onPress={onView} />
+              <ActionButton label="History" bg={C.ink} onPress={onHistory} />
             </>
           )}
         </View>
@@ -276,86 +291,96 @@ function TaskCard({ ticket, busy, variant, onAccept, onReject, onView, onHistory
   );
 }
 
-function ActionButton({ label, bg, onPress, busy, disabled }) {
+// `fg` marks a tinted status chip (e.g. the disabled "Accepted"), which keeps
+// full opacity; solid buttons fade while busy or disabled.
+function ActionButton({ label, bg, fg = '#FFFFFF', onPress, busy, disabled }) {
+  const tinted = fg !== '#FFFFFF';
   return (
     <TouchableOpacity
-      style={[styles.actionBtn, { backgroundColor: bg }, (busy || disabled) && { opacity: 0.6 }]}
+      style={[styles.actionBtn, { backgroundColor: bg }, (busy || (disabled && !tinted)) && { opacity: 0.6 }]}
       onPress={onPress}
       disabled={busy || disabled}
       activeOpacity={0.85}
     >
-      {busy ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={styles.actionBtnText}>{label}</Text>}
+      {busy ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={[styles.actionBtnText, { color: fg }]}>{label}</Text>}
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { padding: 14, paddingBottom: 32 },
+  safe: { flex: 1, backgroundColor: C.bg },
+  content: { padding: 12, paddingBottom: 28 },
 
-  pageEyebrow: { fontSize: rf(11), color: '#9CA3AF', marginBottom: 6, fontWeight: '500' },
+  pageEyebrow: { fontSize: rf(10.5), color: C.faint, marginBottom: 4, fontWeight: '500' },
 
   monthRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 14,
-    marginBottom: 10,
+    marginTop: 8,
+    marginBottom: 8,
   },
-  monthLabel: { fontSize: rf(14), fontWeight: '700', color: '#111827' },
+  monthLabel: { fontSize: rf(14), fontWeight: '800', color: C.ink },
   monthPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingLeft: 10,
+    paddingRight: 4,
+    paddingVertical: 4,
     borderRadius: 999,
     gap: 6,
   },
-  monthPillText: { color: '#FFFFFF', fontSize: rf(11), fontWeight: '700' },
-  calBadge: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#1E1EAC', alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
+  monthPillText: { color: C.ink, fontSize: rf(11.5), fontWeight: '700' },
+  calBadge: { width: 22, height: 22, borderRadius: 11, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', marginLeft: 2 },
 
-  statRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  statRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   statTile: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    overflow: 'hidden',
-    paddingBottom: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingTop: 8,
+    paddingBottom: 8,
     alignItems: 'center',
   },
   statTilePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
     borderRadius: 999,
-    marginTop: 8,
   },
-  statTilePillText: { fontSize: rf(11), fontWeight: '700', color: '#FFFFFF' },
-  statTileValue: { fontSize: rf(22), fontWeight: '800', color: '#111827', marginTop: 6 },
+  statTilePillText: { fontSize: rf(10.5), fontWeight: '700' },
+  statTileValue: { fontSize: rf(19), fontWeight: '800', color: C.ink, marginTop: 4 },
 
-  sectionHeader: { fontSize: rf(14), fontWeight: '800', color: '#111827', marginTop: 4, marginBottom: 8 },
+  sectionHeader: { fontSize: rf(13.5), fontWeight: '800', color: C.ink, marginTop: 2, marginBottom: 6 },
 
-  taskCard: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 12, marginBottom: 10, overflow: 'hidden' },
-  taskAccent: { width: 3, backgroundColor: '#1E1EAC' },
-  taskInner: { flex: 1, padding: 12 },
+  taskCard: {
+    flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 12, marginBottom: 8, overflow: 'hidden',
+    borderWidth: 1, borderColor: C.border,
+  },
+  taskAccent: { width: 3 },
+  taskInner: { flex: 1, paddingHorizontal: 10, paddingVertical: 9 },
 
   taskTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  taskDate: { fontSize: rf(12), fontWeight: '700', color: '#111827' },
-  taskRef: { fontSize: rf(11), fontWeight: '700', color: '#6B7280' },
+  taskDate: { fontSize: rf(11.5), fontWeight: '700', color: C.ink },
+  taskRef: { fontSize: rf(10.5), fontWeight: '700', color: C.muted },
 
-  taskDeviceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
-  taskDevice: { fontSize: rf(13), fontWeight: '700', color: '#111827', flex: 1, marginRight: 8 },
-  taskServices: { fontSize: rf(12), fontWeight: '600', color: '#111827', textAlign: 'right' },
+  taskDeviceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
+  taskDevice: { fontSize: rf(12.5), fontWeight: '700', color: C.ink, flex: 1, marginRight: 8 },
+  taskServices: { fontSize: rf(11.5), fontWeight: '600', color: C.red, textAlign: 'right' },
 
-  taskLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
-  taskLabelMuted: { fontSize: rf(10), color: '#9CA3AF' },
+  taskLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 },
+  taskLabelMuted: { fontSize: rf(9.5), color: C.faint },
 
-  taskActions: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 8, marginTop: 12 },
-  actionBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 6, minWidth: 84, alignItems: 'center' },
-  actionBtnText: { color: '#FFFFFF', fontSize: rf(12), fontWeight: '700' },
+  taskActions: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 6, marginTop: 9 },
+  actionBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, minWidth: 80, alignItems: 'center' },
+  actionBtnText: { color: '#FFFFFF', fontSize: rf(11.5), fontWeight: '700' },
 
-  empty: { fontSize: rf(12), color: '#6B7280', textAlign: 'center', paddingVertical: 14 },
+  empty: { fontSize: rf(11.5), color: C.muted, textAlign: 'center', paddingVertical: 12 },
 });

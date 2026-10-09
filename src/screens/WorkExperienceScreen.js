@@ -20,15 +20,15 @@ import { selectShopId } from '../store/authSlice';
 import { rf } from '../utils/responsive';
 
 const COLORS = {
-  background: '#F8FAFC',
+  background: '#F8F8F8',
   card: '#FFFFFF',
-  border: '#E2E8F0',
-  text: '#0F172A',
-  textMuted: '#64748B',
-  primary: '#00008B',
-  banner: '#004C40',
-  green: '#004C40',
-  red: '#DC2626',
+  border: '#ECECEC',
+  text: '#1E1E1E',
+  textMuted: '#6E6E6E',
+  primary: '#09AD2A',
+  banner: '#09AD2A',
+  green: '#09AD2A',
+  red: '#F84141',
 };
 
 function formatDate(d) {
@@ -100,7 +100,7 @@ function CurrentShopCard({ shop, me }) {
             <Image source={{ uri: image }} style={styles.photo} />
           ) : (
             <View style={[styles.photo, styles.photoPlaceholder]}>
-              <Store size={26} color={COLORS.green} />
+              <Store size={22} color={COLORS.green} />
             </View>
           )}
         </View>
@@ -301,77 +301,77 @@ const styles = StyleSheet.create({
 
   banner: {
     backgroundColor: COLORS.banner,
-    borderRadius: 8,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  bannerBar: { width: 3, height: 18, backgroundColor: '#FFFFFF', borderRadius: 2, marginRight: 8 },
-  bannerText: { color: '#FFFFFF', fontSize: rf(14), fontWeight: '700' },
+  bannerBar: { width: 3, height: 15, backgroundColor: '#FFFFFF', borderRadius: 2, marginRight: 8 },
+  bannerText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '700' },
 
   // Current working shop
   currentCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: '#BBF7D0',
-    padding: 12,
-    marginBottom: 14,
+    borderColor: '#CFEFD6',
+    padding: 10,
+    marginBottom: 10,
     shadowColor: COLORS.green,
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
   currentBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#DCFCE7',
+    backgroundColor: '#E6F7EA',
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginBottom: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 8,
     gap: 6,
   },
   currentDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.green },
-  currentBadgeText: { fontSize: rf(10), fontWeight: '800', color: '#004C40', letterSpacing: 0.6 },
+  currentBadgeText: { fontSize: rf(10), fontWeight: '800', color: '#09AD2A', letterSpacing: 0.6 },
   currentTopRow: { flexDirection: 'row', alignItems: 'center' },
   currentPhotoBox: {
-    width: 64, height: 64, borderRadius: 12, overflow: 'hidden', marginRight: 12,
-    backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#DCFCE7',
+    width: 52, height: 52, borderRadius: 10, overflow: 'hidden', marginRight: 10,
+    backgroundColor: '#F3FBF4', borderWidth: 1, borderColor: '#E6F7EA',
   },
   currentHeadCol: { flex: 1 },
-  currentShopName: { fontSize: rf(16), fontWeight: '800', color: COLORS.text },
+  currentShopName: { fontSize: rf(14.5), fontWeight: '800', color: COLORS.text },
   currentAddrRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginTop: 4 },
-  currentAddr: { flex: 1, fontSize: rf(12), color: COLORS.textMuted, lineHeight: rf(16) },
+  currentAddr: { flex: 1, fontSize: rf(11), color: COLORS.textMuted, lineHeight: rf(16) },
   currentMetaGrid: {
-    flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingTop: 12,
-    borderTopWidth: 1, borderTopColor: '#F1F5F9',
+    flexDirection: 'row', alignItems: 'center', marginTop: 9, paddingTop: 9,
+    borderTopWidth: 1, borderTopColor: '#F3F3F3',
   },
   metaTile: { flex: 1, alignItems: 'center', gap: 3, paddingHorizontal: 2 },
-  metaValue: { fontSize: rf(13), fontWeight: '800', color: COLORS.text, marginTop: 2 },
-  metaLabel: { fontSize: rf(10.5), color: COLORS.textMuted, fontWeight: '600' },
-  currentMetaDivider: { width: 1, height: 34, backgroundColor: COLORS.border },
+  metaValue: { fontSize: rf(12), fontWeight: '800', color: COLORS.text, marginTop: 2 },
+  metaLabel: { fontSize: rf(9.5), color: COLORS.textMuted, fontWeight: '600' },
+  currentMetaDivider: { width: 1, height: 28, backgroundColor: COLORS.border },
 
   card: {
     backgroundColor: COLORS.card,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 14,
+    marginBottom: 10,
     overflow: 'hidden',
   },
   cardTopRow: { flexDirection: 'row', padding: 8 },
   photoBox: {
-    width: 96,
+    width: 76,
     aspectRatio: 1,
-    borderRadius: 4,
+    borderRadius: 8,
     overflow: 'hidden',
     marginRight: 8,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F3F3F3',
   },
   photo: { width: '100%', height: '100%' },
   photoPlaceholder: { alignItems: 'center', justifyContent: 'center' },
@@ -380,12 +380,12 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: COLORS.border,
   },
-  infoLabel: { fontSize: rf(11), color: COLORS.textMuted, marginLeft: 6, fontWeight: '500' },
-  infoValue: { flex: 1, fontSize: rf(11), color: COLORS.text, fontWeight: '700' },
+  infoLabel: { fontSize: rf(10.5), color: COLORS.textMuted, marginLeft: 6, fontWeight: '500' },
+  infoValue: { flex: 1, fontSize: rf(10.5), color: COLORS.text, fontWeight: '700' },
 
   statsRow: {
     flexDirection: 'row',
@@ -393,10 +393,10 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },
-  statItem: { flex: 1, alignItems: 'center', paddingVertical: 8 },
+  statItem: { flex: 1, alignItems: 'center', paddingVertical: 6 },
   statHeader: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statLabel: { fontSize: rf(11), color: COLORS.textMuted, fontWeight: '600' },
-  statValue: { fontSize: rf(16), color: COLORS.text, fontWeight: '800', marginTop: 2 },
+  statLabel: { fontSize: rf(10), color: COLORS.textMuted, fontWeight: '600' },
+  statValue: { fontSize: rf(14), color: COLORS.text, fontWeight: '800', marginTop: 2 },
   statDivider: { width: 1, height: '70%', backgroundColor: COLORS.border },
 
   stateBox: {
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
-    paddingVertical: 32,
+    paddingVertical: 24,
     alignItems: 'center',
     gap: 10,
   },

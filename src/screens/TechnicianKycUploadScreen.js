@@ -104,6 +104,7 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
     try {
       const payload = [];
       const failedTitles = [];
+      let failReason = null;
       for (const doc of DOCS) {
         const asset = files[doc.key];
         if (!asset?.uri) continue;
@@ -136,6 +137,7 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
           // eslint-disable-next-line no-console
           console.warn(`KYC upload failed for ${doc.title}:`, uploadErr?.message);
           failedTitles.push(doc.title);
+          failReason = failReason || uploadErr?.message;
         }
         // Only persist a real hosted URL. A device-local file:// path is
         // meaningless to the backend/admin and there is no retry queue, so a
@@ -148,7 +150,7 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
       if (failedTitles.length > 0) {
         notify(
           'Upload failed',
-          `Could not upload: ${failedTitles.join(', ')}. Please check your connection and try again.`,
+          `Could not upload: ${failedTitles.join(', ')}.${failReason ? `\n${failReason}` : ' Please try again.'}`,
           { preset: 'error', haptic: 'error' }
         );
         return;
@@ -217,7 +219,7 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
               <View key={doc.key} style={styles.cardOuter}>
                 <View style={styles.cardHeader}>
                   <View style={styles.cardHeaderIcon}>
-                    <Ionicons name="person-circle-outline" size={16} color="#374151" />
+                    <Ionicons name="person-circle-outline" size={16} color="#4A4A4A" />
                   </View>
                   <Text style={styles.cardHeaderTitle} numberOfLines={1}>
                     {doc.title}
@@ -283,9 +285,9 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
+  safe: { flex: 1, backgroundColor: '#F8F8F8' },
   scroll: { flex: 1 },
-  content: { padding: 14, paddingBottom: 32 },
+  content: { padding: 12, paddingBottom: 28 },
 
   stepperWrap: {
     flexDirection: 'row',
@@ -302,18 +304,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
   },
-  stepDotIdle: { borderColor: '#00008B', backgroundColor: '#FFFFFF' },
+  stepDotIdle: { borderColor: '#09AD2A', backgroundColor: '#FFFFFF' },
   stepDotInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFFFFF' },
-  stepDotDone: { borderColor: '#004C40', backgroundColor: '#004C40' },
-  stepLabel: { fontSize: rf(9), color: '#6B7280', fontWeight: '600', marginTop: 3 },
-  stepLabelDone: { color: '#004C40' },
+  stepDotDone: { borderColor: '#09AD2A', backgroundColor: '#09AD2A' },
+  stepLabel: { fontSize: rf(9), color: '#6E6E6E', fontWeight: '600', marginTop: 3 },
+  stepLabelDone: { color: '#09AD2A' },
   stepLine: {
     flex: 1,
     height: 2,
-    backgroundColor: '#D1D5DB',
+    backgroundColor: '#D4D4D4',
     marginTop: -12,
   },
-  stepLineDone: { backgroundColor: '#004C40' },
+  stepLineDone: { backgroundColor: '#09AD2A' },
 
   grid: {
     flexDirection: 'row',
@@ -332,44 +334,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F3F3F3',
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 6,
     marginBottom: 8,
   },
   cardHeaderIcon: { width: 18, alignItems: 'center' },
-  cardHeaderTitle: { flex: 1, fontSize: rf(11), fontWeight: '700', color: '#111827' },
-  requiredStar: { color: '#DC2626', fontWeight: '800', fontSize: rf(12) },
+  cardHeaderTitle: { flex: 1, fontSize: rf(11), fontWeight: '700', color: '#1E1E1E' },
+  requiredStar: { color: '#F84141', fontWeight: '800', fontSize: rf(12) },
 
   dropZone: {
     borderWidth: 1,
     borderStyle: 'dashed',
-    borderColor: '#9CA3AF',
+    borderColor: '#A3A3A3',
     borderRadius: 8,
     paddingHorizontal: 8,
-    paddingVertical: 14,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 110,
+    minHeight: 92,
     position: 'relative',
     overflow: 'hidden',
   },
-  dropZoneUploaded: { borderColor: '#004C40', padding: 0, backgroundColor: '#FFFFFF' },
+  dropZoneUploaded: { borderColor: '#09AD2A', padding: 0, backgroundColor: '#FFFFFF' },
 
   uploadIconCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#00008B',
+    backgroundColor: '#09AD2A',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
   },
-  dropZoneTitle: { fontSize: rf(10), color: '#374151', fontWeight: '700', textAlign: 'center' },
-  dropZoneSub: { fontSize: rf(9), color: '#6B7280', textAlign: 'center', marginTop: 1 },
+  dropZoneTitle: { fontSize: rf(10), color: '#4A4A4A', fontWeight: '700', textAlign: 'center' },
+  dropZoneSub: { fontSize: rf(9), color: '#6E6E6E', textAlign: 'center', marginTop: 1 },
 
-  preview: { width: '100%', height: 110, resizeMode: 'cover', borderRadius: 6 },
+  preview: { width: '100%', height: 92, resizeMode: 'cover', borderRadius: 6 },
   removeBadge: {
     position: 'absolute',
     top: 4,
@@ -384,14 +386,14 @@ const styles = StyleSheet.create({
 
   actionBtn: {
     marginTop: 14,
-    paddingVertical: 13,
+    paddingVertical: 11,
     borderRadius: 999,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
-  actionBtnProceed: { backgroundColor: '#1E3A8A' },
-  actionBtnSubmit: { backgroundColor: '#004C40' },
+  actionBtnProceed: { backgroundColor: '#09AD2A' },
+  actionBtnSubmit: { backgroundColor: '#09AD2A' },
   actionBtnText: { color: '#FFFFFF', fontSize: rf(14), fontWeight: '800', letterSpacing: 1 },
 });

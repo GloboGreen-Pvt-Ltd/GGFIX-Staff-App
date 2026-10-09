@@ -9,6 +9,10 @@ import LoginScreen from '../screens/LoginScreen';
 import TechnicianNavigator from './TechnicianNavigator';
 import GeofenceGate from '../components/GeofenceGate';
 import AppLockGate from '../components/AppLockGate';
+import BootSplash from '../components/BootSplash';
+
+// Keep the boot splash up long enough for its intro animation to play.
+const MIN_SPLASH_MS = 1600;
 
 const Stack = createNativeStackNavigator();
 
@@ -30,7 +34,9 @@ export default function RootNavigator() {
     // The token now lives in secure storage (not the persisted profile blob),
     // so re-attach it to the in-memory session for the logged-in routing check.
     (async () => {
-      const [profile, token] = await Promise.all([getSession(), getToken()]);
+      const [profile, token] = await Promise.all([
+        getSession(), getToken(), new Promise((r) => setTimeout(r, MIN_SPLASH_MS)),
+      ]);
       const s = token ? { ...(profile || {}), accessToken: token } : profile;
       setSessionState(s);
       dispatch(setSession(s));
@@ -57,7 +63,7 @@ export default function RootNavigator() {
     dispatch(clearAuth());
   };
 
-  if (loading) return null;
+  if (loading) return <BootSplash />;
 
   if (!session?.accessToken || isCustomerOnly(session)) {
     if (isCustomerOnly(session)) {

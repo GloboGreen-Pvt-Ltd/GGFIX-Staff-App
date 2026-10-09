@@ -19,6 +19,7 @@ import { ticketApi } from '../api/client';
 import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
 import { rf, rlh } from '../utils/responsive';
+import { logProfileDebug, isShopOwnerSession } from '../utils/profileDebug';
 
 function formatTime(val) {
   if (val == null) return '—';
@@ -51,12 +52,16 @@ export default function TechnicianProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  // Why the profile failed to load ({ status, message }) — shown on screen.
+  const [loadError, setLoadError] = useState(null);
   const [form, setForm] = useState({ name: '', phone: '', email: '', photoUrl: '', defaultCheckIn: '09:30', defaultCheckOut: '18:30' });
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await ticketApi.get('/technicians/me');
+      logProfileDebug('profile ok', { endpoint: 'GET /technicians/me', technician: { id: data?.id ?? null, userId: data?.userId ?? null, shopId: data?.shopId ?? null, phone: data?.phone ?? null, roleLabel: data?.roleLabel ?? null } });
       setProfile(data);
       setForm({
         name: data?.name ?? '',
@@ -67,7 +72,8 @@ export default function TechnicianProfileScreen() {
         defaultCheckOut: data?.defaultCheckOut != null ? formatTime(data.defaultCheckOut) : '18:30',
       });
     } catch (e) {
-      notify('Error', e?.message ?? 'Failed to load profile', { preset: 'error', haptic: 'error' });
+      logProfileDebug('profile FAILED', { endpoint: 'GET /technicians/me', status: e?.status ?? null, message: e?.message ?? null, reason: e?.status === 404 ? 'server has no technician row linked to this login (user_id / shop)' : 'see status' });
+      setLoadError({ status: e?.status, message: e?.message, owner: isShopOwnerSession() });
     } finally {
       setLoading(false);
     }
@@ -93,7 +99,7 @@ export default function TechnicianProfileScreen() {
         }
       }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
@@ -158,7 +164,7 @@ export default function TechnicianProfileScreen() {
   if (!profile) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <Text style={styles.error}>Profile not found. Please log in again.</Text>
+        <ProfileLoadError error={loadError} onRetry={load} />
       </SafeAreaView>
     );
   }
@@ -213,19 +219,19 @@ export default function TechnicianProfileScreen() {
             {/* Mini stats strip */}
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <Ionicons name="log-in-outline" size={16} color={COLORS.primary} />
+                <Ionicons name="log-in-outline" size={14} color={COLORS.primary} />
                 <Text style={styles.statValue}>{checkIn}</Text>
                 <Text style={styles.statLabel}>Check-in</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                <Ionicons name="log-out-outline" size={16} color={COLORS.primary} />
+                <Ionicons name="log-out-outline" size={14} color={COLORS.primary} />
                 <Text style={styles.statValue}>{checkOut}</Text>
                 <Text style={styles.statLabel}>Check-out</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
-                <Ionicons name="time-outline" size={16} color={COLORS.primary} />
+                <Ionicons name="time-outline" size={14} color={COLORS.primary} />
                 <Text style={styles.statValue}>{shift ?? '—'}</Text>
                 <Text style={styles.statLabel}>Shift</Text>
               </View>
@@ -290,7 +296,7 @@ export default function TechnicianProfileScreen() {
 
                 <View style={styles.infoRow}>
                   <View style={styles.infoIcon}>
-                    <Ionicons name="person-outline" size={18} color={COLORS.primary} />
+                    <Ionicons name="person-outline" size={15} color={COLORS.primary} />
                   </View>
                   <View style={styles.infoBody}>
                     <Text style={styles.infoLabel}>Full name</Text>
@@ -302,7 +308,7 @@ export default function TechnicianProfileScreen() {
 
                 <View style={styles.infoRow}>
                   <View style={styles.infoIcon}>
-                    <Ionicons name="call-outline" size={18} color={COLORS.primary} />
+                    <Ionicons name="call-outline" size={15} color={COLORS.primary} />
                   </View>
                   <View style={styles.infoBody}>
                     <Text style={styles.infoLabel}>Phone</Text>
@@ -313,7 +319,7 @@ export default function TechnicianProfileScreen() {
                 <View style={styles.infoDivider} />
                 <View style={styles.infoRow}>
                   <View style={styles.infoIcon}>
-                    <Ionicons name="mail-outline" size={18} color={COLORS.primary} />
+                    <Ionicons name="mail-outline" size={15} color={COLORS.primary} />
                   </View>
                   <View style={styles.infoBody}>
                     <Text style={styles.infoLabel}>Email</Text>
@@ -334,92 +340,133 @@ export default function TechnicianProfileScreen() {
   );
 }
 
+// Explains why the profile couldn't load, using the server's status/message.
+function ProfileLoadError({ error, onRetry }) {
+  const status = error?.status;
+  let title = "Couldn't load your profile";
+  let body = 'Something went wrong while loading your details. Please try again.';
+  if (status === 404 && error?.owner) {
+    title = "This is the shop owner's login";
+    body = "Owner accounts don't have an employee profile, so there is nothing to show here. Sign in with the employee's own mobile number — or, to use the Staff App yourself, add yourself as an employee in the GGFIX Partner app with your mobile number.";
+  } else if (status === 404) {
+    title = 'No employee profile yet';
+    body = 'Your login works, but no employee profile is linked to it. Ask your shop owner to add you as staff in the GGFIX owner app using this same mobile number. Your details will then appear here and you can edit your name and photo.';
+  } else if (status === 401 || status === 403) {
+    title = 'Profile not available for this login';
+    body = 'This account is not set up as a staff / technician profile for the shop, or the session has expired. Log out and log in again. If it still shows, ask your shop owner to add you as staff with this mobile number.';
+  } else if (status === 0) {
+    title = "Can't reach the server";
+    body = 'Check your internet connection and try again.';
+  }
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 }}>
+      <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#FEECEC', alignItems: 'center', justifyContent: 'center' }}>
+        <Ionicons name="person-circle-outline" size={30} color="#F84141" />
+      </View>
+      <Text style={{ fontSize: rf(17), fontWeight: '800', color: '#1E1E1E', marginTop: 14, textAlign: 'center' }}>{title}</Text>
+      <Text style={{ fontSize: rf(13.5), lineHeight: rlh(20), color: '#6E6E6E', marginTop: 8, textAlign: 'center' }}>{body}</Text>
+      {error?.message ? (
+        <Text style={{ fontSize: rf(11.5), color: '#A3A3A3', marginTop: 10, textAlign: 'center' }} numberOfLines={3}>
+          Server: {String(error.message).slice(0, 160)}{status ? ` (HTTP ${status})` : ''}
+        </Text>
+      ) : null}
+      <TouchableOpacity
+        onPress={onRetry}
+        activeOpacity={0.85}
+        style={{ marginTop: 18, flexDirection: 'row', alignItems: 'center', backgroundColor: '#09AD2A', borderRadius: 999, paddingHorizontal: 24, height: 44 }}
+      >
+        <Ionicons name="refresh" size={17} color="#FFFFFF" />
+        <Text style={{ fontSize: rf(14), fontWeight: '700', color: '#FFFFFF', marginLeft: 8 }}>Retry</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 const COLORS = {
-  background: '#F8FAFC',
+  background: '#F8F8F8',
   card: '#FFFFFF',
-  border: '#E2E8F0',
-  text: '#0F172A',
-  textMuted: '#64748B',
-  // Brand green — matches the bottom tab bar + My Account so the app reads as
-  // one product (was navy #00008B before).
-  primary: '#004C40',
-  primaryDark: '#004C40',
-  primaryLight: '#004C40',
-  primarySoft: 'rgba(22, 163, 74, 0.10)',
-  success: '#004C40',
-  successSoft: 'rgba(22, 163, 74, 0.12)',
-  inputBg: '#F8FAFC',
+  border: '#ECECEC',
+  text: '#1E1E1E',
+  textMuted: '#6E6E6E',
+  // GGFIX green — matches the bottom tab bar, Home and My Account.
+  primary: '#09AD2A',
+  primaryDark: '#09AD2A',
+  primaryLight: '#09AD2A',
+  primarySoft: '#E6F7EA',
+  success: '#09AD2A',
+  successSoft: '#E6F7EA',
+  inputBg: '#F8F8F8',
 };
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.background },
   loader: { flex: 1, justifyContent: 'center' },
-  content: { padding: 16, paddingBottom: 32 },
-  error: { fontSize: rf(14), color: '#DC2626', textAlign: 'center', marginTop: 24 },
+  content: { padding: 12, paddingBottom: 28 },
+  error: { fontSize: rf(14), color: '#F84141', textAlign: 'center', marginTop: 24 },
 
   // Header card
   headerCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
-    paddingBottom: 16,
+    paddingBottom: 12,
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 10,
     overflow: 'hidden',
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.05,
+    shadowColor: '#1E1E1E',
+    shadowOpacity: 0.04,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
   headerBanner: {
     width: '100%',
-    height: 64,
+    height: 48,
     backgroundColor: COLORS.primary,
   },
   avatarWrap: {
-    marginTop: -44,
-    padding: 4,
+    marginTop: -34,
+    padding: 3,
     backgroundColor: COLORS.card,
     borderRadius: 60,
   },
   avatarLarge: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitials: { fontSize: rf(30), fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
+  avatarInitials: { fontSize: rf(23), fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
   avatarEditBadge: {
     position: 'absolute',
     right: -2,
     bottom: -2,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
+    borderWidth: 2,
     borderColor: COLORS.card,
   },
-  name: { fontSize: rf(20), fontWeight: '800', color: COLORS.text, marginTop: 12, paddingHorizontal: 16, textAlign: 'center' },
-  email: { fontSize: rf(13), color: COLORS.textMuted, marginTop: 4, paddingHorizontal: 16, textAlign: 'center' },
+  name: { fontSize: rf(17), fontWeight: '800', color: COLORS.text, marginTop: 8, paddingHorizontal: 16, textAlign: 'center' },
+  email: { fontSize: rf(12), color: COLORS.textMuted, marginTop: 2, paddingHorizontal: 16, textAlign: 'center' },
   roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.successSoft,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
     borderRadius: 999,
-    marginTop: 10,
+    marginTop: 7,
     gap: 6,
   },
   roleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.success },
-  roleText: { fontSize: rf(12), fontWeight: '700', color: COLORS.success },
+  roleText: { fontSize: rf(11), fontWeight: '700', color: COLORS.success },
 
   // Stats strip
   statsRow: {
@@ -429,71 +476,71 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.inputBg,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    marginTop: 16,
-    marginHorizontal: 16,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    marginTop: 10,
+    marginHorizontal: 12,
     alignSelf: 'stretch',
   },
   statItem: { flex: 1, alignItems: 'center', gap: 2 },
-  statValue: { fontSize: rf(14), fontWeight: '800', color: COLORS.text, marginTop: 2 },
-  statLabel: { fontSize: rf(11), color: COLORS.textMuted, fontWeight: '500' },
-  statDivider: { width: 1, height: 32, backgroundColor: COLORS.border },
+  statValue: { fontSize: rf(13), fontWeight: '800', color: COLORS.text, marginTop: 2 },
+  statLabel: { fontSize: rf(10), color: COLORS.textMuted, fontWeight: '500' },
+  statDivider: { width: 1, height: 26, backgroundColor: COLORS.border },
 
   // Info card
   card: {
     backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   cardTitle: {
-    fontSize: rf(13),
+    fontSize: rf(11.5),
     fontWeight: '700',
     color: COLORS.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 3 },
   infoIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 9,
     backgroundColor: COLORS.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   infoBody: { flex: 1 },
-  infoLabel: { fontSize: rf(12), color: COLORS.textMuted, marginBottom: 2 },
-  infoValue: { fontSize: rf(15), color: COLORS.text, fontWeight: '700' },
-  infoDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 8, marginLeft: 48 },
+  infoLabel: { fontSize: rf(11), color: COLORS.textMuted, marginBottom: 1 },
+  infoValue: { fontSize: rf(13.5), color: COLORS.text, fontWeight: '700' },
+  infoDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 6, marginLeft: 40 },
 
   // Edit form
-  label: { fontSize: rf(12), color: COLORS.textMuted, marginBottom: 6, fontWeight: '600' },
+  label: { fontSize: rf(11.5), color: COLORS.textMuted, marginBottom: 5, fontWeight: '600' },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.inputBg,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 10,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   inputIcon: { marginRight: 6 },
   input: {
     flex: 1,
-    paddingVertical: 10,
-    fontSize: rf(15),
+    paddingVertical: 8,
+    fontSize: rf(13.5),
     color: COLORS.text,
   },
   inputLocked: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F3F3F3',
     borderStyle: 'dashed',
   },
   inputLockedText: {
@@ -516,7 +563,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
-    paddingVertical: 14,
+    paddingVertical: 11,
     borderRadius: 12,
     backgroundColor: COLORS.primary,
     gap: 8,
@@ -526,12 +573,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
-  editBtnText: { fontSize: rf(15), color: '#FFFFFF', fontWeight: '700' },
+  editBtnText: { fontSize: rf(14), color: '#FFFFFF', fontWeight: '700' },
 
   editRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  cancelBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: COLORS.inputBg, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
-  cancelBtnText: { fontSize: rf(15), color: COLORS.text, fontWeight: '600' },
-  saveBtn: { flex: 1.4, paddingVertical: 13, borderRadius: 12, backgroundColor: COLORS.primary, alignItems: 'center' },
+  cancelBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, backgroundColor: COLORS.inputBg, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
+  cancelBtnText: { fontSize: rf(14), color: COLORS.text, fontWeight: '600' },
+  saveBtn: { flex: 1.4, paddingVertical: 10, borderRadius: 12, backgroundColor: COLORS.primary, alignItems: 'center' },
   saveBtnDisabled: { opacity: 0.7 },
-  saveBtnText: { fontSize: rf(15), color: '#fff', fontWeight: '700' },
+  saveBtnText: { fontSize: rf(14), color: '#fff', fontWeight: '700' },
 });

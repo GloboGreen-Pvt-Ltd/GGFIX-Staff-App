@@ -16,7 +16,7 @@ export default {
     userInterfaceStyle: 'automatic',
     jsEngine: 'hermes',
     icon: './assets/logo.png',
-    splash: { image: './assets/logo.png', resizeMode: 'contain', backgroundColor: '#202124' },
+    splash: { image: './assets/logo.png', resizeMode: 'contain', backgroundColor: '#F8F8F8' },
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.ggfix.employeeapp',
@@ -26,6 +26,12 @@ export default {
     },
     android: { package: 'com.ggfix.employeeapp', adaptiveIcon: { foregroundImage: './assets/logo.png', backgroundColor: '#202124' } },
     plugins: [
+      // Required config plugins for these modules as of Expo SDK 57.
+      'expo-asset',
+      'expo-sharing',
+      'expo-status-bar',
+      // Voice notes on the ticket detail screen (record + playback).
+      ['expo-audio', { microphonePermission: 'We use the microphone to record voice notes on repair tickets.' }],
       // Keychain/Keystore-backed storage for the auth token (see src/auth/session.js).
       'expo-secure-store',
       ['expo-local-authentication', { faceIDPermission: 'Use Face ID to unlock GGFIX.' }],

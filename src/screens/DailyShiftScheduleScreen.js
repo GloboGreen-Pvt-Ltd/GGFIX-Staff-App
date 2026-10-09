@@ -6,14 +6,38 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Calendar, Clock, LogIn, LogOut } from 'lucide-react-native';
 import { useSelector } from 'react-redux';
 import { ticketApi } from '../api/client';
-import { useTechnicianId } from '../auth/useTechnicianId';
+import { useTechnicianIdState } from '../auth/useTechnicianId';
+import TechIdPending from '../components/TechIdPending';
 import { selectSession } from '../store/authSlice';
 import { effectiveLateMinutes } from './DailyAttendanceScreen';
-import { rf, rlh } from '../utils/responsive';
+import { rf, rlh, rs } from '../utils/responsive';
+import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
+
+// Screen palette (GGFIX green + mint).
+const C = {
+  deep: '#09AD2A',
+  primary: '#09AD2A',
+  green: '#09AD2A',
+  mint: '#E6F7EA',
+  softMint: '#F3FBF4',
+  bg: '#F8F8F8',
+  card: '#FFFFFF',
+  border: '#E6E6E6',
+  text: '#1E1E1E',
+  muted: '#6E6E6E',
+  // Duty-start events: yellow from the palette (blue isn't in it).
+  blue: '#F3BF23',
+  softBlue: '#FEFAF0',
+  red: '#F84141',
+  softRed: '#FEECEC',
+};
+const MAX_CONTENT_WIDTH = 720;
 
 const DEFAULT_DUTY_CHECK_IN = '09:30:00';
 
@@ -77,8 +101,10 @@ function formatDuration(minutes) {
   return `${m}m`;
 }
 
-export default function DailyShiftScheduleScreen() {
-  const technicianId = useTechnicianId();
+export default function DailyShiftScheduleScreen({ navigation }) {
+  useHideNativeHeader(navigation);
+  const { width: winW } = useWindowDimensions();
+  const { id: technicianId, failed: techIdFailed, retry: retryTechId } = useTechnicianIdState();
   const session = useSelector(selectSession);
   const dutyCheckIn = session?.defaultCheckIn || DEFAULT_DUTY_CHECK_IN;
   const todayIso = isoDate(new Date());
@@ -141,185 +167,253 @@ export default function DailyShiftScheduleScreen() {
     (_, i) => startHour + i,
   );
 
+  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(32);
+  const isTodaySelected = selectedDate === todayIso;
+
   if (!technicianId) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.center}><ActivityIndicator color="#00008B" /></View>
+        <MintBackdrop />
+        <MintScreenHeader title="Daily Shift Schedule" navigation={navigation} />
+        <TechIdPending failed={techIdFailed} onRetry={retryTechId} />
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.headerRow}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerDate}>{selected.getDate()}</Text>
-          <View>
-            <Text style={styles.headerDayLong}>{dayLong}</Text>
-            <Text style={styles.headerMonth}>{monthYear}</Text>
+      <MintBackdrop />
+      <MintScreenHeader title="Daily Shift Schedule" navigation={navigation} />
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={{ width: contentW }}>
+          {/* Selected date + week strip */}
+          <View style={styles.card}>
+            <View style={styles.headerRow}>
+              <View style={styles.headerLeft}>
+                <Text style={styles.headerDate}>{selected.getDate()}</Text>
+                <View style={{ flexShrink: 1 }}>
+                  <Text style={styles.headerDayLong} numberOfLines={1}>{dayLong}</Text>
+                  <Text style={styles.headerMonth} numberOfLines={1}>{monthYear}</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[styles.todayBtn, isTodaySelected && styles.todayBtnActive]}
+                onPress={() => setSelectedDate(todayIso)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.todayBtnText}>Today</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.weekStrip}>
+              {weekDays.map((dt) => {
+                const dateStr = isoDate(dt);
+                const isSelected = dateStr === selectedDate;
+                const isSunday = dt.getDay() === 0;
+                return (
+                  <TouchableOpacity
+                    key={dateStr}
+                    style={[
+                      styles.weekDay,
+                      isSunday && !isSelected && styles.weekDaySunday,
+                      isSelected && styles.weekDaySelected,
+                    ]}
+                    onPress={() => setSelectedDate(dateStr)}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={[
+                        styles.weekDayName,
+                        isSunday && !isSelected && styles.weekDayTextSunday,
+                        isSelected && styles.weekDayTextSelected,
+                      ]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.75}
+                    >
+                      {DAYS_SHORT[dt.getDay()]}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.weekDayNum,
+                        isSunday && !isSelected && styles.weekDayTextSunday,
+                        isSelected && styles.weekDayTextSelected,
+                      ]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.75}
+                    >
+                      {pad2(dt.getDate())}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Schedule timeline */}
+          <View style={[styles.card, { marginTop: rs(14) }]}>
+            <Text style={styles.scheduleTitle}>Schedule</Text>
+
+            {loading ? (
+              <ActivityIndicator size="small" color={C.deep} style={{ marginVertical: rs(24) }} />
+            ) : (
+              <View>
+                {scheduleHours.map((h, idx) => {
+                  const isCheckIn = checkIn && checkIn.hour === h;
+                  const isCheckOut = checkOut && checkOut.hour === h;
+                  const isDuty = duty && duty.hour === h;
+                  // Events stack in normal flow (not absolutely overlaid) so two
+                  // events in the same hour can never cover each other.
+                  const events = [];
+                  if (isDuty && !isCheckIn) {
+                    events.push(
+                      <EventChip key="duty" tone="duty" icon={Calendar} label="Duty Start" time={duty.label} />,
+                    );
+                  }
+                  if (isCheckIn) {
+                    events.push(
+                      <EventChip
+                        key="in"
+                        tone={isLate ? 'late' : 'ok'}
+                        icon={isLate ? Clock : LogIn}
+                        label={isLate ? `Check-In Late by ${formatDuration(lateMinutes)}` : 'Check-In Time'}
+                        time={checkIn.label}
+                      />,
+                    );
+                  }
+                  if (isCheckOut) {
+                    events.push(
+                      <EventChip key="out" tone="ok" icon={LogOut} label="Check-Out Time" time={checkOut.label} />,
+                    );
+                  }
+                  const dotColor = isCheckIn ? (isLate ? C.red : C.green)
+                    : isDuty ? C.blue
+                    : isCheckOut ? C.green
+                    : null;
+                  return (
+                    <View key={h} style={styles.hourRow}>
+                      <View style={styles.hourPill}>
+                        <Text style={styles.hourPillText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{hourLabel(h)}</Text>
+                      </View>
+                      <View style={styles.markerCol}>
+                        <View style={[
+                          styles.markerLine,
+                          idx === 0 && { top: '50%' },
+                          idx === scheduleHours.length - 1 && { bottom: '50%' },
+                        ]} />
+                        <View style={dotColor ? [styles.markerDotActive, { backgroundColor: dotColor }] : styles.markerDot} />
+                      </View>
+                      <View style={styles.hourContent}>
+                        {events.length ? events : <View style={styles.hourLine} />}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {!loading && !checkIn && !checkOut && (
+              <Text style={styles.empty}>No attendance recorded for this day.</Text>
+            )}
+
+            {dayData?.status && dayData.status !== 'GENERAL' && (
+              <View style={styles.statusNote}>
+                <Text style={styles.statusNoteText}>
+                  {dayData.status}
+                  {dayData.notes ? ` — ${dayData.notes}` : ''}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
-        <TouchableOpacity
-          style={styles.todayBtn}
-          onPress={() => setSelectedDate(todayIso)}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.todayBtnText}>Today</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.weekStripContent}
-      >
-        {weekDays.map((dt) => {
-          const dateStr = isoDate(dt);
-          const isSelected = dateStr === selectedDate;
-          const isSunday = dt.getDay() === 0;
-          return (
-            <TouchableOpacity
-              key={dateStr}
-              style={[
-                styles.weekDay,
-                isSunday && !isSelected && styles.weekDaySunday,
-                isSelected && styles.weekDaySelected,
-              ]}
-              onPress={() => setSelectedDate(dateStr)}
-              activeOpacity={0.85}
-            >
-              <Text
-                style={[
-                  styles.weekDayName,
-                  isSunday && !isSelected && styles.weekDayTextSunday,
-                  isSelected && styles.weekDayTextSelected,
-                ]}
-              >
-                {DAYS_SHORT[dt.getDay()]}
-              </Text>
-              <Text
-                style={[
-                  styles.weekDayNum,
-                  isSunday && !isSelected && styles.weekDayTextSunday,
-                  isSelected && styles.weekDayTextSelected,
-                ]}
-              >
-                {pad2(dt.getDate())}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      <ScrollView contentContainerStyle={styles.scheduleContent}>
-        <Text style={styles.scheduleTitle}>Schedule</Text>
-
-        {loading ? (
-          <ActivityIndicator size="small" color="#00008B" style={{ marginVertical: 24 }} />
-        ) : (
-          <View style={styles.timeline}>
-            {scheduleHours.map((h) => {
-              const isCheckIn = checkIn && checkIn.hour === h;
-              const isCheckOut = checkOut && checkOut.hour === h;
-              const isDuty = duty && duty.hour === h;
-              return (
-                <View key={h} style={styles.hourRow}>
-                  <View style={styles.hourPill}>
-                    <Text style={styles.hourPillText}>{hourLabel(h)}</Text>
-                  </View>
-                  <View style={styles.hourLineWrap}>
-                    <View style={styles.hourLine} />
-                    {isDuty && !isCheckIn && (
-                      <View style={[styles.eventChip, styles.eventChipDuty]}>
-                        <Text style={styles.eventChipDutyText}>Duty Start</Text>
-                        <Text style={styles.eventChipDutyTime}>({duty.label})</Text>
-                      </View>
-                    )}
-                    {isCheckIn && (
-                      <View style={[styles.eventChip, isLate ? styles.eventChipLate : styles.eventChipCheckIn]}>
-                        <Text style={isLate ? styles.eventChipLateText : styles.eventChipText}>
-                          {isLate ? `Check-In Late by ${formatDuration(lateMinutes)}` : 'Check-In Time'}
-                        </Text>
-                        <Text style={isLate ? styles.eventChipLateTime : styles.eventChipTime}>
-                          ({checkIn.label})
-                        </Text>
-                      </View>
-                    )}
-                    {isCheckOut && (
-                      <View style={[styles.eventChip, styles.eventChipCheckOut]}>
-                        <Text style={styles.eventChipText}>Check-Out Time</Text>
-                        <Text style={styles.eventChipTime}>({checkOut.label})</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {!loading && !checkIn && !checkOut && (
-          <Text style={styles.empty}>No attendance recorded for this day.</Text>
-        )}
-
-        {dayData?.status && dayData.status !== 'GENERAL' && (
-          <View style={styles.statusNote}>
-            <Text style={styles.statusNoteText}>
-              {dayData.status}
-              {dayData.notes ? ` — ${dayData.notes}` : ''}
-            </Text>
-          </View>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+const EVENT_TONES = {
+  duty: { bg: C.softBlue, border: '#F7E3A6', iconBg: '#FDF2D0', iconColor: '#1E1E1E', text: C.text },
+  late: { bg: C.softRed, border: '#FBD0D0', iconBg: C.red, iconColor: '#FFFFFF', text: C.text },
+  ok:   { bg: C.mint, border: '#CDEFD5', iconBg: '#FFFFFF', iconColor: C.green, text: C.text },
+};
+
+function EventChip({ tone, icon: Icon, label, time }) {
+  const t = EVENT_TONES[tone];
+  const circle = rs(26);
+  return (
+    <View style={[styles.eventChip, { backgroundColor: t.bg, borderColor: t.border }]}>
+      <View style={{ width: circle, height: circle, borderRadius: circle / 2, backgroundColor: t.iconBg, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={rs(14)} color={t.iconColor} strokeWidth={2.4} />
+      </View>
+      <Text style={[styles.eventLabel, { color: t.text }]} numberOfLines={2}>{label}</Text>
+      <Text style={[styles.eventTime, { color: t.text }]} numberOfLines={1}>({time})</Text>
+    </View>
+  );
+}
+
+const cardShadow = {
+  shadowColor: '#1E1E1E', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+};
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
+  safe: { flex: 1, backgroundColor: C.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scroll: { alignItems: 'center', paddingTop: rs(2), paddingBottom: rs(16) },
 
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerDate: { fontSize: rf(28), fontWeight: '800', color: '#111827', lineHeight: rlh(30) },
-  headerDayLong: { fontSize: rf(13), fontWeight: '600', color: '#111827' },
-  headerMonth: { fontSize: rf(11), color: '#6B7280', marginTop: 1 },
-  todayBtn: { backgroundColor: '#DCFCE7', borderWidth: 1, borderColor: '#004C40', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  todayBtnText: { color: '#004C40', fontSize: rf(12), fontWeight: '700' },
+  card: {
+    backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border,
+    padding: rs(11), ...cardShadow,
+  },
 
-  weekStripContent: { paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
-  weekDay: { width: 46, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: '#FFFFFF' },
-  weekDaySelected: { backgroundColor: '#004C40' },
-  weekDaySunday: { backgroundColor: '#EF4444' },
-  weekDayName: { fontSize: rf(11), color: '#6B7280', fontWeight: '600' },
-  weekDayNum: { fontSize: rf(15), fontWeight: '800', color: '#111827', marginTop: 2 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: rs(10), flex: 1, marginRight: rs(8) },
+  headerDate: { fontSize: rf(34), fontWeight: '800', color: C.text, lineHeight: rlh(40) },
+  headerDayLong: { fontSize: rf(16), fontWeight: '800', color: C.text },
+  headerMonth: { fontSize: rf(12.5), color: C.muted, marginTop: 1 },
+  todayBtn: {
+    backgroundColor: C.card, borderWidth: 1, borderColor: '#CDEFD5',
+    paddingHorizontal: rs(14), paddingVertical: rs(6), borderRadius: rs(11),
+  },
+  todayBtnActive: { backgroundColor: C.mint, borderColor: C.green },
+  todayBtnText: { color: C.text, fontSize: rf(13), fontWeight: '700' },
+
+  weekStrip: { flexDirection: 'row', gap: rs(5), marginTop: rs(10) },
+  weekDay: {
+    flex: 1, paddingVertical: rs(6), alignItems: 'center', borderRadius: rs(11),
+    backgroundColor: '#F3F3F3', borderWidth: 1, borderColor: '#EDEDED',
+  },
+  weekDaySelected: { backgroundColor: C.green, borderColor: C.green },
+  weekDaySunday: { backgroundColor: C.softRed, borderColor: '#FBD0D0' },
+  weekDayName: { fontSize: rf(11), color: C.muted, fontWeight: '600' },
+  weekDayNum: { fontSize: rf(15), fontWeight: '800', color: C.text, marginTop: 1 },
   weekDayTextSelected: { color: '#FFFFFF' },
-  weekDayTextSunday: { color: '#FFFFFF' },
+  weekDayTextSunday: { color: C.red },
 
-  scheduleContent: { paddingHorizontal: 14, paddingTop: 8, paddingBottom: 32 },
-  scheduleTitle: { fontSize: rf(14), fontWeight: '700', color: '#111827', marginBottom: 10 },
+  scheduleTitle: { fontSize: rf(16), fontWeight: '800', color: C.text, marginBottom: rs(6) },
 
-  timeline: { backgroundColor: 'transparent' },
-  hourRow: { flexDirection: 'row', alignItems: 'center', minHeight: 42 },
-  hourPill: { width: 56, paddingVertical: 4, borderRadius: 999, backgroundColor: '#9CA3AF', alignItems: 'center', marginRight: 10 },
-  hourPillText: { fontSize: rf(11), fontWeight: '700', color: '#FFFFFF' },
-  hourLineWrap: { flex: 1, justifyContent: 'center', minHeight: 30 },
-  hourLine: { height: 1, borderStyle: 'dashed', borderWidth: 0.5, borderColor: '#C7CDDB' },
+  hourRow: { flexDirection: 'row', alignItems: 'center', minHeight: rs(36) },
+  hourPill: {
+    width: rs(72), paddingVertical: rs(3), borderRadius: 999, backgroundColor: '#F3F3F3',
+    alignItems: 'center',
+  },
+  hourPillText: { fontSize: rf(11), fontWeight: '600', color: C.text },
+  markerCol: { width: rs(22), alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  markerLine: { position: 'absolute', top: 0, bottom: 0, width: 1.5, backgroundColor: '#E6E6E6' },
+  markerDot: { width: rs(7), height: rs(7), borderRadius: rs(4), backgroundColor: '#D4D4D4' },
+  markerDotActive: { width: rs(11), height: rs(11), borderRadius: rs(6), borderWidth: 2.5, borderColor: '#FFFFFF' },
+  hourContent: { flex: 1, justifyContent: 'center', paddingVertical: rs(3), gap: rs(5) },
+  hourLine: { height: 1, borderStyle: 'dashed', borderWidth: 0.5, borderColor: '#DDDDDD' },
 
-  eventChip: { position: 'absolute', left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
-  eventChipCheckIn: { backgroundColor: '#DCFCE7' },
-  eventChipCheckOut: { backgroundColor: '#DCFCE7' },
-  eventChipText: { fontSize: rf(12), fontWeight: '700', color: '#004C40' },
-  eventChipTime: { fontSize: rf(11), fontWeight: '600', color: '#004C40' },
-  eventChipDuty: { backgroundColor: '#E0E7FF', borderWidth: 1, borderColor: '#6366F1', borderStyle: 'dashed' },
-  eventChipDutyText: { fontSize: rf(12), fontWeight: '700', color: '#3730A3' },
-  eventChipDutyTime: { fontSize: rf(11), fontWeight: '600', color: '#3730A3' },
-  eventChipLate: { backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5' },
-  eventChipLateText: { fontSize: rf(12), fontWeight: '800', color: '#B91C1C' },
-  eventChipLateTime: { fontSize: rf(11), fontWeight: '700', color: '#B91C1C' },
+  eventChip: {
+    flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: rs(11),
+    paddingHorizontal: rs(8), paddingVertical: rs(5),
+  },
+  eventLabel: { flex: 1, fontSize: rf(12.5), fontWeight: '700', marginLeft: rs(8) },
+  eventTime: { fontSize: rf(12), fontWeight: '600', marginLeft: rs(6) },
 
-  empty: { fontSize: rf(13), color: '#6B7280', textAlign: 'center', marginTop: 16 },
+  empty: { fontSize: rf(12.5), color: C.muted, textAlign: 'center', marginTop: rs(12) },
 
-  statusNote: { marginTop: 14, backgroundColor: '#FEF3C7', borderRadius: 8, padding: 10 },
-  statusNoteText: { fontSize: rf(12), fontWeight: '600', color: '#92400E' },
+  statusNote: { marginTop: rs(10), backgroundColor: '#FDF6E0', borderRadius: rs(11), padding: rs(10) },
+  statusNoteText: { fontSize: rf(12), fontWeight: '600', color: C.text },
 });

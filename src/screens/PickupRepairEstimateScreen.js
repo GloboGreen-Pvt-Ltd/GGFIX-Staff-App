@@ -132,6 +132,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
   useEffect(() => { load(); }, [load]);
 
   const pickSlot = async (index) => {
+    try {
     if (Platform.OS !== 'web') {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
@@ -140,7 +141,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
       }
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.75,
     });
@@ -158,6 +159,9 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
       };
       return next;
     });
+    } catch (e) {
+      notify('Could not open gallery', e?.message || 'Please try again.');
+    }
   };
 
   const removeSlot = (index) => {

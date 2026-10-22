@@ -1,18 +1,10 @@
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../components/Typography';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { notify } from '../components/confirm';
-import { rf, rlh } from '../utils/responsive';
+import { rf, rlh, rs } from '../utils/responsive';
 
 // Three device photo slots — same keys the backend uses on the repair estimate
 // record, so the next screen can persist them via submitPickupRepairEstimate.
@@ -97,7 +89,7 @@ export default function UploadRepairImagesScreen({ route, navigation }) {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
           <View style={styles.headerIcon}>
-            <Ionicons name="image-outline" size={18} color="#00008B" />
+            <Ionicons name="image-outline" size={rs(18)} color="#035C6C" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>{trackingId(booking)}</Text>
@@ -124,7 +116,7 @@ export default function UploadRepairImagesScreen({ route, navigation }) {
                     </>
                   ) : (
                     <View style={styles.emptySlot}>
-                      <Ionicons name="camera-outline" size={22} color="#64748B" />
+                      <Ionicons name="camera-outline" size={22} color="#6B7280" />
                       <Text style={styles.emptySlotText}>Upload</Text>
                     </View>
                   )}
@@ -164,7 +156,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E5E7EB',
   },
   headerIcon: {
     width: 38,
@@ -175,33 +167,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
-  headerTitle: { fontSize: rf(15), fontWeight: '800', color: '#111827' },
-  headerSub: { fontSize: rf(11), color: '#64748B', marginTop: 2, fontWeight: '600' },
+  headerTitle: { fontSize: rf(16), fontWeight: '800', color: '#1C3053' },
+  headerSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2, fontWeight: '600' },
   section: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E5E7EB',
   },
-  sectionTitle: { fontSize: rf(13), fontWeight: '800', color: '#111827', marginBottom: 6 },
-  sectionHint: { fontSize: rf(11), color: '#64748B', marginBottom: 12, lineHeight: rlh(16) },
+  sectionTitle: { fontSize: rf(16), fontWeight: '800', color: '#1C3053', marginBottom: 6 },
+  sectionHint: { fontSize: rf(12), color: '#6B7280', marginBottom: 12, lineHeight: rlh(17) },
   imageRow: { flexDirection: 'row', marginHorizontal: -4 },
   imageCol: { flex: 1, paddingHorizontal: 4 },
-  slotLabel: { fontSize: rf(10), color: '#64748B', fontWeight: '700', marginBottom: 5, textAlign: 'center' },
+  slotLabel: { fontSize: rf(10), color: '#6B7280', fontWeight: '700', marginBottom: 5, textAlign: 'center' },
   imageSlot: {
     height: 110,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E5E7EB',
     borderStyle: 'dashed',
     overflow: 'hidden',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F3F4F6',
   },
   preview: { width: '100%', height: '100%' },
   emptySlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptySlotText: { fontSize: rf(10), color: '#64748B', marginTop: 4, fontWeight: '700' },
+  emptySlotText: { fontSize: rf(10), color: '#6B7280', marginTop: 4, fontWeight: '700' },
   removeBtn: {
     position: 'absolute',
     top: 5,
@@ -216,7 +208,7 @@ const styles = StyleSheet.create({
   continueBtn: {
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#00008B',
+    backgroundColor: '#035C6C',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',

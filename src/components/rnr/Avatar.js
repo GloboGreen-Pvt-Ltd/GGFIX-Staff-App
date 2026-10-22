@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Image } from 'react-native';
+import { View, Image } from 'react-native';
+import { Text } from '../Typography';
 import { cn } from './cn';
 
 export function Avatar({ source, fallback, size = 40, className, gradient = false }) {

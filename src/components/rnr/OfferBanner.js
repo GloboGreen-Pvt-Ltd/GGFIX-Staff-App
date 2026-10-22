@@ -1,16 +1,17 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from '../Typography';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowRight } from 'lucide-react-native';
 import { cn } from './cn';
 import { rf } from '../../utils/responsive';
 
 const palettes = {
-  primary: ['#00008B', '#2563EB'],
-  emerald: ['#004C40', '#00695C'],   // teal now; key name kept so callers don't break
-  amber: ['#F59E0B', '#FB923C'],
+  primary: ['#035C6C', '#035C6C'],
+  emerald: ['#609138', '#035C6C'],   // teal now; key name kept so callers don't break
+  amber: ['#FAA700', '#FB923C'],
   rose: ['#EC4899', '#F43F5E'],
-  violet: ['#1E1EAC', '#A855F7'],
+  violet: ['#035C6C', '#A855F7'],
 };
 
 export function OfferBanner({

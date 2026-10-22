@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from '../Typography';
 import { ChevronRight } from 'lucide-react-native';
 import { cn } from './cn';
 import { rf } from '../../utils/responsive';

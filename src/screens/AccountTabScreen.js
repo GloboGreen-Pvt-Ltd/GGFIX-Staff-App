@@ -1,26 +1,23 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, TouchableOpacity, ScrollView, Image, Switch, Alert, Platform, useWindowDimensions } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Pressable, TouchableOpacity, ScrollView, Image, Alert, Platform, RefreshControl, useWindowDimensions } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   User as UserIcon,
-  Lock,
   Briefcase,
   CreditCard,
   FileText,
   ShieldCheck,
   HelpCircle,
   LogOut,
-  Fingerprint,
   UserRound,
   LockKeyhole,
   BriefcaseBusiness,
   IdCard,
   Headset,
   Bell,
-  Camera,
-  Pencil,
   Phone,
   BadgeCheck,
 } from 'lucide-react-native';
@@ -31,27 +28,26 @@ import { getRoleDisplayLabel } from '../config/categories';
 import { employeeIdFromSession } from '../utils/employeeId';
 import { confirm, notify } from '../components/confirm';
 import { listMyKycDocuments } from '../api/technicianKyc';
-import { isAppLockEnabled, setAppLockEnabled, isDeviceSecure, authenticate } from '../auth/appLock';
+import { refreshMyProfile } from '../auth/refreshProfile';
 import { loadUnreadNotificationCount } from './NotificationsScreen';
 import { rf, rs } from '../utils/responsive';
+import MintScreenHeader from '../components/MintScreenHeader';
 
 // Brand palette (same as Home): green, red, yellow, ink + light neutrals.
 const C = {
-  green: '#09AD2A',
-  red: '#F84141',
-  yellow: '#F3BF23',
-  ink: '#1E1E1E',
-  bg: '#F8F8F8',
-  surface: '#F3F3F3',
-  greenTint: '#E6F7EA',
+  green: '#035C6C',
+  red: '#F32C26',
+  yellow: '#FAA700',
+  ink: '#111111',
+  bg: '#F3F4F6',
+  surface: '#F3F4F6',
+  greenTint: '#E5F3F5',
   redSoft: '#FFF6F6',
   card: '#FFFFFF',
-  border: '#EEEEEE',
-  muted: '#6E6E6E',
+  border: '#E5E7EB',
+  muted: '#6B7280',
   faint: '#A3A3A3',
 };
-// App Lock switch track colour.
-const GREEN = C.green;
 
 const MAX_CONTENT_WIDTH = 720;
 const APP_VERSION = Constants.expoConfig?.version || '1.0';
@@ -62,20 +58,13 @@ const cardShadow = {
 // Presentation only, keyed by the existing item keys: solid icon tile colour,
 // icon, and row subtitle. Handlers stay in the sections list below.
 const ITEM_LOOK = {
-  profile:  { icon: UserRound,         bg: C.green,  fg: '#FFFFFF', sub: 'View and manage your profile information' },
+  profile:  { icon: UserRound,         bg: '#609138', fg: '#FFFFFF', sub: 'View and manage your profile information' },
   password: { icon: LockKeyhole,       bg: C.red,    fg: '#FFFFFF', sub: 'Update your account password' },
-  work:     { icon: BriefcaseBusiness, bg: C.yellow, fg: C.ink,     sub: 'Your work experience details' },
-  kyc:      { icon: IdCard,            bg: C.ink,    fg: '#FFFFFF', sub: 'Manage your KYC documents' },
-  terms:    { icon: FileText,          bg: C.ink,    fg: '#FFFFFF', sub: 'Read our terms and conditions' },
-  privacy:  { icon: ShieldCheck,       bg: C.green,  fg: '#FFFFFF', sub: 'Learn about your privacy' },
-  help:     { icon: Headset,           bg: C.red,    fg: '#FFFFFF', sub: "We're here to help" },
-};
-// Section headings shown above each card (keyed by the existing section title).
-const SECTION_META = {
-  Account:        { title: 'Account',  subtitle: 'Your profile and password' },
-  Work:           { title: 'Work',     subtitle: 'Experience and documents' },
-  Security:       { title: 'Security', subtitle: 'Keep your account safe and secure' },
-  'Help & Legal': { title: 'Support',  subtitle: 'Help, legal and other information' },
+  work:     { icon: BriefcaseBusiness, bg: '#FAA700', fg: '#FFFFFF', sub: 'Your work experience details' },
+  kyc:      { icon: IdCard,            bg: '#035C6C', fg: '#FFFFFF', sub: 'Manage your KYC documents' },
+  terms:    { icon: FileText,          bg: '#0788C9', fg: '#FFFFFF', sub: 'Read our terms and conditions' },
+  privacy:  { icon: ShieldCheck,       bg: '#1C3053', fg: '#FFFFFF', sub: 'Learn about your privacy' },
+  help:     { icon: Headset,           bg: '#035C6C', fg: '#FFFFFF', sub: "We're here to help" },
 };
 
 function initialsFromName(name) {
@@ -85,7 +74,22 @@ function initialsFromName(name) {
 
 export default function AccountTabScreen({ navigation }) {
   const session = useSelector(selectSession);
+  const dispatch = useDispatch();
   const onLogout = useLogout();
+
+  // Re-read /technicians/me whenever the tab gains focus (and on pull-to-
+  // refresh) so owner edits — e.g. a phone number set in the Partner app —
+  // replace the values cached from login. Failures keep the last values.
+  const [refreshing, setRefreshing] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      refreshMyProfile(dispatch);
+    }, [dispatch])
+  );
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try { await refreshMyProfile(dispatch); } finally { setRefreshing(false); }
+  }, [dispatch]);
   const displayName = session?.fullName || session?.email || 'Employee';
   const roleLabel = getRoleDisplayLabel(session);
   const employeeId = employeeIdFromSession(session);
@@ -109,7 +113,7 @@ export default function AccountTabScreen({ navigation }) {
     }, [])
   );
   const openKyc = () =>
-    navigation.navigate(hasKycDocs ? 'TechnicianKycView' : 'TechnicianKycIntro');
+    navigation.navigate(hasKycDocs ? 'TechnicianKycView' : 'TechnicianKycUpload');
 
   const handleLogout = async () => {
     const ok = await confirm({
@@ -132,15 +136,14 @@ export default function AccountTabScreen({ navigation }) {
     {
       title: 'Account',
       items: [
-        { key: 'profile',  label: 'Profile',         icon: UserIcon, tint: '#DCFCE7', fg: '#004C40', onPress: openProfile },
-        { key: 'password', label: 'Change Password', icon: Lock,     tint: '#FEF3C7', fg: '#B45309', onPress: () => comingSoon('Change Password') },
+        { key: 'profile',  label: 'Profile',         icon: UserIcon, tint: '#DCFCE7', fg: '#609138', onPress: openProfile },
       ],
     },
     {
       title: 'Work',
       items: [
-        { key: 'work', label: 'Work Experience', icon: Briefcase,  tint: '#E0E7FF', fg: '#6D28D9', onPress: () => navigation.navigate('WorkExperience') },
-        { key: 'kyc',  label: 'KYC Documents',   icon: CreditCard, tint: '#DCFCE7', fg: '#004C40', onPress: openKyc },
+        { key: 'work', label: 'Work Experience', icon: Briefcase,  tint: '#E0E7FF', fg: '#1C3053', onPress: () => navigation.navigate('WorkExperience') },
+        { key: 'kyc',  label: 'KYC Documents',   icon: CreditCard, tint: '#DCFCE7', fg: '#609138', onPress: openKyc },
       ],
     },
     {
@@ -148,7 +151,7 @@ export default function AccountTabScreen({ navigation }) {
       items: [
         { key: 'terms',   label: 'Terms & Conditions', icon: FileText,    tint: '#FFE4E6', fg: '#BE123C', onPress: () => comingSoon('Terms & Conditions') },
         { key: 'privacy', label: 'Privacy Policy',     icon: ShieldCheck, tint: '#CFFAFE', fg: '#0E7490', onPress: () => comingSoon('Privacy Policy') },
-        { key: 'help',    label: 'Help Center',        icon: HelpCircle,  tint: '#FFEDD5', fg: '#C2410C', onPress: () => comingSoon('Help Center') },
+        { key: 'help',    label: 'Help Center',        icon: HelpCircle,  tint: '#FFEDD5', fg: '#C2410C', onPress: () => navigation.navigate('HelpSupport') },
       ],
     },
   ];
@@ -165,41 +168,46 @@ export default function AccountTabScreen({ navigation }) {
   const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(32);
   const avatar = rs(50);
   // Same order as the reference: Account, Work, Security, then Support.
-  const mainSections = sections.filter((s) => s.title !== 'Help & Legal');
-  const supportSection = sections.find((s) => s.title === 'Help & Legal');
+  const allItems = sections.flatMap((s) => s.items);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }} edges={['top']}>
-      <ScrollView contentContainerStyle={{ alignItems: 'center', paddingBottom: rs(16) }} showsVerticalScrollIndicator={false}>
-        <View style={{ width: contentW }}>
-          {/* Header */}
-          <View className="flex-row items-center" style={{ paddingTop: rs(8) }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: rf(12), fontWeight: '900', color: C.green, letterSpacing: 1 }}>GGFIX</Text>
-              <Text style={{ fontSize: rf(20), fontWeight: '800', color: C.ink }}>My Account</Text>
-              <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: 1 }}>Manage your profile, work and preferences</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('Notifications')}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Notifications"
-              activeOpacity={0.8}
-              style={{
-                width: rs(38), height: rs(38), borderRadius: rs(19), backgroundColor: C.card,
-                alignItems: 'center', justifyContent: 'center', ...cardShadow,
-              }}
-            >
-              <Bell size={rs(18)} color={C.ink} />
-              {unreadNotifs > 0 ? (
-                <View style={{ position: 'absolute', top: rs(7), right: rs(8), width: rs(8), height: rs(8), borderRadius: rs(5), backgroundColor: C.red, borderWidth: 1.5, borderColor: '#FFFFFF' }} />
-              ) : null}
-            </TouchableOpacity>
-          </View>
-
+      {/* Header */}
+      <MintScreenHeader
+        title="My Account"
+        navigation={navigation}
+        right={(
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Notifications')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Notifications"
+            activeOpacity={0.8}
+            style={{
+              width: rs(38), height: rs(38), borderRadius: rs(19), backgroundColor: C.card,
+              alignItems: 'center', justifyContent: 'center', ...cardShadow,
+            }}
+          >
+            <Bell size={rs(18)} color={C.ink} />
+            {unreadNotifs > 0 ? (
+              <View style={{ position: 'absolute', top: rs(7), right: rs(8), width: rs(8), height: rs(8), borderRadius: rs(5), backgroundColor: C.red, borderWidth: 1.5, borderColor: '#FFFFFF' }} />
+            ) : null}
+          </TouchableOpacity>
+        )}
+      />
+      <Text style={{ fontSize: rf(12), color: C.muted, textAlign: 'center', marginTop: -rs(4), paddingHorizontal: rs(16) }}>
+        Manage your profile, work and preferences
+      </Text>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingBottom: rs(16) }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.green]} tintColor={C.green} />}
+      >
+        <View style={{ width: contentW, flex: 1 }}>
           {/* Profile card */}
           <View className="flex-row items-center" style={{ marginTop: rs(10), backgroundColor: C.card, borderRadius: rs(16), padding: rs(10), ...cardShadow }}>
-            <Pressable onPress={openProfile} accessibilityRole="button" accessibilityLabel="Open profile">
+            {/* Read-only summary: editing lives only in the Profile screen. */}
+            <View>
               {session?.photoUrl ? (
                 <Image source={{ uri: session.photoUrl }} style={{ width: avatar, height: avatar, borderRadius: avatar / 2 }} />
               ) : (
@@ -207,10 +215,7 @@ export default function AccountTabScreen({ navigation }) {
                   <Text style={{ fontSize: rf(18), fontWeight: '800', color: '#FFFFFF' }}>{initialsFromName(displayName)}</Text>
                 </View>
               )}
-              <View style={{ position: 'absolute', right: -rs(2), bottom: -rs(2), width: rs(18), height: rs(18), borderRadius: rs(9), backgroundColor: C.green, borderWidth: 2, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
-                <Camera size={rs(9)} color="#FFFFFF" strokeWidth={2.4} />
-              </View>
-            </Pressable>
+            </View>
 
             <View style={{ flex: 1, marginLeft: rs(10), marginRight: rs(6) }}>
               <View className="flex-row items-center" style={{ flexWrap: 'wrap', gap: rs(6) }}>
@@ -231,35 +236,20 @@ export default function AccountTabScreen({ navigation }) {
                 <Text style={{ fontSize: rf(11.5), color: C.muted, marginLeft: rs(5) }}>ID {employeeId}</Text>
               </View>
             </View>
-
-            <TouchableOpacity onPress={openProfile} hitSlop={6} accessibilityRole="button" accessibilityLabel="Edit profile" activeOpacity={0.8} style={{ alignItems: 'center' }}>
-              <View style={{ width: rs(36), height: rs(36), borderRadius: rs(18), backgroundColor: C.greenTint, alignItems: 'center', justifyContent: 'center' }}>
-                <Pencil size={rs(15)} color={C.green} strokeWidth={2.2} />
-              </View>
-              <Text style={{ fontSize: rf(10.5), fontWeight: '700', color: C.green, marginTop: rs(3) }}>Edit</Text>
-            </TouchableOpacity>
           </View>
 
-          {/* Account + Work */}
-          {mainSections.map((sec) => (
-            <SectionBlock key={sec.title} meta={SECTION_META[sec.title]} count={sec.items.length}>
-              {sec.items.map((it, idx) => <MenuRow key={it.key} item={it} last={idx === sec.items.length - 1} />)}
+          {/* Two cards: account items (first 3) and support items (last 3) */}
+          {[
+            { meta: { title: 'Account', subtitle: 'Profile, work and documents' }, items: allItems.slice(0, 3) },
+            { meta: { title: 'Support', subtitle: 'Help, legal and other information' }, items: allItems.slice(3) },
+          ].map((group) => (
+            <SectionBlock key={group.meta.title} meta={group.meta}>
+              {group.items.map((it, idx) => <MenuRow key={it.key} item={it} last={idx === group.items.length - 1} />)}
             </SectionBlock>
           ))}
 
-          {/* Security — App Lock toggle */}
-          <SectionBlock meta={SECTION_META.Security}>
-            <AppLockRow />
-          </SectionBlock>
-
-          {/* Support (Help & Legal items) */}
-          {supportSection ? (
-            <SectionBlock meta={SECTION_META['Help & Legal']} count={supportSection.items.length}>
-              {supportSection.items.map((it, idx) => <MenuRow key={it.key} item={it} last={idx === supportSection.items.length - 1} />)}
-            </SectionBlock>
-          ) : null}
-
-          {/* Log out */}
+          {/* Log out — pinned to the bottom of the screen */}
+          <View style={{ flex: 1, minHeight: rs(12) }} />
           <Pressable
             onPress={handleLogout}
             android_ripple={{ color: '#FECACA' }}
@@ -271,7 +261,7 @@ export default function AccountTabScreen({ navigation }) {
           </Pressable>
 
           <Text style={{ textAlign: 'center', marginTop: rs(8), fontSize: rf(11), fontWeight: '600', color: C.faint }}>
-            GG Fix Employee · v{APP_VERSION}
+            Near G Fix Employee · v{APP_VERSION}
           </Text>
         </View>
       </ScrollView>
@@ -285,8 +275,8 @@ function SectionBlock({ meta, count, children }) {
     <View style={{ marginTop: rs(12) }}>
       <View className="flex-row items-end" style={{ marginBottom: rs(6) }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: rf(15), fontWeight: '800', color: C.ink }}>{meta.title}</Text>
-          <Text style={{ fontSize: rf(11), color: C.muted, marginTop: 1 }}>{meta.subtitle}</Text>
+          <Text style={{ fontSize: rf(16), fontWeight: '800', color: C.ink }}>{meta.title}</Text>
+          <Text style={{ fontSize: rf(12), color: C.muted, marginTop: 1 }}>{meta.subtitle}</Text>
         </View>
         {count ? (
           <View style={{ backgroundColor: C.greenTint, borderRadius: 999, paddingHorizontal: rs(8), paddingVertical: rs(3) }}>
@@ -324,49 +314,3 @@ function MenuRow({ item, last }) {
   );
 }
 
-// App Lock toggle. Turning ON requires the device to have a lock set and the
-// user to pass the OS prompt once. Fails OPEN — if the device has no lock we
-// tell the user to add one rather than locking them out.
-function AppLockRow() {
-  const [on, setOn] = useState(false);
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const enabled = await isAppLockEnabled();
-      if (!alive) return; // avoid setState after unmount
-      setOn(enabled);
-      setReady(true);
-    })();
-    return () => { alive = false; };
-  }, []);
-  const toggle = async (next) => {
-    if (next) {
-      if (!(await isDeviceSecure())) {
-        Alert.alert('Set a screen lock', 'Add a fingerprint, pattern or PIN in your phone settings first, then turn on App Lock.');
-        return;
-      }
-      if (!(await authenticate())) return;
-    }
-    await setAppLockEnabled(next);
-    setOn(next);
-  };
-  return (
-    <View className="flex-row items-center" style={{ minHeight: rs(50), paddingHorizontal: rs(10), paddingVertical: rs(7) }}>
-      <View style={{ width: rs(32), height: rs(32), borderRadius: rs(10), backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', marginRight: rs(10) }}>
-        <Fingerprint size={rs(16)} color="#FFFFFF" strokeWidth={2.2} />
-      </View>
-      <View style={{ flex: 1, marginRight: rs(8) }}>
-        <Text style={{ fontSize: rf(13.5), fontWeight: '700', color: C.ink }}>App Lock</Text>
-        <Text style={{ fontSize: rf(11), color: C.muted, marginTop: 1 }} numberOfLines={1}>Require fingerprint / pattern / PIN to open</Text>
-      </View>
-      <Switch
-        value={on}
-        onValueChange={toggle}
-        disabled={!ready}
-        trackColor={{ true: GREEN, false: '#D4D4D4' }}
-        thumbColor="#FFFFFF"
-      />
-    </View>
-  );
-}

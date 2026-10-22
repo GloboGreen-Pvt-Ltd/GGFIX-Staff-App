@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, Image, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Text } from './Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,7 +11,7 @@ import { rf, rs } from '../utils/responsive';
 /**
  * Employee-app boot screen, shown by RootNavigator while the stored session is
  * restored. Visuals only — it owns no session, timer or navigation logic.
- * Layout follows the GGFIX brand splash: a deep-green header that curves into
+ * Layout follows the Near G Fix brand splash: a deep-green header that curves into
  * a light page, device hero art across the curve, tagline, progress and a
  * trust row. Device art comes from the CDN so it can change without a release.
  */
@@ -19,13 +20,13 @@ const DEVICE_URL = 'https://media.ggfix.in/GGFIX-Partner-App/Device.png';
 // Warm the image cache as soon as this module loads (best-effort, never blocks).
 Image.prefetch(DEVICE_URL).catch(() => {});
 
-const PAGE_BG = '#F8F8F8';
-const GREEN = '#09AD2A';
-const GREEN_BRIGHT = '#3BE07A'; // "FIX" + ring on the dark header
-const GREEN_DEEP = '#07662A';
-const YELLOW = '#F3BF23';
-const INK = '#1E1E1E';
-const MINT = '#E6F7EA';
+const PAGE_BG = '#F3F4F6';
+const GREEN = '#035C6C';
+const GREEN_BRIGHT = '#5CC8D7'; // "FIX" + ring on the dark header
+const GREEN_DEEP = '#024A57';
+const YELLOW = '#FAA700';
+const INK = '#111111';
+const MINT = '#E5F3F5';
 
 const tierFor = (h) => (h < 700 ? 0 : h < 850 ? 1 : 2);
 
@@ -80,7 +81,7 @@ export default function BootSplash() {
 
       {/* Green header with soft light swirls and a curved edge */}
       <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: headerH }}>
-        <LinearGradient colors={[GREEN_DEEP, '#0A8A36', '#10A548']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={[GREEN_DEEP, '#035C6C', '#035C6C']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
         <Svg width={width} height={headerH + 2} style={StyleSheet.absoluteFill}>
           <Circle cx={width * 0.95} cy={headerH * 0.05} r={width * 0.32} fill="#FFFFFF" fillOpacity={0.05} stroke="#FFFFFF" strokeOpacity={0.18} strokeWidth={1} />
           <Circle cx={-width * 0.1} cy={headerH * 0.62} r={width * 0.42} fill="#FFFFFF" fillOpacity={0.05} />
@@ -108,7 +109,7 @@ export default function BootSplash() {
             </View>
 
             <Text style={[styles.wordmark, { fontSize: titleFont, marginTop: rs(pick(10, 14, 16)) }]}>
-              GG<Text style={{ color: GREEN_BRIGHT }}>FIX</Text>
+              NEAR G <Text style={{ color: GREEN_BRIGHT }}>FIX</Text>
             </Text>
             <Text style={[styles.byline, { fontSize: rf(pick(13, 14, 15)) }]}>BY GLOBO GREEN</Text>
             <View style={[styles.appChip, { marginTop: rs(pick(6, 8, 10)) }]}>
@@ -150,7 +151,7 @@ export default function BootSplash() {
           <View style={{ width: Math.min(contentW * 0.66, rs(270)), marginTop: rs(pick(12, 18, 22)), alignItems: 'center' }}>
             <View style={styles.track}>
               <Animated.View style={{ height: '100%', borderRadius: 999, overflow: 'hidden', width: bar.interpolate({ inputRange: [0, 1], outputRange: ['4%', '72%'] }) }}>
-                <LinearGradient colors={['#1DC94A', GREEN]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
+                <LinearGradient colors={['#035C6C', GREEN]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
               </Animated.View>
             </View>
             <Text style={styles.loading}>LOADING...</Text>
@@ -182,20 +183,20 @@ const styles = StyleSheet.create({
   },
   wordmark: { fontWeight: '900', letterSpacing: -0.5, color: '#FFFFFF' },
   byline: { fontWeight: '700', letterSpacing: 3, color: '#FFFFFF', marginTop: rs(2) },
-  appChip: { backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 999, paddingHorizontal: rs(12), paddingVertical: rs(3) },
+  appChip: { paddingHorizontal: rs(12), paddingVertical: rs(3) },
   appChipText: { fontSize: rf(11), fontWeight: '800', letterSpacing: 1.6, color: '#FFFFFF' },
-  services: { fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3 },
+  services: { fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3, backgroundColor: GREEN_DEEP, borderRadius: 999, overflow: 'hidden', paddingHorizontal: rs(12), paddingVertical: rs(3) },
   dot: { color: YELLOW, fontWeight: '900' },
   tagline: { textAlign: 'center', fontWeight: '900', letterSpacing: 0.6, color: INK },
   track: {
     width: '100%', height: rs(12), borderRadius: 999, backgroundColor: '#FFFFFF', padding: rs(2),
-    borderWidth: 1, borderColor: '#ECECEC',
+    borderWidth: 1, borderColor: '#E5E7EB',
     shadowColor: INK, shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  loading: { fontSize: rf(13), fontWeight: '700', letterSpacing: 5, color: '#4A4A4A', marginTop: rs(10) },
+  loading: { fontSize: rf(13), fontWeight: '700', letterSpacing: 5, color: '#6B7280', marginTop: rs(10) },
   trustRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-around', width: '100%' },
   trustItem: { flex: 1, alignItems: 'center', maxWidth: rs(120) },
   trustDisc: { backgroundColor: MINT, alignItems: 'center', justifyContent: 'center' },
   trustLabel: { textAlign: 'center', fontWeight: '800', color: INK, marginTop: rs(7) },
-  divider: { width: 1, height: rs(46), backgroundColor: '#E2E2E2', marginTop: rs(6) },
+  divider: { width: 1, height: rs(46), backgroundColor: '#E5E7EB', marginTop: rs(6) },
 });

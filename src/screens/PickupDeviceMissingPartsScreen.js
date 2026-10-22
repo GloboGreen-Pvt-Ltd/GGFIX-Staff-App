@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, ScrollView, TextInput, Pressable } from 'react-native';
+import { View, ScrollView, Pressable } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../components/rnr';
@@ -69,7 +70,7 @@ export default function PickupDeviceMissingPartsScreen({ navigation, route }) {
   return (
     <View className="flex-1 bg-background">
       <ScrollView contentContainerClassName="px-4 pt-4 pb-32">
-        <Text className="text-text-muted text-xs px-1 mb-2">Flag any part that's missing or damaged on this device.</Text>
+        <Text className="text-text-muted px-1 mb-2" style={{ fontSize: rf(12), color: '#6B7280' }}>Flag any part that's missing or damaged on this device.</Text>
 
         <View className="flex-row mb-4">
           <View className="flex-1 bg-danger/10 border border-danger/30 rounded-xl px-3 py-2 mr-2">
@@ -92,7 +93,7 @@ export default function PickupDeviceMissingPartsScreen({ navigation, route }) {
             >
               <View className="flex-row items-center">
                 <View className={`w-10 h-10 rounded-xl items-center justify-center mr-2.5 ${anyFlag ? 'bg-primary/15' : 'bg-primary/10'}`}>
-                  <Ionicons name={p.icon} size={18} color="#00008B" />
+                  <Ionicons name={p.icon} size={18} color="#035C6C" />
                 </View>
                 <Text className="flex-1 font-extrabold text-text" style={{ fontSize: rf(14) }} numberOfLines={1}>{p.name}</Text>
                 <Pressable
@@ -122,7 +123,7 @@ export default function PickupDeviceMissingPartsScreen({ navigation, route }) {
         })}
       </ScrollView>
 
-      <View className="absolute left-0 right-0 bottom-0 p-4 bg-card border-t border-border" style={{ paddingBottom: Math.max(insets.bottom, 12) + 10, shadowColor: '#0F172A', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: -4 }, elevation: 12 }}>
+      <View className="absolute left-0 right-0 bottom-0 p-4 bg-card border-t border-border" style={{ paddingBottom: Math.max(insets.bottom, 12) + 10, shadowColor: '#111111', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: -4 }, elevation: 12 }}>
         <Button
           rightIcon={<Ionicons name="chevron-forward" size={20} color="#fff" />}
           onPress={onContinue}

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, Text, ActivityIndicator, View } from 'react-native';
+import { Pressable, ActivityIndicator, View } from 'react-native';
+import { Text } from '../Typography';
 import { cn } from './cn';
 
 function isTextChildren(children) {
@@ -46,8 +47,8 @@ const sizeClasses = {
 };
 
 const shadowVariants = {
-  default: { shadowColor: '#00008B', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
-  sm: { shadowColor: '#00008B', shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  default: { shadowColor: '#035C6C', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
+  sm: { shadowColor: '#035C6C', shadowOpacity: 0.12, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   none: {},
 };
 
@@ -72,7 +73,7 @@ export function Button({
     : shadowVariants.none;
   const spinColor =
     variant === 'outline' || variant === 'ghost' || variant === 'soft' || variant === 'muted'
-      ? '#00008B'
+      ? '#035C6C'
       : '#fff';
   return (
     <Pressable

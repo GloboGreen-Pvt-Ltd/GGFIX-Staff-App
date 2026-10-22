@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Wrench,
@@ -20,7 +21,7 @@ import {
 import { Button, Card } from '../components/rnr';
 import { listAllRepairServices, listRepairCategories } from '../api/master';
 import { normalizeDeviceImageUrl } from '../utils/images';
-import { rf } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
 
 const WARRANTY_OPTIONS = [
   { code: 'W_3M', label: '3 Months' },
@@ -235,7 +236,7 @@ export default function PickupDeviceServicesScreen({ navigation, route }) {
   if (loading) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator color="#00008B" />
+        <ActivityIndicator color="#035C6C" />
       </View>
     );
   }
@@ -253,20 +254,20 @@ export default function PickupDeviceServicesScreen({ navigation, route }) {
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={{ width: 56, height: 56 }} resizeMode="cover" />
             ) : (
-              <Smartphone size={26} color="#00008B" />
+              <Smartphone size={26} color="#035C6C" />
             )}
           </View>
           <View className="flex-1">
             <Text className="text-text-muted uppercase tracking-widest" style={{ fontSize: rf(11) }}>Device</Text>
-            <Text className="font-extrabold text-text mt-0.5" style={{ fontSize: rf(14) }} numberOfLines={1}>
+            <Text className="font-extrabold text-text mt-0.5" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }} numberOfLines={1}>
               {deviceTitle(booking, params) || trackingId(booking, params)}
             </Text>
             {colorText ? (
-              <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(12) }}>Color: {colorText}</Text>
+              <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(12), color: '#6B7280' }}>Color: {colorText}</Text>
             ) : null}
-            <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(10) }}>Tracking: {trackingId(booking, params)}</Text>
+            <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(12), color: '#6B7280' }}>Tracking: {trackingId(booking, params)}</Text>
             {customerName ? (
-              <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(10) }}>Customer: {customerName}</Text>
+              <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(12), color: '#6B7280' }}>Customer: {customerName}</Text>
             ) : null}
           </View>
         </Card>
@@ -282,16 +283,16 @@ export default function PickupDeviceServicesScreen({ navigation, route }) {
                 className="flex-row items-center px-3 py-3 active:opacity-80"
               >
                 <View className="h-9 w-9 rounded-xl bg-primary/10 items-center justify-center mr-2.5">
-                  <Wrench size={16} color="#00008B" />
+                  <Wrench size={rs(18)} color="#035C6C" />
                 </View>
                 <View className="flex-1">
-                  <Text className="font-extrabold text-text" style={{ fontSize: rf(14) }} numberOfLines={1}>{g.name}</Text>
-                  <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(10) }}>
+                  <Text className="font-extrabold text-text" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }} numberOfLines={1}>{g.name}</Text>
+                  <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(12), color: '#6B7280' }}>
                     {g.services.length} issue{g.services.length === 1 ? '' : 's'}
                     {pickedInGroup ? ` · ${pickedInGroup} selected` : ''}
                   </Text>
                 </View>
-                <Chevron size={18} color="#64748B" />
+                <Chevron size={18} color="#6B7280" />
               </Pressable>
 
               {open ? (
@@ -306,7 +307,7 @@ export default function PickupDeviceServicesScreen({ navigation, route }) {
                       <View key={sid} className={`border rounded-2xl p-3 mb-2 ${isPicked ? 'border-primary bg-primary/5' : 'border-border bg-background'}`}>
                         <View className="flex-row items-start">
                           <View className={`h-10 w-10 rounded-xl items-center justify-center mr-3 ${isPicked ? 'bg-primary' : 'bg-card'}`}>
-                            <Icon size={18} color={isPicked ? '#fff' : '#0F172A'} />
+                            <Icon size={18} color={isPicked ? '#fff' : '#111111'} />
                           </View>
                           <View className="flex-1 pr-2">
                             <Text className="font-extrabold text-text" style={{ fontSize: rf(13) }} numberOfLines={1}>{s.name}</Text>
@@ -331,7 +332,7 @@ export default function PickupDeviceServicesScreen({ navigation, route }) {
                                 onPress={() => removeService(s)}
                                 className="flex-row items-center bg-danger/10 border border-danger/30 rounded-full px-3 py-1.5 active:opacity-70"
                               >
-                                <X size={12} color="#EF4444" />
+                                <X size={12} color="#F32C26" />
                                 <Text className="text-danger font-bold ml-1" style={{ fontSize: rf(12) }}>Remove</Text>
                               </Pressable>
                             ) : (
@@ -374,7 +375,7 @@ export default function PickupDeviceServicesScreen({ navigation, route }) {
         })}
       </ScrollView>
 
-      <View className="absolute left-0 right-0 bottom-0 p-4 bg-card border-t border-border" style={{ paddingBottom: Math.max(insets.bottom, 12) + 10, shadowColor: '#0F172A', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: -4 }, elevation: 12 }}>
+      <View className="absolute left-0 right-0 bottom-0 p-4 bg-card border-t border-border" style={{ paddingBottom: Math.max(insets.bottom, 12) + 10, shadowColor: '#111111', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: -4 }, elevation: 12 }}>
         <Button
           rightIcon={<ChevronRight size={18} color="#fff" />}
           onPress={onContinue}

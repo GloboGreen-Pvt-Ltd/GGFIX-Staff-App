@@ -1,11 +1,12 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from '../Typography';
 import { ChevronLeft } from 'lucide-react-native';
 import { cn } from './cn';
 import { rf } from '../../utils/responsive';
 
 const shadow = {
-  shadowColor: '#0F172A',
+  shadowColor: '#111111',
   shadowOpacity: 0.05,
   shadowRadius: 6,
   shadowOffset: { width: 0, height: 2 },
@@ -27,7 +28,7 @@ export function ScreenHeader({ title, subtitle, onBack, right, className, transp
           onPress={onBack}
           className="h-8 w-8 items-center justify-center rounded-full bg-background active:opacity-70"
         >
-          <ChevronLeft size={18} color="#0F172A" />
+          <ChevronLeft size={18} color="#111111" />
         </Pressable>
       ) : (
         <View className="h-8 w-8" />

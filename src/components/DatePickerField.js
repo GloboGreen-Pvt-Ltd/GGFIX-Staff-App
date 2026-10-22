@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from './Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { rf } from '../utils/responsive';
 
@@ -60,11 +61,25 @@ function buildGrid(viewYear, viewMonth) {
 // The stateful calendar. Mounted only while the modal is visible (see
 // CalendarModal) so each open re-initialises from the current value — mirrors
 // TimePickerField's wheel remount trick.
-function CalendarBody({ initial, minimumDate, maximumDate, onCancel, onSave, accent, accentSoft }) {
+function CalendarBody({ initial, minimumDate, maximumDate, onCancel, onSave, accent, title, monthOnly, yearOnly }) {
   const base = parseISO(initial) || new Date();
   const [selected, setSelected] = useState(parseISO(initial) ? initial : '');
   const [viewYear, setViewYear] = useState(base.getFullYear());
   const [viewMonth, setViewMonth] = useState(base.getMonth());
+  // 'day' grid, or the 'month' / 'year' lists opened by tapping the header.
+  const [mode, setMode] = useState(yearOnly ? 'year' : monthOnly ? 'month' : 'day');
+  const minYear = parseISO(minimumDate)?.getFullYear() ?? Math.min(base.getFullYear(), new Date().getFullYear()) - 60;
+  const maxYear = parseISO(maximumDate)?.getFullYear() ?? Math.max(base.getFullYear(), new Date().getFullYear()) + 10;
+  const years = useMemo(() => {
+    const out = [];
+    for (let y = minYear; y <= maxYear; y++) out.push(y);
+    return out;
+  }, [minYear, maxYear]);
+  const monthOutOfRange = (m) => {
+    const first = toISO(new Date(viewYear, m, 1));
+    const last = toISO(new Date(viewYear, m + 1, 0));
+    return (minimumDate && last < minimumDate) || (maximumDate && first > maximumDate);
+  };
 
   const todayISO = toISO(new Date());
   const cells = useMemo(() => buildGrid(viewYear, viewMonth), [viewYear, viewMonth]);
@@ -84,77 +99,121 @@ function CalendarBody({ initial, minimumDate, maximumDate, onCancel, onSave, acc
     setViewYear(y);
   };
 
+  const DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const sel = parseISO(selected);
+  const tint = accent || '#035C6C';
+  const bigLabel = yearOnly ? `${viewYear}` : monthOnly ? `${MONTHS[viewMonth]} ${viewYear}` : sel ? `${DOWS[sel.getDay()]}, ${MONTHS[sel.getMonth()].slice(0, 3)} ${sel.getDate()}` : 'Pick a date';
+
   return (
     <>
-      <View style={styles.headerRow}>
-        <Pressable style={[styles.navBtn, accentSoft && { backgroundColor: accentSoft }]} hitSlop={8} onPress={() => stepMonth(-1)}>
-          <Ionicons name="chevron-back" size={rf(18)} color={accent || '#00008B'} />
+      <Text style={pk.label}>{title || 'Select date'}</Text>
+      <Text style={pk.big}>{bigLabel}</Text>
+      <View style={pk.divider} />
+
+      <View style={pk.navRow}>
+        <Pressable hitSlop={6} style={pk.monthBtn} onPress={() => setMode(mode === 'year' ? (monthOnly ? 'month' : 'day') : 'year')}>
+          <Text style={pk.monthText}>{monthOnly ? viewYear : `${MONTHS[viewMonth]} ${viewYear}`}</Text>
+          <Ionicons name={mode === 'year' ? 'caret-up' : 'caret-down'} size={rf(14)} color="#6B7280" />
         </Pressable>
-        <Text style={styles.headerTitle}>{MONTHS[viewMonth]} {viewYear}</Text>
-        <Pressable style={[styles.navBtn, accentSoft && { backgroundColor: accentSoft }]} hitSlop={8} onPress={() => stepMonth(1)}>
-          <Ionicons name="chevron-forward" size={rf(18)} color={accent || '#00008B'} />
-        </Pressable>
+        {mode === 'day' ? (
+          <View style={{ flexDirection: 'row', gap: 18 }}>
+            <Pressable hitSlop={10} onPress={() => stepMonth(-1)}><Ionicons name="chevron-back" size={rf(22)} color="#374151" /></Pressable>
+            <Pressable hitSlop={10} onPress={() => stepMonth(1)}><Ionicons name="chevron-forward" size={rf(22)} color="#374151" /></Pressable>
+          </View>
+        ) : null}
       </View>
 
-      <View style={styles.weekRow}>
-        {WEEKDAYS.map((w, i) => (
-          <Text key={i} style={styles.weekday}>{w}</Text>
-        ))}
-      </View>
-
-      <View style={styles.grid}>
-        {cells.map((iso, i) => {
-          if (!iso) return <View key={i} style={styles.cell} />;
-          const day = Number(iso.slice(8, 10));
-          const disabled = isDisabled(iso);
-          const isSel = iso === selected;
-          const isToday = iso === todayISO;
-          return (
-            <Pressable key={i} style={styles.cell} disabled={disabled} onPress={() => setSelected(iso)}>
-              <View style={[styles.dayWrap, isSel && styles.daySelected, isSel && accent && { backgroundColor: accent }, !isSel && isToday && styles.dayToday, !isSel && isToday && accent && { borderColor: accent }]}>
-                <Text
-                  style={[
-                    styles.dayText,
-                    disabled && styles.dayDisabled,
-                    isSel && styles.daySelectedText,
-                  ]}
-                >
-                  {day}
-                </Text>
+      {mode === 'year' ? (
+        <ScrollView style={{ maxHeight: 300 }} contentContainerStyle={pk.yearGrid}>
+          {years.map((y) => (
+            <Pressable key={y} style={pk.yearCell} onPress={() => { setViewYear(y); if (yearOnly) onSave(toISO(new Date(y, 0, 1))); else setMode('month'); }}>
+              <View style={[pk.yearPill, y === viewYear && { backgroundColor: tint }]}>
+                <Text style={[pk.yearText, y === viewYear && { color: '#FFFFFF' }]}>{y}</Text>
               </View>
             </Pressable>
-          );
-        })}
-      </View>
+          ))}
+        </ScrollView>
+      ) : mode === 'month' ? (
+        <View style={pk.yearGrid}>
+          {MONTHS.map((name, m) => {
+            const off = monthOutOfRange(m);
+            return (
+              <Pressable key={name} disabled={off} style={pk.yearCell} onPress={() => { setViewMonth(m); if (monthOnly) onSave(toISO(new Date(viewYear, m, 1))); else setMode('day'); }}>
+                <View style={[pk.yearPill, m === viewMonth && { backgroundColor: tint }]}>
+                  <Text style={[pk.yearText, m === viewMonth && { color: '#FFFFFF' }, off && { color: '#D1D5DB' }]}>{name.slice(0, 3)}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : (
+        <>
+          <View style={pk.weekRow}>
+            {WEEKDAYS.map((d, i) => <Text key={i} style={pk.weekDay}>{d}</Text>)}
+          </View>
+          <View style={pk.grid}>
+            {cells.map((iso, i) => {
+              if (!iso) return <View key={i} style={pk.cell} />;
+              const disabled = isDisabled(iso);
+              const on = iso === selected;
+              const today = iso === todayISO;
+              return (
+                <Pressable key={iso} disabled={disabled} style={pk.cell} onPress={() => setSelected(iso)}>
+                  <View style={[pk.day, on && { backgroundColor: tint }, !on && today && { borderWidth: 1, borderColor: tint }]}>
+                    <Text style={[pk.dayText, disabled && { color: '#C4C7CC' }, on && { color: '#FFFFFF', fontWeight: '700' }]}>{Number(iso.slice(8))}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        </>
+      )}
 
-      <View style={styles.actions}>
-        <Pressable style={styles.cancelBtn} onPress={onCancel} hitSlop={8}>
-          <Text style={styles.cancelText}>Cancel</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.saveBtn, accent && { backgroundColor: accent }, !selected && styles.saveBtnDisabled]}
-          hitSlop={8}
-          disabled={!selected}
-          onPress={() => onSave(selected)}
-        >
-          <Text style={styles.saveText}>Save</Text>
+      <View style={pk.actions}>
+        <Pressable hitSlop={8} onPress={onCancel}><Text style={[pk.action, { color: tint }]}>Cancel</Text></Pressable>
+        <Pressable hitSlop={8} disabled={!selected && !monthOnly && !yearOnly} onPress={() => onSave(yearOnly ? toISO(new Date(viewYear, 0, 1)) : monthOnly ? toISO(new Date(viewYear, viewMonth, 1)) : selected)}>
+          <Text style={[pk.action, { color: selected || monthOnly || yearOnly ? tint : '#C4C7CC' }]}>OK</Text>
         </Pressable>
       </View>
     </>
   );
 }
 
-function CalendarModal({ visible, ...rest }) {
+export function CalendarModal({ visible, ...rest }) {
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={rest.onCancel}>
-      <Pressable style={styles.backdrop} onPress={rest.onCancel}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={rest.onCancel}>
+      <Pressable style={pk.backdrop} onPress={rest.onCancel}>
+        <View style={pk.sheet} onStartShouldSetResponder={() => true}>
           {visible ? <CalendarBody {...rest} /> : null}
-        </Pressable>
+        </View>
       </Pressable>
     </Modal>
   );
 }
+
+// Bottom-sheet picker styles, shared look with TimePickerField.
+export const pk = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 22, paddingTop: 22, paddingBottom: 18, width: '100%', maxWidth: 560, alignSelf: 'center' },
+  label: { fontSize: rf(14), fontWeight: '600', color: '#4B5563', letterSpacing: 0.4 },
+  big: { fontSize: rf(32), fontWeight: '500', color: '#111111', marginTop: 10 },
+  divider: { height: 1, backgroundColor: '#E5E7EB', marginTop: 16, marginHorizontal: -6 },
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 8 },
+  monthBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  monthText: { fontSize: rf(16), fontWeight: '600', color: '#4B5563' },
+  weekRow: { flexDirection: 'row', marginTop: 6 },
+  weekDay: { flex: 1, textAlign: 'center', fontSize: rf(14), fontWeight: '500', color: '#111111', paddingVertical: 8 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  cell: { width: `${100 / 7}%`, height: 46, alignItems: 'center', justifyContent: 'center' },
+  day: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  dayText: { fontSize: rf(15), color: '#111111' },
+  yearGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingVertical: 6 },
+  yearCell: { width: '25%', paddingVertical: 6, alignItems: 'center' },
+  yearPill: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
+  yearText: { fontSize: rf(15), color: '#111111' },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 36, marginTop: 14, paddingRight: 6 },
+  action: { fontSize: rf(16), fontWeight: '700' },
+});
 
 export default function DatePickerField({
   value,
@@ -175,9 +234,9 @@ export default function DatePickerField({
         style={[styles.field, fieldStyle, disabled && styles.fieldDisabled]}
         onPress={() => { if (!disabled) setOpen(true); }}
       >
-        <Ionicons name="calendar-outline" size={rf(16)} color={disabled ? '#94A3B8' : '#64748B'} />
+        <Ionicons name="calendar-outline" size={rf(16)} color={disabled ? '#94A3B8' : '#6B7280'} />
         <Text
-          style={[styles.fieldText, { color: display ? (disabled ? '#94A3B8' : '#0F172A') : '#94A3B8' }]}
+          style={[styles.fieldText, { color: display ? (disabled ? '#94A3B8' : '#111111') : '#94A3B8' }]}
           numberOfLines={1}
         >
           {display || placeholder}
@@ -205,14 +264,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 12,
     borderWidth: 1, borderColor: '#E5E7EB',
   },
-  fieldDisabled: { backgroundColor: '#F1F5F9', borderColor: '#EEF2F7' },
+  fieldDisabled: { backgroundColor: '#F3F4F6', borderColor: '#EEF2F7' },
   fieldText: { flex: 1, fontSize: rf(13) },
 
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', paddingHorizontal: 20 },
   sheet: { backgroundColor: '#FFFFFF', borderRadius: 18, paddingTop: 14, paddingBottom: 10, paddingHorizontal: 12 },
 
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  headerTitle: { fontSize: rf(15), fontWeight: '800', color: '#111827' },
+  headerTitle: { fontSize: rf(15), fontWeight: '800', color: '#111111' },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  headerChip: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 },
+  pickGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  pickCell: { width: '33.333%', height: 48, padding: 4 },
+  pickItem: { flex: 1, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F5F6F8' },
+  yearList: { maxHeight: 48 * 5 },
   navBtn: {
     width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#EEF0FF',
@@ -224,16 +289,16 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center' },
   dayWrap: { width: rf(34), height: rf(34), borderRadius: rf(17), alignItems: 'center', justifyContent: 'center' },
-  dayText: { fontSize: rf(13), fontWeight: '600', color: '#111827' },
-  dayDisabled: { color: '#CBD5E1', fontWeight: '400' },
-  daySelected: { backgroundColor: '#00008B' },
+  dayText: { fontSize: rf(13), fontWeight: '600', color: '#111111' },
+  dayDisabled: { color: '#E5E7EB', fontWeight: '400' },
+  daySelected: { backgroundColor: '#035C6C' },
   daySelectedText: { color: '#FFFFFF', fontWeight: '800' },
-  dayToday: { borderWidth: 1.5, borderColor: '#00008B' },
+  dayToday: { borderWidth: 1.5, borderColor: '#035C6C' },
 
   actions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 10 },
   cancelBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10 },
   cancelText: { fontSize: rf(14), fontWeight: '700', color: '#6B7280' },
-  saveBtn: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#00008B' },
+  saveBtn: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#035C6C' },
   saveBtnDisabled: { opacity: 0.4 },
   saveText: { fontSize: rf(14), fontWeight: '700', color: '#FFFFFF' },
 });

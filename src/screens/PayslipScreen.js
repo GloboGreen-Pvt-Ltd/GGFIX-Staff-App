@@ -1,13 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Platform,
-} from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useSelector } from 'react-redux';
@@ -77,40 +70,40 @@ function buildPayslipHtml({ shop, employee, payslip, month, year, empId }) {
   <title>Pay Slip — ${esc(employee?.name || 'Employee')} — ${esc(monthName)} ${esc(year)}</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1E1E1E; margin: 0; padding: 24px; }
-    .shop-head { text-align: center; padding-bottom: 14px; border-bottom: 2px solid #09AD2A; }
-    .shop-name { font-size: 22px; font-weight: 800; color: #1E1E1E; margin: 0; }
+    body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #111111; margin: 0; padding: 24px; }
+    .shop-head { text-align: center; padding-bottom: 14px; border-bottom: 2px solid #035C6C; }
+    .shop-name { font-size: 22px; font-weight: 800; color: #111111; margin: 0; }
     .shop-meta { font-size: 11px; color: #5A5A5A; margin: 4px 0; line-height: 1.45; }
     .doc-title { text-align: center; margin: 18px 0 6px; }
-    .doc-title-label { letter-spacing: 4px; color: #6E6E6E; font-size: 10px; font-weight: 700; }
-    .doc-title-month { font-size: 18px; font-weight: 800; color: #09AD2A; margin-top: 2px; }
+    .doc-title-label { letter-spacing: 4px; color: #6B7280; font-size: 10px; font-weight: 700; }
+    .doc-title-month { font-size: 18px; font-weight: 800; color: #035C6C; margin-top: 2px; }
     .status-pill {
       display: inline-block; padding: 3px 10px; border-radius: 999px;
       font-size: 10px; font-weight: 800; letter-spacing: 0.5px;
       color: #fff;
     }
-    .status-paid { background: #09AD2A; }
-    .status-pending { background: #F3BF23; color: #1E1E1E; }
+    .status-paid { background: #609138; }
+    .status-pending { background: #FAA700; color: #111111; }
 
     .grid { display: flex; gap: 16px; margin-top: 16px; }
-    .grid > div { flex: 1; border: 1px solid #ECECEC; border-radius: 8px; padding: 10px 12px; }
-    .grid h3 { margin: 0 0 8px; font-size: 11px; color: #6E6E6E; letter-spacing: 1px; text-transform: uppercase; }
+    .grid > div { flex: 1; border: 1px solid #E5E7EB; border-radius: 8px; padding: 10px 12px; }
+    .grid h3 { margin: 0 0 8px; font-size: 11px; color: #6B7280; letter-spacing: 1px; text-transform: uppercase; }
     .field { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; }
-    .field label { color: #6E6E6E; }
-    .field value { color: #1E1E1E; font-weight: 600; }
+    .field label { color: #6B7280; }
+    .field value { color: #111111; font-weight: 600; }
 
     table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12px; }
     thead th {
-      background: #09AD2A; color: #FFFFFF; padding: 8px 10px; text-align: left;
+      background: #035C6C; color: #FFFFFF; padding: 8px 10px; text-align: left;
       font-size: 11px; letter-spacing: 0.5px;
     }
-    tbody td { padding: 9px 10px; border-bottom: 1px solid #F3F3F3; color: #4A4A4A; }
-    tbody tr:nth-child(even) td { background: #F8F8F8; }
+    tbody td { padding: 9px 10px; border-bottom: 1px solid #F3F4F6; color: #6B7280; }
+    tbody tr:nth-child(even) td { background: #F3F4F6; }
     td.amount, th.amount { text-align: right; font-variant-numeric: tabular-nums; }
     tfoot td { padding: 10px; font-weight: 800; }
-    .net-row td { background: #E6F7EA; color: #09AD2A; font-size: 13px; }
+    .net-row td { background: #E5F3F5; color: #035C6C; font-size: 13px; }
 
-    .footer { margin-top: 24px; display: flex; justify-content: space-between; font-size: 11px; color: #6E6E6E; }
+    .footer { margin-top: 24px; display: flex; justify-content: space-between; font-size: 11px; color: #6B7280; }
     .footer .sig { width: 40%; border-top: 1px solid #A3A3A3; padding-top: 4px; text-align: center; }
   </style>
 </head>
@@ -351,7 +344,7 @@ export default function PayslipScreen({ route }) {
     <SafeAreaView style={styles.safe} edges={[]}>
       <ScrollView contentContainerStyle={styles.content}>
         {loading ? (
-          <ActivityIndicator size="large" color="#09AD2A" style={{ marginVertical: 40 }} />
+          <ActivityIndicator size="large" color="#035C6C" style={{ marginVertical: 40 }} />
         ) : (
           <>
             <View style={styles.hero}>
@@ -364,7 +357,7 @@ export default function PayslipScreen({ route }) {
                   <Text style={styles.heroMonth}>{MONTHS_FULL[month - 1]} {year}</Text>
                 </View>
                 <View style={[styles.heroStatusPill, isPaid ? styles.heroStatusPaid : styles.heroStatusPending]}>
-                  <Text style={[styles.heroStatusText, { color: isPaid ? '#09AD2A' : '#1E1E1E' }]}>{isPaid ? 'Paid' : 'Pending'}</Text>
+                  <Text style={[styles.heroStatusText, { color: isPaid ? '#609138' : '#111111' }]}>{isPaid ? 'Paid' : 'Pending'}</Text>
                 </View>
               </View>
               <View style={styles.heroDivider} />
@@ -404,8 +397,8 @@ export default function PayslipScreen({ route }) {
 
             <Text style={styles.sectionHeader}>Attendance</Text>
             <View style={styles.attendanceRow}>
-              <View style={[styles.attendanceTile, { backgroundColor: '#E6F7EA', borderColor: '#CFEFD6' }]}>
-                <Ionicons name="checkmark-circle" size={14} color="#09AD2A" />
+              <View style={[styles.attendanceTile, { backgroundColor: '#E5F3F5', borderColor: '#E5F3F5' }]}>
+                <Ionicons name="checkmark-circle" size={14} color="#035C6C" />
                 <Text style={styles.attendanceValue}>{data?.presentDays ?? 0}</Text>
                 <Text style={styles.attendanceLabel}>Present Days</Text>
               </View>
@@ -420,8 +413,8 @@ export default function PayslipScreen({ route }) {
             <View style={styles.breakdownCard}>
               <BreakdownRow
                 icon="cash-outline"
-                iconBg="#E6F7EA"
-                iconColor="#09AD2A"
+                iconBg="#E5F3F5"
+                iconColor="#035C6C"
                 label="Regular Salary"
                 sub="Monthly base"
                 value={formatRupee(data?.regularSalary)}
@@ -438,8 +431,8 @@ export default function PayslipScreen({ route }) {
               <View style={styles.breakdownDivider} />
               <BreakdownRow
                 icon="wallet-outline"
-                iconBg="#E6F7EA"
-                iconColor="#09AD2A"
+                iconBg="#E5F3F5"
+                iconColor="#035C6C"
                 label="Net Salary"
                 sub="After deductions"
                 value={formatRupee(data?.netSalary)}
@@ -448,8 +441,8 @@ export default function PayslipScreen({ route }) {
               <View style={styles.breakdownDivider} />
               <BreakdownRow
                 icon="card-outline"
-                iconBg="#F3F3F3"
-                iconColor="#1E1E1E"
+                iconBg="#F3F4F6"
+                iconColor="#111111"
                 label="Net Wage"
                 sub="After deductions"
                 value={formatRupee(data?.netWage)}
@@ -465,10 +458,10 @@ export default function PayslipScreen({ route }) {
                 activeOpacity={0.85}
               >
                 {busy === 'download' ? (
-                  <ActivityIndicator size="small" color="#09AD2A" />
+                  <ActivityIndicator size="small" color="#035C6C" />
                 ) : (
                   <>
-                    <Ionicons name="download-outline" size={15} color="#09AD2A" />
+                    <Ionicons name="download-outline" size={15} color="#035C6C" />
                     <Text style={styles.actionBtnSecondaryText}>Download PDF</Text>
                   </>
                 )}
@@ -518,12 +511,12 @@ function BreakdownRow({ icon, iconBg, iconColor, label, sub, value, emphasize })
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F8F8' },
+  safe: { flex: 1, backgroundColor: '#F3F4F6' },
   content: { padding: 12, paddingBottom: 32 },
-  empty: { fontSize: rf(13), color: '#6E6E6E', textAlign: 'center', marginTop: 24 },
+  empty: { fontSize: rf(13), color: '#6B7280', textAlign: 'center', marginTop: 24 },
 
   hero: {
-    backgroundColor: '#09AD2A',
+    backgroundColor: '#035C6C',
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 11,
@@ -538,14 +531,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   heroPayslip: { fontSize: rf(11), color: 'rgba(255,255,255,0.85)', fontWeight: '600', letterSpacing: 1 },
-  heroMonth: { fontSize: rf(15), fontWeight: '800', color: '#FFFFFF', marginTop: 1 },
+  heroMonth: { fontSize: rf(16), fontWeight: '800', color: '#FFFFFF', marginTop: 1 },
   heroStatusPill: {
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: 999,
   },
   heroStatusPaid: { backgroundColor: '#FFFFFF' },
-  heroStatusPending: { backgroundColor: '#F3BF23' },
+  heroStatusPending: { backgroundColor: '#FAA700' },
   heroStatusText: { fontSize: rf(10), fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 },
 
   heroDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 8 },
@@ -566,10 +559,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderColor: '#E5E7EB',
   },
-  payoutLabel: { fontSize: rf(11), color: '#6E6E6E', fontWeight: '600', letterSpacing: 0.5 },
-  payoutAmount: { fontSize: rf(22), fontWeight: '800', color: '#09AD2A', marginTop: 2 },
+  payoutLabel: { fontSize: rf(11), color: '#6B7280', fontWeight: '600', letterSpacing: 0.5 },
+  payoutAmount: { fontSize: rf(22), fontWeight: '800', color: '#035C6C', marginTop: 2 },
   payoutSplit: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -577,11 +570,11 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   payoutSplitItem: { flex: 1, alignItems: 'center' },
-  payoutSplitSep: { width: 1, height: 26, backgroundColor: '#ECECEC' },
+  payoutSplitSep: { width: 1, height: 26, backgroundColor: '#E5E7EB' },
   payoutSplitLabel: { fontSize: rf(10), color: '#A3A3A3', fontWeight: '600' },
-  payoutSplitValue: { fontSize: rf(12.5), fontWeight: '700', color: '#1E1E1E', marginTop: 2 },
+  payoutSplitValue: { fontSize: rf(12.5), fontWeight: '700', color: '#111111', marginTop: 2 },
 
-  sectionHeader: { fontSize: rf(13), fontWeight: '800', color: '#1E1E1E', marginTop: 12, marginBottom: 6 },
+  sectionHeader: { fontSize: rf(16), fontWeight: '800', color: '#1C3053', marginTop: 12, marginBottom: 6 },
 
   attendanceRow: { flexDirection: 'row', gap: 8 },
   attendanceTile: {
@@ -592,10 +585,10 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     borderWidth: 1,
   },
-  attendanceValue: { fontSize: rf(16), fontWeight: '800', color: '#1E1E1E', marginTop: 4 },
-  attendanceLabel: { fontSize: rf(10), color: '#6E6E6E', fontWeight: '600', marginTop: 1 },
+  attendanceValue: { fontSize: rf(16), fontWeight: '800', color: '#1C3053', marginTop: 4 },
+  attendanceLabel: { fontSize: rf(10), color: '#6B7280', fontWeight: '600', marginTop: 1 },
 
-  breakdownCard: { backgroundColor: '#FFFFFF', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 2, borderWidth: 1, borderColor: '#ECECEC' },
+  breakdownCard: { backgroundColor: '#FFFFFF', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 2, borderWidth: 1, borderColor: '#E5E7EB' },
   breakdownRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -610,11 +603,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   breakdownTextWrap: { flex: 1, minWidth: 0 },
-  breakdownLabel: { fontSize: rf(12), fontWeight: '700', color: '#1E1E1E' },
+  breakdownLabel: { fontSize: rf(12), fontWeight: '700', color: '#111111' },
   breakdownSub: { fontSize: rf(10), color: '#A3A3A3', marginTop: 1 },
-  breakdownValue: { fontSize: rf(12.5), fontWeight: '700', color: '#4A4A4A' },
-  breakdownValueEmphasize: { color: '#09AD2A', fontWeight: '800' },
-  breakdownDivider: { height: 1, backgroundColor: '#F3F3F3' },
+  breakdownValue: { fontSize: rf(12.5), fontWeight: '700', color: '#6B7280' },
+  breakdownValueEmphasize: { color: '#035C6C', fontWeight: '800' },
+  breakdownDivider: { height: 1, backgroundColor: '#F3F4F6' },
 
   actionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
   actionBtn: {
@@ -626,8 +619,8 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 10,
   },
-  actionBtnSecondary: { backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#09AD2A' },
-  actionBtnSecondaryText: { color: '#09AD2A', fontSize: rf(12), fontWeight: '700' },
-  actionBtnPrimary: { backgroundColor: '#09AD2A' },
+  actionBtnSecondary: { backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#035C6C' },
+  actionBtnSecondaryText: { color: '#035C6C', fontSize: rf(12), fontWeight: '700' },
+  actionBtnPrimary: { backgroundColor: '#035C6C' },
   actionBtnPrimaryText: { color: '#FFFFFF', fontSize: rf(12), fontWeight: '700' },
 });

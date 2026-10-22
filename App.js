@@ -9,6 +9,8 @@ import { config } from '@gluestack-ui/config';
 import { store } from './src/store';
 import RootNavigator from './src/navigation/RootNavigator';
 import colors from './src/theme/colors';
+import { useFonts } from 'expo-font';
+import { fontAssets } from './src/theme/typography';
 
 const navTheme = {
   ...DefaultTheme,
@@ -25,6 +27,9 @@ const navTheme = {
 };
 
 export default function App() {
+  // Inter faces; render on load or on error (system font fallback).
+  const [fontsLoaded, fontError] = useFonts(fontAssets);
+  if (!fontsLoaded && !fontError) return null;
   return (
     <Provider store={store}>
       <GluestackUIProvider config={config}>

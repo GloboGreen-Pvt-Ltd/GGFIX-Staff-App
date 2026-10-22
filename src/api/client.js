@@ -13,7 +13,7 @@ import { getToken, clearSession, notifyAuthExpired } from '../auth/session';
 // an older service build). A truly-expired token should log the user out from
 // ANY service; a still-valid token rejected by one service must NOT. Any decode
 // problem returns false so we never force-logout on uncertainty.
-function isJwtExpired(token) {
+export function isJwtExpired(token) {
   try {
     const part = String(token).split('.')[1];
     if (!part) return false;
@@ -86,8 +86,12 @@ async function request(baseUrlOrNull, method, path, { query, body, headers, skip
     // expiry: either it came from AUTH (the authority on validity) OR the JWT's
     // own exp claim is already past. A 401 from another service with a still-valid
     // token means THAT service can't verify it (secret drift / older build) and
-    // must NOT bounce the whole app to Login.
-    const sessionExpired = res.status === 401 && token && (isAuthService || isJwtExpired(token));
+    // must NOT bounce the whole app to Login. Spring services answer an expired
+    // token with a bare 403 (unauthenticated), so a 403 + past exp also counts.
+    const sessionExpired = token && (
+      (res.status === 401 && (isAuthService || isJwtExpired(token)))
+      || (res.status === 403 && isJwtExpired(token))
+    );
     if (sessionExpired && !skipAuthExpiry) {
       await clearSession();
       notifyAuthExpired();
@@ -141,8 +145,10 @@ async function uploadRequest(baseUrlOrNull, path, { uri, name, type, fields } = 
   let json;
   try { json = text ? JSON.parse(text) : null; } catch { json = null; }
   if (!res.ok) {
-    // Same rule as request(): only an auth-service 401 ends the session.
-    if (res.status === 401 && token && base === AUTH_BASE) { await clearSession(); notifyAuthExpired(); }
+    // Same rule as request(): an auth-service 401, or a 401/403 with a past exp, ends the session.
+    if (token && ((res.status === 401 && base === AUTH_BASE) || ((res.status === 401 || res.status === 403) && isJwtExpired(token)))) {
+      await clearSession(); notifyAuthExpired();
+    }
     const message = (json && (json.message || json.error)) || text || `HTTP ${res.status}`;
     const err = new Error(message);
     err.status = res.status;

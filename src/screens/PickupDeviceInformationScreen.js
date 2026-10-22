@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, Image, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Pressable, Image, ActivityIndicator } from 'react-native';
+import { Text } from '../components/Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -129,7 +130,7 @@ export default function PickupDeviceInformationScreen({ navigation, route }) {
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={{ width: 56, height: 64 }} resizeMode="cover" />
             ) : (
-              <Ionicons name="phone-portrait-outline" size={24} color="#64748B" />
+              <Ionicons name="phone-portrait-outline" size={24} color="#6B7280" />
             )}
           </View>
           <View className="ml-3 flex-1">
@@ -144,7 +145,7 @@ export default function PickupDeviceInformationScreen({ navigation, route }) {
         </Card>
 
         <Card className="mb-4">
-          <Text className="font-bold text-text mb-3 pb-2 border-b border-border">Price Summary</Text>
+          <Text className="font-extrabold text-text mb-3 pb-2 border-b border-border" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Price Summary</Text>
           {services.map((s, i) => (
             <View key={i} className="flex-row items-center mb-2">
               <View className="w-6 h-6 bg-background rounded items-center justify-center mr-2">
@@ -161,7 +162,7 @@ export default function PickupDeviceInformationScreen({ navigation, route }) {
         </Card>
 
         <Card className="mb-4">
-          <Text className="font-bold text-text mb-1">Complaint Issue :</Text>
+          <Text className="font-extrabold text-text mb-1" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Complaint Issue</Text>
           <Text className="text-text">{params.complaint || '-'}</Text>
         </Card>
 
@@ -172,7 +173,7 @@ export default function PickupDeviceInformationScreen({ navigation, route }) {
         </Card>
 
         <Card>
-          <Text className="font-bold text-text mb-2">Device Photo's</Text>
+          <Text className="font-extrabold text-text mb-2" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Device Photo's</Text>
           <View className="flex-row">
             {SLOTS.map((slot) => {
               const url = photos[slot.key];
@@ -186,7 +187,7 @@ export default function PickupDeviceInformationScreen({ navigation, route }) {
                     style={{ height: 96 }}
                   >
                     {busy ? (
-                      <ActivityIndicator color="#00008B" />
+                      <ActivityIndicator color="#035C6C" />
                     ) : url ? (
                       <>
                         {looksLikeVideo(url) ? (

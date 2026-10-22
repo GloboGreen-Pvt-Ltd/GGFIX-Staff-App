@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, Linking } from 'react-native';
+import { View, Pressable, ActivityIndicator, Linking, Platform, KeyboardAvoidingView } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import {
   ChevronLeft,
@@ -7,12 +8,20 @@ import {
   RotateCcw,
   AlertTriangle,
   Camera as CameraIcon,
+  Keyboard as KeyboardIcon,
+  Search,
 } from 'lucide-react-native';
 import { ticketApi } from '../api/client';
-import { rf } from '../utils/responsive';
+import { listMyTickets } from '../api/tickets';
+import { ticketRef } from '../utils/ticketRef';
+import { rf, rs } from '../utils/responsive';
+import MintScreenHeader from '../components/MintScreenHeader';
 
-const GREEN = '#004C40';
-const GREEN_DARK = '#004C40';
+// App brand theme (same greens as Home / reports).
+const GREEN = '#035C6C';
+const GREEN_TINT = '#E5F3F5';
+const INK = '#111111';
+const MUTED = '#6B7280';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -20,9 +29,35 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // UUID) to a ticket. Same rule the shop scanner uses: try a direct id fetch when
 // it looks like a UUID, then fall back to the shop ticket search (matches on
 // trackingId). Both paths are scoped to the technician's shop server-side.
+// QR / typed input → bare code: drops "#", whitespace, and takes the last
+// path segment or ?id= / ?ticketId= / ?trackingId= when the QR holds a URL.
+function normalizeCode(raw) {
+  let v = String(raw || '').trim();
+  if (!v) return '';
+  try {
+    if (/^https?:\/\//i.test(v)) {
+      const u = new URL(v);
+      v = u.searchParams.get('ticketId') || u.searchParams.get('trackingId') || u.searchParams.get('id')
+        || u.pathname.split('/').filter(Boolean).pop() || v;
+    }
+    v = decodeURIComponent(v);
+  } catch (_) { /* not a URL / bad escape */ }
+  return v.replace(/^#/, '').replace(/\s+/g, '').trim();
+}
+
 async function resolveTicket(raw) {
-  const value = String(raw || '').trim();
+  const value = normalizeCode(raw);
   if (!value) return null;
+  const lc = value.toLowerCase();
+
+  // 1. The technician's own assigned tickets — matches trackingId, the
+  //    on-screen "#CSPEN…" reference (also for tickets without a trackingId) and id.
+  const mine = await listMyTickets({ page: 0, size: 200 }).catch(() => null);
+  const myList = Array.isArray(mine?.content) ? mine.content : Array.isArray(mine) ? mine : [];
+  const own = myList.find((t) => String(t.trackingId || '').toLowerCase() === lc
+    || ticketRef(t).replace(/^#/, '').toLowerCase() === lc
+    || String(t.id || '').toLowerCase() === lc);
+  if (own) return own;
 
   if (UUID_RE.test(value)) {
     const byId = await ticketApi.get(`/tickets/${encodeURIComponent(value)}`).catch(() => null);
@@ -62,6 +97,9 @@ export default function ScanTicketQrScreen({ navigation }) {
     setNotFound(null);
   };
 
+  const [manualOpen, setManualOpen] = useState(Platform.OS === 'web');
+  const [manualCode, setManualCode] = useState('');
+
   const handleBarcode = async ({ data }) => {
     if (handlingRef.current || scanned) return;
     handlingRef.current = true;
@@ -95,15 +133,12 @@ export default function ScanTicketQrScreen({ navigation }) {
   if (!permission.granted) {
     return (
       <View className="flex-1 bg-background">
-        <View className="pt-12 px-4 pb-3 flex-row items-center bg-card border-b border-border">
-          <Pressable onPress={() => navigation.goBack()} className="w-10 h-10 rounded-full items-center justify-center bg-background border border-border mr-3">
-            <ChevronLeft size={22} color="#0F172A" />
-          </Pressable>
-          <Text className="text-text font-extrabold" style={{ fontSize: rf(16) }}>Scan Ticket QR</Text>
+        <View className="pt-12 bg-card border-b border-border">
+          <MintScreenHeader title="Scan Ticket QR" navigation={navigation} />
         </View>
         <View className="flex-1 items-center justify-center px-6">
-          <View className="h-16 w-16 rounded-full bg-warning/15 items-center justify-center mb-4">
-            <CameraIcon size={28} color="#F59E0B" />
+          <View className="h-16 w-16 rounded-full items-center justify-center mb-4" style={{ backgroundColor: GREEN_TINT }}>
+            <CameraIcon size={28} color={GREEN} />
           </View>
           <Text className="text-text font-extrabold text-center" style={{ fontSize: rf(16) }}>Camera access needed</Text>
           <Text className="text-text-muted text-center mt-2 leading-5" style={{ fontSize: rf(12.5) }}>
@@ -138,11 +173,25 @@ export default function ScanTicketQrScreen({ navigation }) {
       />
 
       {/* Header overlay */}
-      <View className="absolute left-0 right-0 top-0 pt-12 px-4 pb-3 flex-row items-center" style={{ backgroundColor: 'rgba(0,0,0,0.35)' }}>
-        <Pressable onPress={() => navigation.goBack()} className="w-10 h-10 rounded-full items-center justify-center bg-white/15 mr-3">
-          <ChevronLeft size={22} color="#fff" />
+      <View className="absolute left-0 right-0 top-0 pt-12 px-4 pb-3 flex-row items-center" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          hitSlop={8}
+          className="rounded-full items-center justify-center bg-white/15"
+          style={{ width: rs(42), height: rs(42), borderRadius: rs(21) }}
+        >
+          <ChevronLeft size={rs(22)} color="#fff" strokeWidth={2.4} />
         </Pressable>
-        <Text className="text-white font-extrabold" style={{ fontSize: rf(16) }}>Scan Ticket QR</Text>
+        <Text
+          className="flex-1 text-center text-white font-extrabold"
+          style={{ fontSize: rf(18), fontWeight: '800', marginHorizontal: rs(8) }}
+          numberOfLines={1}
+        >
+          Scan Ticket QR
+        </Text>
+        <View style={{ width: rs(42) }} />
       </View>
 
       {/* Frame + brackets (hidden once a result sheet is up) */}
@@ -171,11 +220,47 @@ export default function ScanTicketQrScreen({ navigation }) {
               );
             })}
           </View>
-          <View className="flex-row items-center mt-6">
+          <View className="flex-row items-center mt-6 px-4 py-2 rounded-full" style={{ backgroundColor: 'rgba(3,92,108,0.85)' }}>
             <ScanLine size={15} color="#fff" />
             <Text className="text-white font-extrabold ml-1.5" style={{ fontSize: rf(13) }}>Align the ticket QR inside the frame</Text>
           </View>
         </View>
+      ) : null}
+
+      {/* Manual entry — fallback when the QR is damaged (and the only option on web). */}
+      {!showSheet ? (
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} className="absolute left-0 right-0 bottom-0" style={{ padding: 16, paddingBottom: 28 }}>
+          {manualOpen ? (
+            <View style={{ backgroundColor: '#FFFFFF', borderRadius: 18, padding: 14 }}>
+              <Text className="font-extrabold" style={{ fontSize: rf(16), fontWeight: '800', color: INK }}>Enter Ticket ID</Text>
+              <Text style={{ fontSize: rf(12), color: MUTED, marginTop: 2 }}>The code printed under the QR, e.g. CSPEN5490162</Text>
+              <View className="flex-row items-center mt-3">
+                <TextInput
+                  value={manualCode}
+                  onChangeText={setManualCode}
+                  placeholder="Ticket ID"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                  onSubmitEditing={() => manualCode.trim() && handleBarcode({ data: manualCode })}
+                  style={{ flex: 1, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: rf(14), color: INK }}
+                />
+                <Pressable
+                  onPress={() => manualCode.trim() && handleBarcode({ data: manualCode })}
+                  className="ml-2 rounded-xl items-center justify-center"
+                  style={{ backgroundColor: GREEN, width: 46, height: 46, opacity: manualCode.trim() ? 1 : 0.5 }}
+                >
+                  <Search size={20} color="#fff" />
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <Pressable onPress={() => setManualOpen(true)} className="self-center flex-row items-center rounded-full px-5 py-3" style={{ backgroundColor: '#FFFFFF' }}>
+              <KeyboardIcon size={16} color={GREEN} />
+              <Text className="font-extrabold ml-2" style={{ fontSize: rf(13), color: GREEN }}>Type Ticket ID</Text>
+            </Pressable>
+          )}
+        </KeyboardAvoidingView>
       ) : null}
 
       {/* Loading / not-found bottom sheet */}
@@ -193,7 +278,7 @@ export default function ScanTicketQrScreen({ navigation }) {
               </View>
               <Text className="text-gray-900 font-extrabold text-center" style={{ fontSize: rf(15) }}>No ticket found</Text>
               <Text className="text-gray-500 text-center mt-1.5 leading-5" style={{ fontSize: rf(12) }}>
-                Couldn't match <Text className="font-extrabold text-gray-700">{notFound}</Text> to a ticket in this shop. Make sure it's a GGFix QR slip.
+                Couldn't match <Text className="font-extrabold text-gray-700">{notFound}</Text> to a ticket in this shop. Make sure it's a Near G Fix QR slip.
               </Text>
               <Pressable onPress={reset} className="mt-5 rounded-2xl py-3.5 px-8 flex-row items-center justify-center active:opacity-90" style={{ backgroundColor: GREEN }}>
                 <RotateCcw size={16} color="#fff" />

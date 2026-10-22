@@ -1,5 +1,6 @@
 import React, { forwardRef, useState } from 'react';
-import { Platform, Text, TextInput, View } from 'react-native';
+import { Platform, View } from 'react-native';
+import { Text, TextInput } from '../Typography';
 import { cn } from './cn';
 
 // react-native-web renders <TextInput> as a real <input>, which gets the browser's
@@ -30,7 +31,7 @@ export const Input = forwardRef(function Input({ className, onFocus, onBlur, ...
       style={[
         WEB_NO_OUTLINE,
         focused && !callerSuppressesBorder
-          ? { shadowColor: '#00008B', shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 }
+          ? { shadowColor: '#035C6C', shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1 }
           : null,
         rest.style,
       ]}

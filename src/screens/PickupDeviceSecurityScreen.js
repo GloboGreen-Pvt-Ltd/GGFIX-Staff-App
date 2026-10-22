@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput, PanResponder, StyleSheet } from 'react-native';
+import { View, ScrollView, Pressable, PanResponder, StyleSheet } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Line } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -76,11 +77,11 @@ function PatternPad({ value, onChange }) {
           if (idx === 0) return null;
           const a = dotCenter(path[idx - 1]);
           const b = dotCenter(dot);
-          return <Line key={`l${idx}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#00008B" strokeWidth={2} />;
+          return <Line key={`l${idx}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#035C6C" strokeWidth={2} />;
         })}
         {path.length > 0 && current ? (() => {
           const last = dotCenter(path[path.length - 1]);
-          return <Line x1={last.x} y1={last.y} x2={current.x} y2={current.y} stroke="#00008B" strokeWidth={2} opacity={0.4} />;
+          return <Line x1={last.x} y1={last.y} x2={current.x} y2={current.y} stroke="#035C6C" strokeWidth={2} opacity={0.4} />;
         })() : null}
       </Svg>
       {Array.from({ length: 9 }, (_, i) => i + 1).map((dot) => {
@@ -104,7 +105,7 @@ function PatternPad({ value, onChange }) {
               width: active ? 22 : DOT_VISUAL,
               height: active ? 22 : DOT_VISUAL,
               borderRadius: 11,
-              backgroundColor: active ? '#00008B' : '#0F172A',
+              backgroundColor: active ? '#035C6C' : '#111111',
               opacity: active ? 1 : 0.7,
             }} />
           </View>
@@ -142,7 +143,7 @@ export default function PickupDeviceSecurityScreen({ navigation, route }) {
   return (
     <View className="flex-1 bg-background">
       <ScrollView contentContainerClassName="px-4 pt-4 pb-32">
-        <Text className="text-text-muted text-xs px-1 mb-2 pt-1">Modify password</Text>
+        <Text className="text-text-muted px-1 mb-2 pt-1" style={{ fontSize: rf(12), color: '#6B7280' }}>Modify password</Text>
 
         {[
           { key: 'PIN', label: 'Numeric', desc: 'Enter 4 or 6 digits.', icon: 'keypad-outline' },
@@ -157,7 +158,7 @@ export default function PickupDeviceSecurityScreen({ navigation, route }) {
               className={`bg-card rounded-2xl px-4 py-4 mb-3 flex-row items-center border-2 ${active ? 'border-primary' : 'border-transparent'} active:opacity-80`}
             >
               <View className={`w-12 h-12 rounded-xl items-center justify-center mr-3 ${active ? 'bg-primary/15' : 'bg-primary/10'}`}>
-                <Ionicons name={opt.icon} size={22} color="#00008B" />
+                <Ionicons name={opt.icon} size={22} color="#035C6C" />
               </View>
               <View className="flex-1">
                 <Text className="text-text font-extrabold" style={{ fontSize: rf(15) }}>{opt.label}</Text>
@@ -174,7 +175,7 @@ export default function PickupDeviceSecurityScreen({ navigation, route }) {
           className={`bg-card rounded-2xl px-4 py-4 mb-3 flex-row items-center border-2 ${lock.type === 'NONE' ? 'border-primary' : 'border-transparent'} active:opacity-80`}
         >
           <View className={`w-12 h-12 rounded-xl items-center justify-center mr-3 ${lock.type === 'NONE' ? 'bg-primary/15' : 'bg-primary/10'}`}>
-            <Ionicons name="lock-open-outline" size={22} color="#00008B" />
+            <Ionicons name="lock-open-outline" size={22} color="#035C6C" />
           </View>
           <View className="flex-1">
             <Text className="text-text font-extrabold" style={{ fontSize: rf(15) }}>None</Text>
@@ -186,7 +187,7 @@ export default function PickupDeviceSecurityScreen({ navigation, route }) {
 
       </ScrollView>
 
-      <View className="absolute left-0 right-0 bottom-0 p-4 bg-card border-t border-border" style={{ paddingBottom: Math.max(insets.bottom, 12) + 10, shadowColor: '#0F172A', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: -4 }, elevation: 12 }}>
+      <View className="absolute left-0 right-0 bottom-0 p-4 bg-card border-t border-border" style={{ paddingBottom: Math.max(insets.bottom, 12) + 10, shadowColor: '#111111', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: -4 }, elevation: 12 }}>
         <Button
           rightIcon={<Ionicons name="chevron-forward" size={18} color="#fff" />}
           onPress={next}
@@ -272,7 +273,7 @@ export default function PickupDeviceSecurityScreen({ navigation, route }) {
                 onPress={() => setPin((p) => p.slice(0, -1))}
               >
                 <View className="w-14 h-14 items-center justify-center">
-                  <Ionicons name="backspace-outline" size={22} color="#0F172A" />
+                  <Ionicons name="backspace-outline" size={22} color="#111111" />
                 </View>
               </Pressable>
             </View>

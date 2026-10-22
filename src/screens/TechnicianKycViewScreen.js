@@ -1,14 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  RefreshControl,
-} from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, RefreshControl } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -118,7 +110,7 @@ export default function TechnicianKycViewScreen({ route, navigation }) {
         </View>
 
         {loading ? (
-          <ActivityIndicator size="large" color="#09AD2A" style={{ marginVertical: 40 }} />
+          <ActivityIndicator size="large" color="#035C6C" style={{ marginVertical: 40 }} />
         ) : orderedDocs.length === 0 ? (
           <TouchableOpacity
             style={styles.uploadBtn}
@@ -164,7 +156,7 @@ export default function TechnicianKycViewScreen({ route, navigation }) {
                   <View key={doc.id || doc.docType} style={styles.cardOuter}>
                     <View style={styles.cardHeader}>
                       <View style={styles.cardHeaderIcon}>
-                        <Ionicons name="person-circle-outline" size={16} color="#4A4A4A" />
+                        <Ionicons name="person-circle-outline" size={16} color="#6B7280" />
                       </View>
                       <Text style={styles.cardHeaderTitle} numberOfLines={1}>
                         {doc.title || TITLES[doc.docType] || doc.docType}
@@ -217,7 +209,7 @@ export default function TechnicianKycViewScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F8F8' },
+  safe: { flex: 1, backgroundColor: '#F3F4F6' },
   content: { padding: 12, paddingBottom: 28 },
 
   statusCard: {
@@ -228,10 +220,10 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 14,
   },
-  statusApproved: { backgroundColor: '#09AD2A' },
-  statusRejected: { backgroundColor: '#F84141' },
-  statusPending:  { backgroundColor: '#09AD2A' },
-  statusNone:     { backgroundColor: '#6E6E6E' },
+  statusApproved: { backgroundColor: '#609138' },
+  statusRejected: { backgroundColor: '#F32C26' },
+  statusPending:  { backgroundColor: '#035C6C' },
+  statusNone:     { backgroundColor: '#6B7280' },
   statusIconWrap: {
     width: 38,
     height: 38,
@@ -240,8 +232,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  statusTitle: { fontSize: rf(14), fontWeight: '800', color: '#FFFFFF' },
-  statusSub: { fontSize: rf(11), color: 'rgba(255,255,255,0.92)', marginTop: 2, lineHeight: rlh(15) },
+  statusTitle: { fontSize: rf(16), fontWeight: '800', color: '#FFFFFF' },
+  statusSub: { fontSize: rf(12), color: 'rgba(255,255,255,0.92)', marginTop: 2, lineHeight: rlh(16) },
 
   lockBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -258,54 +250,54 @@ const styles = StyleSheet.create({
   rejectBannerText: { flex: 1, fontSize: rf(11.5), color: '#C62E2E', fontWeight: '600', lineHeight: rlh(16) },
   reuploadBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#F84141', borderRadius: 999, paddingVertical: 10, marginTop: 12,
+    backgroundColor: '#F32C26', borderRadius: 999, paddingVertical: 10, marginTop: 12,
   },
   reuploadBtnText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '800', letterSpacing: 0.5 },
 
   actionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  sectionLabel: { fontSize: rf(12), fontWeight: '700', color: '#4A4A4A', letterSpacing: 0.3, textTransform: 'uppercase' },
-  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#E6F7EA', borderRadius: 999 },
-  editBtnText: { fontSize: rf(11), color: '#09AD2A', fontWeight: '700' },
+  sectionLabel: { fontSize: rf(16), fontWeight: '800', color: '#1C3053' },
+  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, backgroundColor: '#E5F3F5', borderRadius: 999 },
+  editBtnText: { fontSize: rf(11), color: '#035C6C', fontWeight: '700' },
 
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 },
-  cardOuter: { width: '48%', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 7, marginBottom: 8, borderWidth: 1, borderColor: '#ECECEC' },
+  cardOuter: { width: '48%', backgroundColor: '#FFFFFF', borderRadius: 12, padding: 7, marginBottom: 8, borderWidth: 1, borderColor: '#E5E7EB' },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#F3F3F3',
+    backgroundColor: '#F3F4F6',
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 6,
     marginBottom: 8,
   },
   cardHeaderIcon: { width: 18, alignItems: 'center' },
-  cardHeaderTitle: { flex: 1, fontSize: rf(11), fontWeight: '700', color: '#1E1E1E' },
-  requiredStar: { color: '#F84141', fontWeight: '800', fontSize: rf(12) },
+  cardHeaderTitle: { flex: 1, fontSize: rf(11), fontWeight: '700', color: '#111111' },
+  requiredStar: { color: '#F32C26', fontWeight: '800', fontSize: rf(12) },
 
-  preview: { borderRadius: 8, overflow: 'hidden', backgroundColor: '#F8F8F8', minHeight: 92 },
+  preview: { borderRadius: 8, overflow: 'hidden', backgroundColor: '#F3F4F6', minHeight: 92 },
   previewImg: { width: '100%', height: 92, resizeMode: 'cover' },
   pdfTile: { flexDirection: 'row', alignItems: 'center', padding: 10, gap: 8, minHeight: 92 },
-  pdfBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, backgroundColor: '#F84141' },
+  pdfBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, backgroundColor: '#F32C26' },
   pdfBadgeText: { color: '#FFFFFF', fontSize: rf(10), fontWeight: '800' },
-  pdfName: { flex: 1, fontSize: rf(11), color: '#4A4A4A', fontWeight: '600' },
+  pdfName: { flex: 1, fontSize: rf(11), color: '#6B7280', fontWeight: '600' },
 
   cardFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
   pill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 },
-  pillApproved: { backgroundColor: '#09AD2A' },
-  pillRejected: { backgroundColor: '#F84141' },
-  pillPending:  { backgroundColor: '#F3BF23' },
+  pillApproved: { backgroundColor: '#609138' },
+  pillRejected: { backgroundColor: '#F32C26' },
+  pillPending:  { backgroundColor: '#FAA700' },
   pillText: { fontSize: rf(9), color: '#FFFFFF', fontWeight: '800' },
   uploadedDate: { flex: 1, fontSize: rf(9), color: '#A3A3A3', fontWeight: '600' },
 
-  rejectReason: { fontSize: rf(10), color: '#F84141', marginTop: 4, fontStyle: 'italic' },
+  rejectReason: { fontSize: rf(10), color: '#F32C26', marginTop: 4, fontStyle: 'italic' },
 
   uploadBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#09AD2A',
+    backgroundColor: '#035C6C',
     borderRadius: 999,
     paddingVertical: 10,
     marginTop: 14,
@@ -317,7 +309,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#09AD2A',
+    backgroundColor: '#035C6C',
     borderRadius: 999,
     paddingVertical: 10,
     marginTop: 14,

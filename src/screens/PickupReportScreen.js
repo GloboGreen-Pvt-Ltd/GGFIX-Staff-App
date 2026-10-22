@@ -1,14 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  useWindowDimensions,
-} from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, useWindowDimensions } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -18,22 +10,17 @@ import { useFocusEffect } from '@react-navigation/native';
 import { listMyAssignedPickups } from '../api/pickups';
 import { rf, rs } from '../utils/responsive';
 import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
-import { MINT, mintShadow, HeroCard, CenterStepper, SectionCard, EmptyState } from '../components/MintKit';
+import { MINT, mintShadow, HeroCard, SectionCard, EmptyState, MonthCard } from '../components/MintKit';
 
 const MAX_CONTENT_WIDTH = 720;
 
 // Presentation only: summary-tile tints.
 const TILE_TINTS = {
-  inProcess: { bg: '#EFF6FF', border: '#DCE8FB', dot: '#2563EB', text: '#2563EB' },
-  pending:   { bg: '#FFF7E8', border: '#FBE8C5', dot: '#F59E0B', text: '#667085' },
-  completed: { bg: '#F1FAF6', border: '#D9EEE4', dot: '#00A86B', text: '#006B57' },
-  total:     { bg: '#F3EEFF', border: '#E6DCFB', dot: '#7C3AED', text: '#667085' },
+  inProcess: { bg: '#EFF6FF', border: '#DCE8FB', dot: '#035C6C', text: '#035C6C' },
+  pending:   { bg: '#FFF7E8', border: '#FBE8C5', dot: '#FAA700', text: '#667085' },
+  completed: { bg: '#F1FAF6', border: '#E5F3F5', dot: '#609138', text: '#609138' },
+  total:     { bg: '#F3EEFF', border: '#E6DCFB', dot: '#1C3053', text: '#667085' },
 };
-
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 const FILTERS = ['All', 'Completed', 'In Process', 'Pending'];
 
@@ -214,13 +201,7 @@ export default function PickupReportScreen({ navigation }) {
             art={contentW >= 360 ? <HeroArt /> : null}
           />
 
-          <CenterStepper
-            label={`${MONTHS[month - 1]} ${year}`}
-            onPrev={() => stepMonth(-1)}
-            onNext={() => stepMonth(1)}
-            prevLabel="Previous month"
-            nextLabel="Next month"
-          />
+          <MonthCard title="This Month" month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} style={{ marginTop: rs(10) }} />
 
           <View style={[styles.statTilesRow, { gap: tileGap }]}>
             <StatTile width={tileW} icon={Package} value={String(counts.inProcess).padStart(2, '0')} label="In Process" tint={TILE_TINTS.inProcess} />
@@ -293,7 +274,7 @@ function HeroArt() {
   const disc = rs(72);
   return (
     <View style={{ width: disc + rs(10), height: disc, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={{ width: disc, height: disc, borderRadius: disc / 2, backgroundColor: '#D8F1E6', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: disc, height: disc, borderRadius: disc / 2, backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center' }}>
         <Truck size={rs(36)} color={MINT.primary} fill="#FFFFFF" strokeWidth={1.8} />
       </View>
       <View style={{ position: 'absolute', top: -rs(6), right: 0 }}>
@@ -322,9 +303,9 @@ function PickupRow({ booking, bucket, onDetails, onHistory }) {
 
   const stepLine = statusLabel(booking.status);
   const stepColor =
-    isPending ? '#DC2626'
-      : isInProcess ? '#2563EB'
-        : '#004C40';
+    isPending ? '#F32C26'
+      : isInProcess ? '#035C6C'
+        : '#609138';
 
   const footerLine =
     isPending ? `Assigned On ${formatDateTime(booking.updatedAt || booking.createdAt)}`

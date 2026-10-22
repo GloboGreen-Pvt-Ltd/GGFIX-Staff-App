@@ -1,20 +1,34 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, TouchableOpacity, ScrollView, Image, ActivityIndicator, Modal, useWindowDimensions } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Image, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
-  Bell, MapPin, Camera, Sunrise, Sunset, ChevronDown, ChevronLeft, ChevronRight,
-  Calendar, CalendarDays, Briefcase, Clock, ShieldAlert, ShieldCheck, ScanLine,
-  FingerprintPattern, LogOut, CircleCheck, ChartColumn, ClipboardList, FileText, Truck,
-  ArrowRight,
+  Bell,
+  MapPin,
+  ChevronRight,
+  Calendar,
+  Briefcase,
+  Clock,
+  ShieldAlert,
+  ShieldCheck,
+  ScanLine,
+  FingerprintPattern,
+  LogOut,
+  CircleCheck,
+  ClipboardList,
+  Menu,
+  Coffee,
+  CloudSun,
+  Moon,
 } from 'lucide-react-native';
 import { rf, rlh, rs } from '../utils/responsive';
-import { selectSession, mergeTechnicianProfile, selectShopLocation } from '../store/authSlice';
+import { selectSession, mergeTechnicianProfile, selectShopLocation, selectTechnicianId } from '../store/authSlice';
 import { getCategoriesForSession, getRoleDisplayLabel, resolveRoleKey } from '../config/categories';
-import { employeeIdFromSession } from '../utils/employeeId';
 import { ticketRef } from '../utils/ticketRef';
 import {
   getMyTechnicianProfile,
@@ -31,33 +45,38 @@ import { loadUnreadNotificationCount } from './NotificationsScreen';
 import { readCurrentLocation, haversineMeters, GEOFENCE_RADIUS_METERS } from '../utils/geo';
 import { useLogout } from '../auth/LogoutContext';
 import { notify } from '../components/confirm';
+import CheckoutSosAlarm from '../components/CheckoutSosAlarm';
+import { syncCheckoutAlarm, cancelCheckoutAlarm } from '../utils/checkoutAlarm';
+import { CalendarModal, parseISO, toISO } from '../components/DatePickerField';
+import { useBreak, formatMinutes } from '../utils/breakTracker';
+import { BadgeIconTile, MonthPill } from '../components/MintKit';
 
-// Home-screen palette (GGFIX green + mint). Scoped to this screen so the
+// Home-screen palette (Near G Fix green + mint). Scoped to this screen so the
 // app-wide theme tokens other screens rely on stay untouched.
 const C = {
   // Brand palette
-  green: '#09AD2A',
-  red: '#F84141',
-  yellow: '#F3BF23',
-  ink: '#1E1E1E',
-  bg: '#F8F8F8',
-  surface: '#F3F3F3',
+  green: '#035C6C',
+  red: '#F32C26',
+  yellow: '#FAA700',
+  ink: '#111111',
+  bg: '#F3F4F6',
+  surface: '#F3F4F6',
   // Light tints of the palette colours (mixed with white) for tiles/pills
-  greenTint: '#E6F7EA',
-  greenSoft: '#F3FBF4',
+  greenTint: '#E5F3F5',
+  greenSoft: '#E5F3F5',
   redTint: '#FEECEC',
   redSoft: '#FFF6F6',
   yellowTint: '#FDF6E0',
   yellowSoft: '#FEFAF0',
   // Roles used throughout the screen
-  deep: '#09AD2A',
-  primary: '#09AD2A',
-  bright: '#09AD2A',
-  mint: '#E6F7EA',
+  deep: '#035C6C',
+  primary: '#035C6C',
+  bright: '#035C6C',
+  mint: '#E5F3F5',
   card: '#FFFFFF',
-  border: '#ECECEC',
-  text: '#1E1E1E',
-  muted: '#6E6E6E',
+  border: '#E5E7EB',
+  text: '#111111',
+  muted: '#6B7280',
   faint: '#A3A3A3',
 };
 
@@ -65,20 +84,22 @@ const MAX_CONTENT_WIDTH = 720;
 // Quick Access tiles, styled like the Partner app's dashboard tools: a pastel
 // circle behind a solid MaterialCommunityIcons glyph. Keyed by the category
 // `key` from config/categories.js; same pastel set as the Partner app.
-const QUICK_TILE_INK = '#111827';
+const QUICK_TILE_INK = '#111111';
+// Brand palette circles with white icons (teal, navy, blue, green, orange, red).
 const QUICK_TILES = {
-  daily_attendance: { icon: 'account-clock', bg: '#E3F6EC' },
-  daily_shift:      { icon: 'calendar-clock', bg: '#E4EEFF' },
-  monthly_summary:  { icon: 'calendar-month', bg: '#FFF0D2' },
-  leave_request:    { icon: 'calendar-remove', bg: '#FDE3E3', fg: '#DC2626' },
-  apply_permission: { icon: 'shield-check', bg: '#F2E1FA' },
-  leave_report:     { icon: 'clipboard-text', bg: '#FFE8D6' },
-  assign_task:      { icon: 'clipboard-account', bg: '#E4EEFF' },
-  task_report:      { icon: 'clipboard-check', bg: '#E3F6EC' },
-  assign_pickup:    { icon: 'truck', bg: '#FFF0D2' },
-  pickup_report:    { icon: 'truck-delivery', bg: '#EFE2FF' },
-  salary_report:    { icon: 'currency-inr', bg: '#FFF0D2' },
-  default:          { icon: 'view-grid', bg: '#E3F6EC' },
+  daily_attendance: { icon: 'account-clock', bg: '#035C6C', fg: '#FFFFFF' },
+  daily_shift:      { icon: 'calendar-clock', bg: '#0788C9', fg: '#FFFFFF' },
+  monthly_summary:  { icon: 'calendar-month', bg: '#1C3053', fg: '#FFFFFF' },
+  leave_request:    { icon: 'calendar-remove', bg: '#F32C26', fg: '#FFFFFF' },
+  apply_permission: { icon: 'shield-check', bg: '#609138', fg: '#FFFFFF' },
+  leave_report:     { icon: 'clipboard-text', bg: '#FAA700', fg: '#FFFFFF' },
+  permission_report: { icon: 'clipboard-clock', bg: '#035C6C', fg: '#FFFFFF' },
+  assign_task:      { icon: 'clipboard-account', bg: '#0788C9', fg: '#FFFFFF' },
+  task_report:      { icon: 'clipboard-check', bg: '#609138', fg: '#FFFFFF' },
+  assign_pickup:    { icon: 'truck', bg: '#1C3053', fg: '#FFFFFF' },
+  pickup_report:    { icon: 'truck-delivery', bg: '#F32C26', fg: '#FFFFFF' },
+  salary_report:    { icon: 'currency-inr', bg: '#FAA700', fg: '#FFFFFF' },
+  default:          { icon: 'view-grid', bg: '#035C6C', fg: '#FFFFFF' },
 };
 
 // Status buckets used to split the "assignedToMe" ticket list into the
@@ -117,6 +138,38 @@ const EVENT_INDEX = Object.fromEntries(CANONICAL_EVENT_ORDER.map((k, i) => [k, i
 // done, not jump forward to a phase the technician didn't perform.
 const TECHNICIAN_CAP_INDEX = EVENT_INDEX.REPAIR_COMPLETED;
 
+// Task summary cards (above Quick Access). Buckets mirror the rules the task
+// screens already use:
+//   Recent Assigned — assigned to me but not yet accepted/started (same
+//                     `needsAccept` rule as TaskAssignScreen).
+//   Completed       — READY / DELIVERED (work done; shop-side handover).
+//   Pending         — everything else accepted and still open
+//                     (CREATED, IN_DIAGNOSIS, QUOTED, APPROVED, IN_REPAIR…).
+// CANCELLED tickets are excluded from all three.
+const TASK_FINAL_STATUSES = new Set(['DELIVERED', 'CANCELLED']);
+const TASK_COMPLETED_STATUSES = new Set(['READY', 'DELIVERED']);
+const TASK_POLL_MS = 30000;
+function taskBucket(t) {
+  const s = String(t?.status || '').toUpperCase();
+  if (s === 'CANCELLED') return null;
+  if (!t?.technicianAcceptedAt && !TASK_FINAL_STATUSES.has(s)) return 'assigned';
+  if (TASK_COMPLETED_STATUSES.has(s)) return 'completed';
+  return 'pending';
+}
+// Seen "Recent Assigned" ticket ids, stored per user so a shared device
+// doesn't leak one employee's read-state into another's badge.
+const seenAssignedKey = (userKey) => `ggfix.home.seenAssignedTasks.${userKey || 'anon'}`;
+async function readSeenAssigned(userKey) {
+  try {
+    const raw = await AsyncStorage.getItem(seenAssignedKey(userKey));
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr.map(String) : []);
+  } catch { return new Set(); }
+}
+async function writeSeenAssigned(userKey, ids) {
+  try { await AsyncStorage.setItem(seenAssignedKey(userKey), JSON.stringify(ids.map(String))); } catch {}
+}
+
 const PENDING_NOTE_BY_STATUS = {
   CREATED: 'Awaiting diagnosis',
   IN_DIAGNOSIS: 'Under diagnosis — quotation pending',
@@ -129,24 +182,6 @@ const IN_SERVICE_NOTE_BY_STATUS = {
   READY: 'Repair complete — awaiting pickup',
 };
 
-function useClock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
-}
-
-function format12hClock(date) {
-  let h = date.getHours();
-  const m = String(date.getMinutes()).padStart(2, '0');
-  const s = String(date.getSeconds()).padStart(2, '0');
-  const ap = h >= 12 ? 'PM' : 'AM';
-  h = h % 12 || 12;
-  return { h: String(h).padStart(2, '0'), m, s, ap };
-}
-
 // Coarser clock for the greeting / date / month header — ticks once a minute so
 // the whole (heavy) HomeScreen isn't re-rendered every second. The live seconds
 // display is isolated into <LiveClock> so only it re-renders per second.
@@ -157,30 +192,6 @@ function useMinuteClock() {
     return () => clearInterval(id);
   }, []);
   return now;
-}
-
-// Self-contained ticking "CURRENT TIME" block. Owns its own 1s interval, so the
-// per-second updates re-render only this small component, not all of HomeScreen.
-function LiveClock({ statusColor, statusText }) {
-  const now = useClock();
-  const time = format12hClock(now);
-  return (
-    <View style={{ marginTop: rs(10) }}>
-      <View className="flex-row items-center">
-        <Clock size={rs(15)} color={C.text} strokeWidth={2} />
-        <Text style={{ fontSize: rf(13), color: C.text, marginLeft: rs(6) }}>Current Time</Text>
-      </View>
-      <Text style={{ fontSize: rf(30), fontWeight: '800', color: C.text, marginTop: rs(2), fontVariant: ['tabular-nums'] }}
-            numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-        {time.h}:{time.m}:{time.s}
-        <Text style={{ fontSize: rf(16), color: C.muted, fontWeight: '700' }}> {time.ap}</Text>
-      </Text>
-      <View className="flex-row items-center" style={{ marginTop: rs(2) }}>
-        <View style={{ width: rs(9), height: rs(9), borderRadius: rs(5), backgroundColor: statusColor, marginRight: rs(7) }} />
-        <Text style={{ fontSize: rf(13), fontWeight: '600', color: C.text }}>{statusText}</Text>
-      </View>
-    </View>
-  );
 }
 
 // Time-of-day greeting for the header.
@@ -201,21 +212,6 @@ function formatTimeOfDay(localTime) {
   const ap = h >= 12 ? 'PM' : 'AM';
   h = h % 12 || 12;
   return `${String(h).padStart(2, '0')}:${m} ${ap}`;
-}
-
-function formatLongDate(date) {
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  return `${days[date.getDay()]} ${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
-}
-
-// "06-Feb-2026" — matches the design.
-function formatShortDate(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return `${String(d.getDate()).padStart(2, '0')}-${months[d.getMonth()]}-${d.getFullYear()}`;
 }
 
 function shortMonthYear(date) {
@@ -281,15 +277,20 @@ export default function HomeScreen({ navigation }) {
 
   useFocusEffect(useCallback(() => {
     let active = true;
-    loadUnreadNotificationCount().then((n) => { if (active) setUnreadNotifs(n); });
-    return () => { active = false; };
+    const refresh = () => loadUnreadNotificationCount().then((n) => { if (active) setUnreadNotifs(n); });
+    refresh();
+    // Keep the bell dot live (leave / permission decisions) while Home is open.
+    const t = setInterval(refresh, 20000);
+    return () => { active = false; clearInterval(t); };
   }, []));
 
   // Keep today's punch + this-month stats fresh: refetch on focus (so a row
   // lingering across midnight can't strand the button on "Check Out") and after
   // a successful check-in (so the "This Month" tiles reflect the new day).
+  // technician.id lives in auth state (from /technicians/me), not on the session.
+  const storedTechId = useSelector(selectTechnicianId);
   const reloadAttendance = useCallback(async () => {
-    const techId = session?.technicianId;
+    const techId = storedTechId || session?.technicianId;
     try {
       const today = await getTodayAttendance();
       setTodayAttendance(today || null);
@@ -299,8 +300,11 @@ export default function HomeScreen({ navigation }) {
         const att = await getMonthlyAttendance(techId, month, year);
         if (att) setMonthly(att);
       } catch { /* keep last known */ }
+      // Refresh leave / permission requests too, so a newly applied permission
+      // shows up in This Month right after coming back.
+      getMyLeaves(techId).then((lvs) => { if (Array.isArray(lvs)) setLeaves(lvs); }).catch(() => {});
     }
-  }, [session?.technicianId, month, year]);
+  }, [storedTechId, session?.technicianId, month, year]);
 
   useFocusEffect(useCallback(() => { reloadAttendance(); }, [reloadAttendance]));
 
@@ -353,18 +357,65 @@ export default function HomeScreen({ navigation }) {
       } catch (e) {
         setErrors((s) => ({ ...s, today: e?.message }));
       }
-
-      try {
-        const page = await listMyTickets({ page: 0, size: 20 });
-        if (active) setTickets(Array.isArray(page?.content) ? page.content : (Array.isArray(page) ? page : []));
-      } catch (e) {
-        setErrors((s) => ({ ...s, tickets: e?.message }));
-      } finally {
-        if (active) setTicketsLoading(false);
-      }
     })();
     return () => { active = false; };
   }, [dispatch, loadFromTechnicianId]);
+
+  // Assigned tickets feed both the "Recent Pending / In Service" rows and the
+  // task summary cards. Refetched on every focus and polled while focused so a
+  // freshly assigned task surfaces the red badge without leaving the screen.
+  // On failure the last known list is kept (no crash, no reset to empty).
+  const userKey = session?.userId || session?.technicianId || session?.email || null;
+  const brk = useBreak(userKey);
+  const [seenAssigned, setSeenAssigned] = useState(null); // Set | null (not loaded yet)
+  const [tasksLoaded, setTasksLoaded] = useState(false);
+
+  const reloadTickets = useCallback(async () => {
+    try {
+      const page = await listMyTickets({ page: 0, size: 100 });
+      const items = Array.isArray(page?.content) ? page.content : (Array.isArray(page) ? page : []);
+      setTickets(items);
+      setTasksLoaded(true);
+      setErrors((s) => (s.tickets ? { ...s, tickets: undefined } : s));
+    } catch (e) {
+      setErrors((s) => ({ ...s, tickets: e?.message || 'Could not load tasks' }));
+    } finally {
+      setTicketsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    readSeenAssigned(userKey).then((set) => { if (active) setSeenAssigned(set); });
+    return () => { active = false; };
+  }, [userKey]);
+
+  useFocusEffect(useCallback(() => {
+    reloadTickets();
+    const id = setInterval(reloadTickets, TASK_POLL_MS);
+    return () => clearInterval(id);
+  }, [reloadTickets]));
+
+  const taskSummary = useMemo(() => {
+    const assignedIds = [];
+    let pending = 0;
+    let completed = 0;
+    tickets.forEach((t) => {
+      const b = taskBucket(t);
+      if (b === 'assigned') { if (t?.id != null) assignedIds.push(String(t.id)); }
+      else if (b === 'pending') pending += 1;
+      else if (b === 'completed') completed += 1;
+    });
+    const unseen = seenAssigned ? assignedIds.filter((id) => !seenAssigned.has(id)).length : 0;
+    return { assigned: assignedIds.length, assignedIds, pending, completed, unseen };
+  }, [tickets, seenAssigned]);
+
+  const openRecentAssigned = () => {
+    const ids = taskSummary.assignedIds;
+    setSeenAssigned(new Set(ids));
+    writeSeenAssigned(userKey, ids);
+    navigation.navigate('TaskAssign');
+  };
 
   // Button toggles based on today's row:
   //   no row / no check-in time  → "Check In"  (POST /me/attendance/check-in)
@@ -373,6 +424,11 @@ export default function HomeScreen({ navigation }) {
   const hasCheckedIn = !!todayAttendance?.checkInTime;
   const hasCheckedOut = !!todayAttendance?.checkOutTime;
   const buttonMode = hasCheckedOut ? 'done' : hasCheckedIn ? 'out' : 'in';
+
+  // Keep the 6:30 PM checkout SOS notifications in step with today's punches.
+  useEffect(() => {
+    if (todayAttendance) syncCheckoutAlarm(todayAttendance);
+  }, [todayAttendance?.checkInTime, todayAttendance?.checkOutTime]);
 
   const handleCheckInPress = async () => {
     if (checkInBusy || buttonMode === 'done') return;
@@ -395,6 +451,8 @@ export default function HomeScreen({ navigation }) {
       if (updated) setTodayAttendance(updated);
 
       if (isCheckout) {
+        brk.endBreak();
+        await cancelCheckoutAlarm();
         // After a successful check-out the shift is over — sign out back to the
         // login screen (per the attendance lifecycle).
         notify('Checked out', 'Have a good day!', { preset: 'done', haptic: 'success' });
@@ -437,7 +495,18 @@ export default function HomeScreen({ navigation }) {
 
   const present = monthly?.presentDays ?? 0;
   const leaveDays = monthly?.leaveDays ?? 0;
-  const permission = monthly?.permissionCount ?? 0;
+  // Permissions are leave requests with leaveType PERMISSION (the attendance
+  // summary's permissionCount only counts PERMISSION attendance days), so count
+  // this month's requests directly; rejected / cancelled ones don't count.
+  const permission = useMemo(() => {
+    const fromRequests = leaves.filter((l) => {
+      if (String(l.leaveType || '').toUpperCase() !== 'PERMISSION') return false;
+      if (/REJECT|CANCEL/i.test(String(l.status || ''))) return false;
+      const d = new Date(l.startDate || l.requestedAt || 0);
+      return d.getMonth() + 1 === month && d.getFullYear() === year;
+    }).length;
+    return Math.max(fromRequests, monthly?.permissionCount ?? 0);
+  }, [leaves, month, year, monthly?.permissionCount]);
   // Backend returns lateHours = 0 because per-row lateMinutes isn't computed
   // server-side. Derive client-side from each day's checkInTime vs duty start
   // — same logic Monthly Summary uses (effectiveLateMinutes) so the two
@@ -560,7 +629,7 @@ export default function HomeScreen({ navigation }) {
   }, [leaves]);
 
   const buttonLabel = buttonMode === 'out' ? 'Check Out' : buttonMode === 'done' ? 'Done for Today' : 'Check In';
-  const buttonColors = buttonMode === 'out' ? [C.red, '#E73A3A'] : buttonMode === 'done' ? ['#A3A3A3', '#7A7A7A'] : [C.green, '#089E26'];
+  const buttonColors = buttonMode === 'out' ? [C.red, '#F32C26'] : buttonMode === 'done' ? ['#A3A3A3', '#7A7A7A'] : [C.green, '#609138'];
   const ButtonIcon = buttonMode === 'out' ? LogOut : buttonMode === 'done' ? CircleCheck : FingerprintPattern;
   // Only block CHECK-IN when out of range. Never disable check-out: a checked-in
   // employee who walks out (or gets an inaccurate fix) must still be able to
@@ -569,8 +638,10 @@ export default function HomeScreen({ navigation }) {
   const geoBlocksCheckIn = buttonMode === 'in' && geo.inRange === false;
   const buttonDisabled = checkInBusy || buttonMode === 'done' || geoBlocksCheckIn;
   const greeting = greetingFor(now);
-  const statusText = buttonMode === 'in' ? 'Not Checked In' : buttonMode === 'out' ? 'On Duty' : 'Completed';
-  const statusColor = buttonMode === 'in' ? C.yellow : C.green;
+  const onBreak = buttonMode === 'out' && brk.onBreak;
+  const breakMin = brk.breakMinutes(now);
+  const statusText = onBreak ? 'On Break' : buttonMode === 'in' ? 'Not Checked In' : buttonMode === 'out' ? 'On Duty' : 'Completed';
+  const statusColor = buttonMode === 'in' || onBreak ? '#FAA700' : '#609138';
 
   // Layout maths. Content is capped on tablets so cards don't stretch edge to edge.
   const contentW = Math.min(winW, MAX_CONTENT_WIDTH);
@@ -589,139 +660,159 @@ export default function HomeScreen({ navigation }) {
 
   // Ticket QR scanning only applies to roles that handle tickets.
   const showScan = resolveRoleKey(session) !== 'STAFF';
-  const subLine = session?.email || `${greeting}, ${String(displayName || '').trim().split(/\s+/)[0]}`;
 
   const ticketLine = (t) => `${ticketRef(t)} · ${t.deviceDisplayName || 'Device'}${t.repairServicesSummary ? ` - ${t.repairServicesSummary}` : ''}`;
-  const leave = recentLeave ? leaveSummary(recentLeave) : null;
+  // Apply Permission tile: red + count while requests await approval, green + count once approved.
+  const perms = leaves.filter((l) => String(l.leaveType).toUpperCase() === 'PERMISSION');
+  const pendingPerms = perms.filter((l) => !/APPROV|REJECT|CANCEL/i.test(String(l.status || ''))).length;
+  const approvedPerms = perms.filter((l) => /APPROV/i.test(String(l.status || ''))).length;
+  const permTile = pendingPerms ? { bg: '#F32C26', fg: '#FFFFFF' }
+    : approvedPerms ? { bg: '#609138', fg: '#FFFFFF' } : null;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.card }} edges={['top']}>
+      {/* Fixed top bar — stays put while the page scrolls */}
+      <View style={{ backgroundColor: '#FFFFFF', alignItems: 'center', paddingBottom: rs(8), borderBottomWidth: 1, borderBottomColor: C.border }}>
+        <View style={{ width: contentW, paddingHorizontal: pad }}>
+            {/* 1. Header: menu, wordmark, (scan), bell, avatar */}
+            <View className="flex-row items-center" style={{ paddingTop: rs(8) }}>
+              <TouchableOpacity hitSlop={8} onPress={() => navigation.navigate('AccountTab')} accessibilityLabel="Menu">
+                <Menu size={rs(24)} color={C.text} />
+              </TouchableOpacity>
+              <Text style={{ flex: 1, marginLeft: rs(12), fontSize: rf(20), fontWeight: '900', color: C.text, letterSpacing: 0.3 }} numberOfLines={1}>
+                NEAR G <Text style={{ color: C.green }}>FIX</Text>
+              </Text>
+              {showScan ? <HeaderButton plain icon={ScanLine} onPress={() => navigation.navigate('ScanTicketQr')} /> : null}
+              <HeaderButton plain icon={Bell} dot={unreadNotifs > 0} onPress={() => navigation.navigate('Notifications')} />
+              <TouchableOpacity hitSlop={6} onPress={() => navigation.navigate('TechnicianProfile')} style={{ marginLeft: rs(8) }} accessibilityLabel="My profile">
+                <Avatar uri={session?.photoUrl} name={displayName} size={rs(40)} />
+                <View style={{
+                  position: 'absolute', right: -rs(1), bottom: 0,
+                  width: rs(12), height: rs(12), borderRadius: rs(6), borderWidth: 2, borderColor: '#FFFFFF',
+                  backgroundColor: hasCheckedIn && !hasCheckedOut ? C.green : C.faint,
+                }} />
+              </TouchableOpacity>
+            </View>
+        </View>
+      </View>
       <ScrollView
         style={{ backgroundColor: C.bg }}
         contentContainerStyle={{ alignItems: 'center', paddingBottom: rs(12) }}
         showsVerticalScrollIndicator={false}
       >
         <View style={{ width: contentW, paddingHorizontal: pad }}>
-          {/* 1. Header: avatar, name + location, ID pill, (scan), bell */}
-          <View className="flex-row items-center" style={{ paddingTop: rs(8) }}>
-            <View>
-              <Avatar uri={session?.photoUrl} name={displayName} size={rs(50)} />
-              <View style={{
-                position: 'absolute', right: -rs(1), bottom: 0,
-                width: rs(13), height: rs(13), borderRadius: rs(7), borderWidth: 2, borderColor: '#FFFFFF',
-                backgroundColor: hasCheckedIn && !hasCheckedOut ? C.green : C.faint,
-              }} />
-            </View>
-            <View style={{ flex: 1, marginLeft: rs(10), marginRight: rs(8) }}>
-              <Text style={{ fontSize: rf(18.5), fontWeight: '800', color: C.text }} numberOfLines={1}>{displayName}</Text>
-              <View className="flex-row items-center" style={{ marginTop: rs(2) }}>
-                <MapPin size={rs(14)} color={C.green} fill={C.green} stroke="#FFFFFF" strokeWidth={1.6} />
-                <Text style={{ fontSize: rf(13), color: C.text, marginLeft: rs(4), flexShrink: 1 }} numberOfLines={1}>Cuddalore, Tamil Nadu</Text>
+          {/* 2. Greeting + date (left), location card (right) */}
+          <View style={{ marginTop: rs(6), flexDirection: 'row', alignItems: 'stretch', gap: rs(10) }}>
+            <View style={{ flex: 1, minWidth: 0, justifyContent: 'center', backgroundColor: '#EAF5F7', borderRadius: rs(12), borderWidth: 1, borderColor: '#D5EBEF', paddingHorizontal: rs(10), paddingVertical: rs(6), overflow: 'hidden' }}>
+              <View pointerEvents="none" style={{ position: 'absolute', right: rs(6), top: rs(4), opacity: 0.9 }}>
+                {now.getHours() >= 18 || now.getHours() < 5 ? <Moon size={rs(30)} color="#1C3053" strokeWidth={1.6} /> : <CloudSun size={rs(34)} color="#FAA700" strokeWidth={1.6} />}
+              </View>
+              <Text style={{ fontSize: rf(12), color: C.muted }} numberOfLines={1}>{greeting},</Text>
+              <Text style={{ fontSize: rf(14), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                {displayName} 👋
+              </Text>
+              <View className="flex-row items-center" style={{ marginTop: rs(3) }}>
+                <Calendar size={rs(15)} color={C.green} />
+                <Text style={{ fontSize: rf(11.5), color: C.muted, marginLeft: rs(4) }} numberOfLines={1}>{formatShortDay(now)}</Text>
               </View>
             </View>
-            <View style={{ backgroundColor: C.greenTint, borderRadius: 999, paddingHorizontal: rs(10), paddingVertical: rs(4) }}>
-              <Text style={{ fontSize: rf(11.5), fontWeight: '700', color: C.text }} numberOfLines={1}>{employeeIdFromSession(session)}</Text>
-            </View>
-            {showScan ? <HeaderButton icon={ScanLine} onPress={() => navigation.navigate('ScanTicketQr')} /> : null}
-            <HeaderButton icon={Bell} dot={unreadNotifs > 0} onPress={() => navigation.navigate('Notifications')} />
-          </View>
-
-          {/* 2. Date bar (duty roster on the right) */}
-          <View className="flex-row items-center" style={{
-            marginTop: rs(10), height: rs(44), borderRadius: rs(14), borderWidth: 1, borderColor: C.border,
-            backgroundColor: C.card, paddingHorizontal: rs(12), ...shadow(0.04, 6, 2, 1),
-          }}>
-            <Calendar size={rs(19)} color={C.text} />
-            <Text style={{ flex: 1, fontSize: rf(14), fontWeight: '600', color: C.text, marginLeft: rs(10) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
-              {formatShortDay(now)}
-            </Text>
-            <View className="flex-row items-center" style={{ backgroundColor: C.bg, borderRadius: 999, paddingHorizontal: rs(8), paddingVertical: rs(4) }}>
-              <Sunrise size={rs(14)} color={C.green} />
-              <Text style={{ fontSize: rf(11.5), fontWeight: '700', color: C.text, marginLeft: rs(3) }}>{dutyCheckInLabel}</Text>
-              <Text style={{ fontSize: rf(11.5), color: C.faint, marginHorizontal: rs(4) }}>–</Text>
-              <Sunset size={rs(14)} color={C.red} />
-              <Text style={{ fontSize: rf(11.5), fontWeight: '700', color: C.text, marginLeft: rs(3) }}>{dutyCheckOutLabel}</Text>
-            </View>
-          </View>
-
-          {/* 3. Attendance banner */}
-          <View style={{ marginTop: rs(10), borderRadius: rs(20), overflow: 'hidden', borderWidth: 1, borderColor: '#DDF1E1', ...shadow(0.06, 12, 4, 3) }}>
-            <LinearGradient colors={['#F7FCF8', '#EDF9F0', '#DDF3E2']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: rs(12) }}>
-              <View pointerEvents="none" style={{ position: 'absolute', top: -rs(50), right: -rs(40), width: rs(190), height: rs(190), borderRadius: rs(95), backgroundColor: 'rgba(9,173,42,0.10)' }} />
-
-              <View className="flex-row">
-                {/* Left: brand + live clock */}
-                <View style={{ flex: 1, marginRight: rs(8) }}>
-                  <View className="flex-row items-center">
-                    <Image source={require('../../assets/logo.png')} style={{ width: rs(32), height: rs(32) }} resizeMode="contain" />
-                    <View style={{ marginLeft: rs(8), flex: 1 }}>
-                      <Text style={{ fontSize: rf(15), fontWeight: '900', color: C.text }}>GGFIX</Text>
-                      <Text style={{ fontSize: rf(11.5), color: C.muted }} numberOfLines={1}>{subLine}</Text>
-                    </View>
+            <View className="flex-row items-center" style={{
+              flex: 1, minWidth: 0, backgroundColor: C.card, borderRadius: rs(12), borderWidth: 1, borderColor: C.border,
+              paddingHorizontal: rs(10), paddingVertical: rs(6), overflow: 'hidden',
+            }}>
+              <View pointerEvents="none" style={{ position: 'absolute', right: -rs(24), top: '50%', marginTop: -rs(22), width: rs(44), height: rs(44), borderRadius: rs(22), backgroundColor: '#E5F3F5' }} />
+              <View pointerEvents="none" style={{ position: 'absolute', right: -rs(10), top: '50%', marginTop: -rs(11), width: rs(22), height: rs(22), borderRadius: rs(11), backgroundColor: '#C3E2E7' }} />
+              <MapPin size={rs(17)} color={C.green} fill={C.green} stroke="#FFFFFF" strokeWidth={1.6} />
+              <View style={{ flex: 1, marginLeft: rs(8) }}>
+                <Text style={{ fontSize: rf(12), color: C.muted }}>Your Location</Text>
+                <Text style={{ fontSize: rf(14), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Globo Green</Text>
+                <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Cuddalore, Tamil Nadu</Text>
+                {geo.inRange != null ? (
+                  <View className="flex-row items-center" style={{ marginTop: rs(3) }}>
+                    {geo.inRange ? <ShieldCheck size={rs(12)} color={C.green} /> : <ShieldAlert size={rs(12)} color={C.red} />}
+                    <Text style={{ fontSize: rf(10.5), fontWeight: '700', color: geo.inRange ? C.green : C.red, marginLeft: rs(3) }} numberOfLines={1}>
+                      {geo.inRange ? 'In range' : 'Out of range'}{geo.distance != null ? ` · ${geo.distance}m` : ''}
+                    </Text>
                   </View>
-                  <LiveClock statusColor={statusColor} statusText={statusText} />
-                </View>
-
-                {/* Right: Check In button, range */}
-                <View style={{ width: '46%', alignItems: 'stretch', justifyContent: 'center' }}>
-                  <TouchableOpacity
-                    onPress={handleCheckInPress}
-                    disabled={buttonDisabled}
-                    accessibilityRole="button"
-                    accessibilityLabel={buttonLabel}
-                    activeOpacity={0.85}
-                    style={{
-                      borderRadius: rs(16), opacity: buttonDisabled ? 0.6 : 1,
-                      backgroundColor: buttonColors[1],
-                      shadowColor: buttonColors[1], shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 5,
-                    }}
-                  >
-                    <LinearGradient
-                      colors={buttonColors}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 0, y: 1 }}
-                      style={{ height: rs(54), borderRadius: rs(16), flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(8) }}
-                    >
-                      {checkInBusy ? (
-                        <ActivityIndicator color="#fff" />
-                      ) : (
-                        <>
-                          <ButtonIcon size={rs(22)} color="#FFFFFF" strokeWidth={2} />
-                          <Text style={{ fontSize: rf(16), fontWeight: '800', color: '#FFFFFF', marginHorizontal: rs(6), flexShrink: 1 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{buttonLabel}</Text>
-                          <ArrowRight size={rs(18)} color="#FFFFFF" strokeWidth={2.4} />
-                        </>
-                      )}
-                    </LinearGradient>
-                  </TouchableOpacity>
-                  {geo.inRange === true ? (
-                    <View className="flex-row items-center justify-center" style={{ marginTop: rs(6) }}>
-                      <ShieldCheck size={rs(13)} color={C.green} />
-                      <Text style={{ fontSize: rf(11), fontWeight: '700', color: C.text, marginLeft: rs(4) }} numberOfLines={1}>
-                        In range{geo.distance != null ? ` · ${geo.distance}m` : ''}
-                      </Text>
-                    </View>
-                  ) : geo.inRange === false ? (
-                    <View className="flex-row items-center justify-center" style={{ marginTop: rs(6) }}>
-                      <ShieldAlert size={rs(13)} color={C.red} />
-                      <Text style={{ fontSize: rf(11), fontWeight: '700', color: C.red, marginLeft: rs(4) }} numberOfLines={2}>
-                        Out of range{geo.distance != null ? ` · ${geo.distance}m` : ''}{geoBlocksCheckIn ? ' — check-in blocked' : ''}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
+                ) : null}
               </View>
-
-              {/* Today's actual punches (tap → Daily Attendance history) */}
-              <View className="flex-row" style={{ marginTop: rs(10), gap: rs(8) }}>
-                <TodayTile fg={C.green} tint={C.greenTint} icon={Sunrise} label="Today Check In"
-                           value={checkInLabel} valueColor={hasCheckedIn ? C.green : C.faint}
-                           onPress={() => navigation.navigate('DailyAttendance')} />
-                <TodayTile fg={C.red} tint={C.redTint} icon={Sunset} label="Today Check Out"
-                           value={checkOutLabel} valueColor={hasCheckedOut ? C.red : C.faint}
-                           onPress={() => navigation.navigate('DailyAttendance')} />
-              </View>
-            </LinearGradient>
+            </View>
           </View>
+
+          {/* 3. Check In / Check Out tiles */}
+          <View className="flex-row" style={{
+            marginTop: rs(12), padding: rs(6), borderRadius: rs(18), backgroundColor: C.card,
+            borderWidth: 1, borderColor: C.border, ...shadow(0.06, 12, 4, 3),
+          }}>
+            <PunchTile
+              active={buttonMode === 'in'} icon={FingerprintPattern} title={hasCheckedIn ? 'Checked In' : 'Check In'}
+              sub={hasCheckedIn ? checkInLabel : geoBlocksCheckIn ? 'Out of range' : 'Tap to Check In'}
+              busy={checkInBusy && buttonMode === 'in'} disabled={buttonMode !== 'in' || buttonDisabled} onPress={handleCheckInPress}
+            />
+            <View style={{ width: 1, backgroundColor: C.border, marginVertical: rs(14), marginHorizontal: rs(4) }} />
+            <PunchTile
+              active={onBreak} icon={Coffee} accent="#FAA700" title={onBreak ? 'End Break' : 'Break'}
+              sub={onBreak ? `On break · ${formatMinutes(breakMin)}` : breakMin > 0 ? `Taken ${formatMinutes(breakMin)}` : buttonMode === 'out' ? 'Tap to start' : 'After check-in'}
+              disabled={buttonMode !== 'out' || checkInBusy} onPress={onBreak ? brk.endBreak : brk.startBreak}
+            />
+            <View style={{ width: 1, backgroundColor: C.border, marginVertical: rs(14), marginHorizontal: rs(4) }} />
+            <PunchTile
+              active={buttonMode === 'out' && !onBreak} icon={LogOut} title={hasCheckedOut ? 'Checked Out' : 'Check Out'}
+              sub={hasCheckedOut ? checkOutLabel : 'Tap to Check Out'}
+              busy={checkInBusy && buttonMode === 'out'} disabled={buttonMode !== 'out' || buttonDisabled} onPress={handleCheckInPress}
+            />
+          </View>
+
+          {/* Today's punches + duration + status (tap → Daily Attendance history) */}
+          <TouchableOpacity activeOpacity={0.85} onPress={() => navigation.navigate('DailyAttendance')} className="flex-row" style={{
+            marginTop: rs(8), paddingVertical: rs(8), borderRadius: rs(14), backgroundColor: C.card,
+            borderWidth: 1, borderColor: C.border, ...shadow(0.04, 8, 2, 1),
+          }}>
+            <PunchStat icon={Clock} label="Check In" value={checkInLabel} />
+            <PunchStat icon={Clock} label="Check Out" value={checkOutLabel} divider />
+            <PunchStat icon={Briefcase} label="Work Duration" value={workDuration(todayAttendance?.checkInTime, todayAttendance?.checkOutTime, now, breakMin)} divider />
+            <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: rs(2), borderLeftWidth: 1, borderLeftColor: C.border }}>
+              <View style={{ width: rs(10), height: rs(10), borderRadius: rs(5), backgroundColor: statusColor, marginVertical: rs(3) }} />
+              <Text style={{ fontSize: rf(10), color: C.muted, marginTop: rs(2) }}>Status</Text>
+              <View style={{ marginTop: rs(2), backgroundColor: `${statusColor}22`, borderRadius: rs(6), paddingHorizontal: rs(6), paddingVertical: rs(1) }}>
+                <Text style={{ fontSize: rf(10.5), fontWeight: '700', color: statusColor === '#FAA700' ? '#B87800' : statusColor }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{statusText}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {/* 3b. Job Overview — counts per bucket; red dot = new unseen assignments */}
+          <SectionTitle title="Job Overview" />
+          <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border, paddingVertical: rs(10), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
+            <TaskCountCard
+              icon={ClipboardList} fg="#035C6C" tint={C.redTint}
+              label="Assigned"
+              value={taskSummary.assigned} loading={!tasksLoaded && ticketsLoading}
+              onPress={openRecentAssigned}
+            />
+            <TaskCountCard
+              icon={Briefcase} fg="#1C3053" tint={C.greenTint}
+              label="All Jobs"
+              value={tickets.length} loading={!tasksLoaded && ticketsLoading}
+              onPress={() => navigation.navigate('TaskReport')}
+            />
+            <TaskCountCard
+              icon={Clock} fg="#FAA700" tint={C.yellowTint}
+              label="Pending"
+              value={taskSummary.pending} loading={!tasksLoaded && ticketsLoading}
+              onPress={() => navigation.navigate('TaskReport', { filter: 'Pending' })}
+            />
+            <TaskCountCard
+              icon={CircleCheck} fg="#609138" tint={C.greenTint}
+              label="Completed"
+              value={taskSummary.completed} loading={!tasksLoaded && ticketsLoading}
+              onPress={() => navigation.navigate('TaskReport', { filter: 'Completed' })}
+            />
+          </View>
+          {!tasksLoaded && !ticketsLoading && errors.tickets ? (
+            <Text style={{ fontSize: rf(11), color: C.muted, marginTop: rs(4) }} numberOfLines={1}>
+              Couldn’t load tasks — will retry automatically.
+            </Text>
+          ) : null}
 
           {/* 4. Quick Access — every category for this role, Partner-app tile grid */}
           <SectionTitle title="Quick Access" />
@@ -736,7 +827,8 @@ export default function HomeScreen({ navigation }) {
                   item={c}
                   width={quickW}
                   style={{ marginRight: i % quickCols === quickCols - 1 ? 0 : quickGap, marginBottom: rs(8) }}
-                  onPress={() => navigation.navigate(c.route)}
+                  tint={c.key === 'apply_permission' ? permTile : null}
+                  onPress={() => navigation.navigate(c.route, c.params)}
                 />
               ))}
             </View>
@@ -745,143 +837,48 @@ export default function HomeScreen({ navigation }) {
           {/* 11–13. This Month */}
           <View style={{
             marginTop: rs(12), backgroundColor: C.card, borderRadius: rs(20),
-            borderWidth: 1, borderColor: C.border, padding: rs(12), ...shadow(0.05, 10, 3, 2),
+            borderWidth: 1, borderColor: C.border, padding: rs(10), ...shadow(0.05, 10, 3, 2),
           }}>
             <View className="flex-row items-center justify-between">
-              <View className="flex-row items-start flex-1" style={{ marginRight: rs(8) }}>
-                <ChartColumn size={rs(22)} color={C.bright} strokeWidth={2.5} />
-                <View style={{ marginLeft: rs(8), flexShrink: 1 }}>
-                  <Text className="font-extrabold" style={{ fontSize: rf(17), color: C.text }} numberOfLines={1}>This Month</Text>
-                  <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: 1 }}>{present} Present</Text>
+              <View className="flex-row items-center flex-1" style={{ marginRight: rs(8) }}>
+                <View className="items-center justify-center" style={{ width: rs(36), height: rs(36), borderRadius: rs(10), backgroundColor: C.greenTint }}>
+                  <Calendar size={rs(18)} color={C.green} strokeWidth={2.2} />
                 </View>
+                <Text className="font-extrabold" style={{ fontSize: rf(16), color: C.text, marginLeft: rs(8) }} numberOfLines={1}>This Month</Text>
               </View>
-              <TouchableOpacity
-                onPress={() => setMonthPickerOpen(true)}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel={`Select month, ${monthLabel}`}
-                activeOpacity={0.85}
-                style={{
-                  flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: C.border, borderRadius: rs(12), backgroundColor: C.card,
-                  paddingHorizontal: rs(12), paddingVertical: rs(6), flexShrink: 0,
-                }}
-              >
-                <Calendar size={rs(15)} color={C.text} />
-                <Text className="font-bold" style={{ fontSize: rf(13), color: C.text, marginLeft: rs(6) }}>{monthLabel}</Text>
-                <ChevronDown size={rs(15)} color={C.text} style={{ marginLeft: rs(4) }} />
-              </TouchableOpacity>
+              <MonthPill month={month} year={year} onChange={(m, y) => selectMonth(m, y)} />
             </View>
 
             <View className="flex-row" style={{ marginTop: rs(8), gap: statGap }}>
-              <StatTile inline={statInline} bg={C.greenTint} fg={C.green} icon={Calendar} value={String(present).padStart(2, '0')} label="Present" />
-              <StatTile inline={statInline} bg={C.yellowTint} fg={C.yellow} icon={Briefcase} value={String(leaveDays).padStart(2, '0')} label="Leave" />
-              <StatTile inline={statInline} bg={C.surface} fg={C.ink} icon={ClipboardList} value={String(permission).padStart(2, '0')} label="Permission" />
-              <StatTile inline={statInline} bg={C.redTint} fg={C.red} icon={Clock} value={String(lateHrs)} label="Late Hrs" />
+              <StatTile inline={statInline} bg={C.greenTint} fg="#609138" icon={Calendar} value={String(present)} label="Present" />
+              <StatTile inline={statInline} bg={C.yellowTint} fg="#FAA700" icon={Briefcase} value={String(leaveDays)} label="Leave" />
+              <StatTile inline={statInline} bg="#F2E1FA" fg="#0788C9" icon={ClipboardList} value={String(permission)} label="Permission" />
+              <StatTile inline={statInline} bg={C.redTint} fg="#F32C26" icon={Clock} value={String(lateHrs)} label="Late Hrs" />
             </View>
-          </View>
-
-          {/* 14–16. Recent rows */}
-          <View style={{ marginTop: rs(8), gap: rs(6) }}>
-            <InfoRow
-              icon={FileText} bg={C.redTint} fg={C.red}
-              title="Recent Pending"
-              subtitle={ticketsLoading ? 'Loading…' : pendingTicket ? ticketLine(pendingTicket) : 'No pending tickets'}
-              note={!ticketsLoading && pendingTicket ? `${pendingLabel} · ${formatShortDate(pendingTicket.updatedAt || pendingTicket.createdAt)}` : null}
-              noteColor={C.red}
-              onPress={!ticketsLoading && pendingTicket ? () => navigation.navigate('TechnicianTicketDetail', { ticketId: pendingTicket.id }) : undefined}
-            />
-            <InfoRow
-              icon={Truck} bg={C.greenTint} fg={C.green}
-              title="Assign & In Service Process"
-              subtitle={ticketsLoading ? 'Loading…' : inServiceTicket ? ticketLine(inServiceTicket) : 'No tickets in service'}
-              note={!ticketsLoading && inServiceTicket ? `${inServiceLabel} · ${formatShortDate(inServiceTicket.updatedAt || inServiceTicket.createdAt)}` : null}
-              noteColor={C.text}
-              onPress={!ticketsLoading && inServiceTicket ? () => navigation.navigate('TechnicianTicketDetail', { ticketId: inServiceTicket.id }) : undefined}
-            />
-            <InfoRow
-              icon={CalendarDays} bg={C.yellowTint} fg={C.yellow}
-              title="Recent Leave Request"
-              subtitle={leave ? `${leave.startDateLabel}${recentLeave.appliedDaysLabel ? ` · ${recentLeave.appliedDaysLabel}` : ''}` : 'No leave requests yet'}
-              note={leave && recentLeave.reason ? recentLeave.reason : null}
-              noteColor={C.muted}
-              right={leave ? (
-                <View style={{ backgroundColor: leave.statusBg, borderRadius: 999, paddingHorizontal: rs(10), paddingVertical: rs(3), marginLeft: rs(8) }}>
-                  <Text className="font-bold" style={{ fontSize: rf(11), color: leave.statusColor }}>{leave.statusText}</Text>
-                </View>
-              ) : null}
-            />
           </View>
         </View>
       </ScrollView>
 
-      <MonthPickerModal
+      {/* Same day/month/year calendar as Apply for Leave; picking any date
+          switches the This Month card to that date's month. */}
+      <CalendarModal
         visible={monthPickerOpen}
-        month={month}
-        year={year}
-        onClose={() => setMonthPickerOpen(false)}
-        onSelect={selectMonth}
+        initial={month === now.getMonth() + 1 && year === now.getFullYear() ? toISO(now) : toISO(new Date(year, month - 1, 1))}
+        onCancel={() => setMonthPickerOpen(false)}
+        onSave={(iso) => {
+          const d = parseISO(iso);
+          if (d) selectMonth(d.getMonth() + 1, d.getFullYear());
+          else setMonthPickerOpen(false);
+        }}
+        accent={C.green}
+        accentSoft={C.greenTint}
       />
+      <CheckoutSosAlarm onDuty={hasCheckedIn && !hasCheckedOut} busy={checkInBusy} onCheckOut={handleCheckInPress} />
     </SafeAreaView>
   );
 }
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-// Month + year picker for the "This Month" card. The year stepper is local to
-// the sheet (browsing only); nothing changes until a month is tapped.
-function MonthPickerModal({ visible, month, year, onClose, onSelect }) {
-  const [viewYear, setViewYear] = useState(year);
-  useEffect(() => { if (visible) setViewYear(year); }, [visible, year]);
-  const today = new Date();
-  const nowMonth = today.getMonth() + 1;
-  const nowYear = today.getFullYear();
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', paddingHorizontal: rs(24) }} onPress={onClose}>
-        <Pressable
-          onPress={(e) => e.stopPropagation()}
-          style={{ backgroundColor: C.card, borderRadius: rs(20), padding: rs(16), alignSelf: 'center', width: '100%', maxWidth: 420 }}
-        >
-          <View className="flex-row items-center justify-between" style={{ marginBottom: rs(12) }}>
-            <Pressable onPress={() => setViewYear((y) => y - 1)} hitSlop={8} accessibilityLabel="Previous year"
-                       style={{ width: rs(36), height: rs(36), borderRadius: rs(18), backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronLeft size={rs(18)} color={C.ink} strokeWidth={2.6} />
-            </Pressable>
-            <Text className="font-extrabold" style={{ fontSize: rf(17), color: C.text }}>{viewYear}</Text>
-            <Pressable onPress={() => setViewYear((y) => y + 1)} hitSlop={8} accessibilityLabel="Next year"
-                       style={{ width: rs(36), height: rs(36), borderRadius: rs(18), backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronRight size={rs(18)} color={C.ink} strokeWidth={2.6} />
-            </Pressable>
-          </View>
-          <View className="flex-row flex-wrap" style={{ marginHorizontal: -rs(4) }}>
-            {MONTHS_SHORT.map((label, i) => {
-              const m = i + 1;
-              const selected = m === month && viewYear === year;
-              const isNow = m === nowMonth && viewYear === nowYear;
-              return (
-                <View key={label} style={{ width: '33.333%', padding: rs(4) }}>
-                  <TouchableOpacity
-                    onPress={() => onSelect(m, viewYear)}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    activeOpacity={0.85}
-                    style={{
-                      height: rs(44), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: selected ? C.green : C.bg,
-                      borderWidth: 1, borderColor: selected ? C.green : isNow ? C.green : C.border,
-                    }}
-                  >
-                    <Text className="font-bold" style={{ fontSize: rf(14), color: selected ? '#FFFFFF' : C.text }}>{label}</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
 
 // "Mon, 6 Oct 2026" — compact date for the header bar.
 function formatShortDay(date) {
@@ -893,7 +890,7 @@ function formatShortDay(date) {
 function SectionTitle({ title, onViewAll }) {
   return (
     <View className="flex-row items-center" style={{ marginTop: rs(14), marginBottom: rs(8) }}>
-      <Text style={{ flex: 1, fontSize: rf(17), fontWeight: '800', color: C.text }}>{title}</Text>
+      <Text style={{ flex: 1, fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>{title}</Text>
       {onViewAll ? (
         <TouchableOpacity onPress={onViewAll} hitSlop={8} activeOpacity={0.7} className="flex-row items-center" style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text style={{ fontSize: rf(13), fontWeight: '600', color: C.green }}>View All</Text>
@@ -906,8 +903,8 @@ function SectionTitle({ title, onViewAll }) {
 
 // One Quick Access tile, as in the Partner app: no card box, just a pastel
 // circle with a solid glyph and a two-line label underneath.
-function QuickTile({ item, width, style, onPress }) {
-  const t = QUICK_TILES[item.key] || QUICK_TILES.default;
+function QuickTile({ item, width, style, onPress, tint }) {
+  const t = { ...(QUICK_TILES[item.key] || QUICK_TILES.default), ...(tint || {}) };
   const box = rs(44);
   return (
     <TouchableOpacity
@@ -919,6 +916,14 @@ function QuickTile({ item, width, style, onPress }) {
     >
       <View style={{ width: box, height: box, borderRadius: box / 2, backgroundColor: t.bg, alignItems: 'center', justifyContent: 'center' }}>
         <MaterialCommunityIcons name={t.icon} size={rs(23)} color={t.fg || QUICK_TILE_INK} />
+        {t.badge ? (
+          <View style={{
+            position: 'absolute', top: -rs(4), right: -rs(4), minWidth: rs(18), height: rs(18), borderRadius: rs(9),
+            paddingHorizontal: rs(4), backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: t.badgeBg, alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Text style={{ fontSize: rf(10), fontWeight: '800', color: t.badgeBg }}>{t.badge > 9 ? '9+' : t.badge}</Text>
+          </View>
+        ) : null}
       </View>
       <Text
         style={{ fontSize: rf(12), lineHeight: rlh(16), minHeight: rlh(32), fontWeight: '600', color: C.text, textAlign: 'center', marginTop: rs(6), letterSpacing: -0.1 }}
@@ -936,23 +941,13 @@ function shadow(opacity = 0.06, radius = 10, y = 4, elevation = 2) {
   return { shadowColor: C.ink, shadowOpacity: opacity, shadowRadius: radius, shadowOffset: { width: 0, height: y }, elevation };
 }
 
-function leaveSummary(leave) {
-  const startDateLabel = leave.startDate
-    ? new Date(leave.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : '—';
-  const status = leave.status || 'PROCESSING';
-  const statusColor = status === 'APPROVED' || status === 'REJECTED' ? '#FFFFFF' : C.ink;
-  const statusBg = status === 'APPROVED' ? C.green : status === 'REJECTED' ? C.red : C.yellow;
-  const statusText = status.charAt(0) + status.slice(1).toLowerCase();
-  return { startDateLabel, statusColor, statusBg, statusText };
-}
-
-function HeaderButton({ icon: Icon, dot, onPress }) {
-  const size = rs(44);
+function HeaderButton({ icon: Icon, dot, plain, onPress }) {
+  const size = plain ? rs(38) : rs(44);
+  const chrome = plain ? {} : { backgroundColor: C.card, borderWidth: 1, borderColor: C.border, ...shadow(0.06, 6, 2, 2) };
   return (
     <TouchableOpacity hitSlop={8} onPress={onPress} activeOpacity={0.8}
-               style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: C.card, marginLeft: rs(8), borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', ...shadow(0.06, 6, 2, 2) }}>
-      <Icon size={rs(20)} color={C.text} />
+               style={{ width: size, height: size, borderRadius: size / 2, marginLeft: plain ? rs(4) : rs(8), alignItems: 'center', justifyContent: 'center', ...chrome }}>
+      <Icon size={plain ? rs(23) : rs(20)} color={C.text} />
       {dot ? (
         <View style={{
           position: 'absolute', top: rs(8), right: rs(9), width: rs(9), height: rs(9),
@@ -963,91 +958,71 @@ function HeaderButton({ icon: Icon, dot, onPress }) {
   );
 }
 
-function StatusPill({ icon: Icon, bg, iconColor, color, text }) {
-  return (
-    <View className="flex-row items-center" style={{ marginTop: rs(6), backgroundColor: bg, borderRadius: 999, paddingHorizontal: rs(12), paddingVertical: rs(5) }}>
-      <Icon size={rs(15)} color={iconColor} />
-      <Text className="font-bold" style={{ fontSize: rf(12.5), color, marginLeft: rs(6) }}>{text}</Text>
-    </View>
-  );
+// Task Overview button: tinted circle icon with a red count badge (hidden at 0).
+function TaskCountCard({ icon, fg, label, value, loading, onPress }) {
+  return <BadgeIconTile icon={icon} color={fg} label={label} count={loading ? null : value} loading={loading} onPress={onPress} badgeRed size={rs(40)} />;
 }
 
-function TodayTile({ fg, tint, icon: Icon, label, value, valueColor, onPress }) {
-  const circle = rs(34);
+// "Xh YYm" worked today: check-in → check-out (or now), minus phone-logged break minutes.
+function workDuration(inTime, outTime, now, breakMin = 0) {
+  const mins = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
+  if (!inTime || Number.isNaN(mins(inTime))) return '--:--';
+  const end = outTime ? mins(outTime) : now.getHours() * 60 + now.getMinutes();
+  const d = Math.max(0, end - mins(inTime) - breakMin);
+  return `${Math.floor(d / 60)}h ${String(d % 60).padStart(2, '0')}m`;
+}
+
+// Big Check In / Check Out tile. The active one (the next punch) is the teal gradient.
+function PunchTile({ active, icon: Icon, title, sub, busy, disabled, onPress, accent }) {
+  const ring = rs(42);
+  const body = (
+    <>
+      <View style={{
+        width: ring, height: ring, borderRadius: ring / 2, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: active ? 'rgba(255,255,255,0.12)' : accent ? `${accent}22` : C.bg,
+        borderWidth: rs(3), borderColor: active ? 'rgba(255,255,255,0.25)' : '#FFFFFF',
+        ...(active ? {} : shadow(0.08, 6, 2, 2)),
+      }}>
+        {busy ? <ActivityIndicator color="#FFFFFF" /> : <Icon size={rs(19)} color={active ? '#FFFFFF' : accent || C.green} strokeWidth={2} />}
+      </View>
+      <Text style={{ fontSize: rf(13), fontWeight: '800', color: active ? '#FFFFFF' : C.text, marginTop: rs(5) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{title}</Text>
+      <Text style={{ fontSize: rf(10), color: active ? 'rgba(255,255,255,0.85)' : C.muted, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{sub}</Text>
+    </>
+  );
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={label}
-      style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(14), paddingHorizontal: rs(8), paddingVertical: rs(8), ...shadow(0.05, 6, 2, 1) }}>
-      <View style={{ width: circle, height: circle, borderRadius: circle / 2, backgroundColor: tint, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon size={rs(17)} color={fg} strokeWidth={2} />
-      </View>
-      <View style={{ flex: 1, marginLeft: rs(8) }}>
-        <Text style={{ fontSize: rf(12), fontWeight: '700', color: C.text }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
-        <Text style={{ fontSize: rf(14), fontWeight: '700', color: valueColor, marginTop: 2, letterSpacing: 0.5 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{value}</Text>
-      </View>
-      <ChevronRight size={rs(16)} color={C.text} />
+    <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={title}
+                      style={{ flex: 1, borderRadius: rs(14), overflow: 'hidden', opacity: active && disabled && !busy ? 0.6 : 1 }}>
+      {active ? (
+        <LinearGradient colors={[C.green, '#024A57']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                        style={{ alignItems: 'center', paddingVertical: rs(8), paddingHorizontal: rs(4) }}>{body}</LinearGradient>
+      ) : (
+        <View style={{ alignItems: 'center', paddingVertical: rs(8), paddingHorizontal: rs(4) }}>{body}</View>
+      )}
     </TouchableOpacity>
   );
 }
 
-function Avatar({ uri, name, size }) {
+function PunchStat({ icon: Icon, label, value, divider }) {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: rs(2), ...(divider ? { borderLeftWidth: 1, borderLeftColor: C.border } : {}) }}>
+      <Icon size={rs(16)} color={C.green} />
+      <Text style={{ fontSize: rf(10), color: C.muted, marginTop: rs(2) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
+      <Text style={{ fontSize: rf(12), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{value}</Text>
+    </View>
+  );
+}
+
+function Avatar({ uri, name, size, dark }) {
   const box = { width: size, height: size, borderRadius: size / 2 };
   if (uri) return <Image source={{ uri }} style={box} />;
   return (
-    <View className="items-center justify-center" style={{ ...box, backgroundColor: C.deep, ...shadow(0.2, 6, 3, 3) }}>
+    <View className="items-center justify-center" style={{ ...box, backgroundColor: dark ? '#111111' : C.deep, ...shadow(0.2, 6, 3, 3) }}>
       <Text className="font-extrabold" style={{ fontSize: rf(22), color: '#FFFFFF' }}>{initialsFromName(name)}</Text>
     </View>
   );
 }
 
-function StatTile({ inline, bg, fg, icon: Icon, value, label }) {
-  const circle = rs(inline ? 30 : 24);
-  if (!inline) {
-    // Narrow tiles: icon beside the value, label underneath — keeps the tile short.
-    return (
-      <View className="flex-1" style={{ backgroundColor: bg, borderRadius: rs(14), paddingHorizontal: rs(7), paddingVertical: rs(7) }}>
-        <View className="flex-row items-center">
-          <View className="items-center justify-center" style={{ width: circle, height: circle, borderRadius: circle / 2, backgroundColor: '#FFFFFF', ...shadow(0.06, 3, 1, 1) }}>
-            <Icon size={rs(13)} color={fg} />
-          </View>
-          <Text className="font-extrabold" style={{ flex: 1, fontSize: rf(16), color: C.text, marginLeft: rs(5) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
-        </View>
-        <Text style={{ fontSize: rf(10.5), color: C.muted, marginTop: rs(3) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{label}</Text>
-      </View>
-    );
-  }
-  return (
-    <View className={inline ? 'flex-1 flex-row items-center' : 'flex-1'} style={{ backgroundColor: bg, borderRadius: rs(14), paddingHorizontal: rs(7), paddingVertical: rs(7) }}>
-      <View className="items-center justify-center" style={{ width: circle, height: circle, borderRadius: circle / 2, backgroundColor: '#FFFFFF', ...shadow(0.06, 3, 1, 1) }}>
-        <Icon size={rs(15)} color={fg} />
-      </View>
-      <View className={inline ? 'flex-1' : undefined} style={inline ? { marginLeft: rs(6) } : { marginTop: rs(6) }}>
-        <Text className="font-extrabold" style={{ fontSize: rf(16), color: C.text }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
-        <Text style={{ fontSize: rf(10.5), color: C.muted }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{label}</Text>
-      </View>
-    </View>
-  );
+function StatTile({ fg, icon, value, label }) {
+  return <BadgeIconTile icon={icon} color={fg} label={label} count={value} size={rs(40)} />;
 }
 
-function InfoRow({ icon: Icon, bg, fg, title, subtitle, note, noteColor, right, onPress }) {
-  const Container = onPress ? Pressable : View;
-  const tile = rs(34);
-  return (
-    <Container onPress={onPress} className="flex-row items-center" style={{
-      backgroundColor: C.card, borderRadius: rs(18), borderWidth: 1, borderColor: C.border,
-      paddingHorizontal: rs(10), paddingVertical: rs(6), minHeight: rs(50), ...shadow(0.04, 8, 2, 1),
-    }}>
-      <View className="items-center justify-center" style={{ width: tile, height: tile, borderRadius: rs(12), backgroundColor: bg }}>
-        <Icon size={rs(18)} color={fg} strokeWidth={2} />
-      </View>
-      <View className="flex-1" style={{ marginLeft: rs(12) }}>
-        <Text className="font-bold" style={{ fontSize: rf(14), color: C.text }} numberOfLines={1}>{title}</Text>
-        <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: 2 }} numberOfLines={1}>{subtitle}</Text>
-        {note ? (
-          <Text className="font-semibold" style={{ fontSize: rf(11), color: noteColor, marginTop: 2 }} numberOfLines={1}>{note}</Text>
-        ) : null}
-      </View>
-      {right}
-      <ChevronRight size={rs(18)} color={C.faint} style={{ marginLeft: rs(6) }} />
-    </Container>
-  );
-}

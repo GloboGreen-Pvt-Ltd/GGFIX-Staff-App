@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import colors from '../theme/colors';
 import BackButton from '../components/BackButton';
+import { StackHeader } from '../components/MintScreenHeader';
 import BottomTabBar from '../components/BottomTabBar';
 import { LogoutContext } from '../auth/LogoutContext';
 
@@ -50,6 +51,7 @@ const TAB_FOR_ROUTE = {
   SalaryReport: 'Account',
   Payslip: 'Account',
   WorkExperience: 'Account',
+  HelpSupport: 'Account',
   TechnicianKycIntro: 'Account',
   TechnicianKycUpload: 'Account',
   TechnicianKycView: 'Account',
@@ -65,6 +67,9 @@ const TAB_FOR_ROUTE = {
 // flow always begins after the technician confirms "Repair Estimate" on
 // PickupAssign, so once they're in this set we keep the canvas clean.
 const HIDE_BOTTOM_TAB_ROUTES = new Set([
+  // Apply forms (opened from Home Quick Access): full-screen, no tab bar.
+  'TechnicianApplyLeave',
+  'PermissionApply',
   'PickupSelectBrand',
   'PickupSelectModel',
   'PickupDeviceColorStorage',
@@ -80,6 +85,10 @@ const HIDE_BOTTOM_TAB_ROUTES = new Set([
   'Payslip',
   // Service-history rail has its own gradient hero + back chevron — no tab bar.
   'TechnicianBookingTimeline',
+  // Assign Report: full-screen list, no tab bar.
+  'TaskAssign',
+  // Job Details: full-screen, no tab bar.
+  'TechnicianTicketDetail',
 ]);
 
 // Tab roots (have their own bottom tab bar — header hidden)
@@ -94,7 +103,7 @@ import DailyShiftScheduleScreen from '../screens/DailyShiftScheduleScreen';
 import MonthlySummaryScreen from '../screens/MonthlySummaryScreen';
 import LeaveReportScreen from '../screens/LeaveReportScreen';
 import TaskAssignScreen from '../screens/TaskAssignScreen';
-import TaskReportScreen from '../screens/TaskReportScreen';
+import JobReportScreen from '../screens/JobReportScreen';
 import PickupAssignScreen from '../screens/PickupAssignScreen';
 import PickupReportScreen from '../screens/PickupReportScreen';
 import PickupRepairEstimateScreen from '../screens/PickupRepairEstimateScreen';
@@ -115,7 +124,7 @@ import PayslipScreen from '../screens/PayslipScreen';
 // Existing technician workflow screens (reused from the original flow)
 import TechnicianProfileScreen from '../screens/TechnicianProfileScreen';
 import TechnicianDashboardScreen from '../screens/TechnicianDashboardScreen';
-import TechnicianTicketDetailScreen from '../screens/TechnicianTicketDetailScreen';
+import JobDetailsScreen from '../screens/JobDetailsScreen';
 import TechnicianBookingTimelineScreen from '../screens/TechnicianBookingTimelineScreen';
 import UploadRepairImagesScreen from '../screens/UploadRepairImagesScreen';
 import TechnicianApplyLeaveScreen from '../screens/TechnicianApplyLeaveScreen';
@@ -123,6 +132,7 @@ import PermissionApplyScreen from '../screens/PermissionApplyScreen';
 import SolutionPackUploadScreen from '../screens/SolutionPackUploadScreen';
 import SolutionPackReferenceViewScreen from '../screens/SolutionPackReferenceViewScreen';
 import WorkExperienceScreen from '../screens/WorkExperienceScreen';
+import HelpSupportScreen from '../screens/HelpSupportScreen';
 import TechnicianKycIntroScreen from '../screens/TechnicianKycIntroScreen';
 import TechnicianKycUploadScreen from '../screens/TechnicianKycUploadScreen';
 import TechnicianKycViewScreen from '../screens/TechnicianKycViewScreen';
@@ -137,6 +147,8 @@ export default function TechnicianNavigator({ session, onLogout }) {
       <Stack.Navigator
         initialRouteName="Home"
         screenOptions={({ navigation }) => ({
+          // One shared header (same back button + title size) for every screen.
+          header: (props) => <StackHeader {...props} />,
           headerStyle: { backgroundColor: colors.headerBg },
           headerShadowVisible: true,
           headerTintColor: colors.headerText,
@@ -149,26 +161,29 @@ export default function TechnicianNavigator({ session, onLogout }) {
           },
           headerBackVisible: false,
         })}
-        // Render the technician bottom-tab bar on every screen in this stack
-        // by wrapping each screen with a layout. The previous setup mounted
-        // the bar inside individual tab-root screens (Home / AttendanceTab /
-        // TasksTab / AccountTab) which meant drill-down screens like
-        // DailyAttendance and TaskReport lost the bar. Doing it here keeps
+        // Render ONE technician bottom-tab bar around the whole stack (not per
+        // screen), so it stays fixed while screens slide in above it — same as
+        // the partner app's tab bar. It follows the focused route, which keeps
         // the four bottom-tab buttons reachable from anywhere in the stack.
-        screenLayout={({ route, navigation, children }) => (
-          <View style={{ flex: 1 }}>
-            {/* Content gets its own flex:1 region so it always sits ABOVE the
-                tab bar — the bar is a normal flex child now, not an absolute
-                overlay, so nothing can hide behind it in any nav mode. */}
-            <View style={{ flex: 1 }}>{children}</View>
-            {HIDE_BOTTOM_TAB_ROUTES.has(route.name) ? null : (
-              <BottomTabBar
-                active={TAB_FOR_ROUTE[route.name] || 'Home'}
-                navigation={navigation}
-              />
-            )}
-          </View>
-        )}
+        layout={({ state, navigation, children }) => {
+          const route = state.routes[state.index];
+          const hideBar = HIDE_BOTTOM_TAB_ROUTES.has(route.name);
+          return (
+            <View style={{ flex: 1 }}>
+              {/* Content gets its own flex:1 region so it always sits ABOVE the
+                  tab bar — the bar is a normal flex child, not an absolute
+                  overlay, so nothing can hide behind it in any nav mode. */}
+              <View style={{ flex: 1 }}>{children}</View>
+              {hideBar ? null : (
+                <BottomTabBar
+                  active={TAB_FOR_ROUTE[route.name] || 'Home'}
+                  navigation={navigation}
+                  routeName={route.name}
+                />
+              )}
+            </View>
+          );
+        }}
       >
         {/* Tab roots — their own custom bottom bar, no native header */}
         <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
@@ -177,12 +192,12 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="AccountTab" component={AccountTabScreen} options={{ headerShown: false }} />
 
         {/* Category drill-downs */}
-        <Stack.Screen name="DailyAttendance" component={DailyAttendanceScreen} options={{ title: 'Daily Attendance' }} />
-        <Stack.Screen name="DailyShiftSchedule" component={DailyShiftScheduleScreen} options={{ title: 'Daily Shift Schedule' }} />
+        <Stack.Screen name="DailyAttendance" component={DailyAttendanceScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="DailyShiftSchedule" component={DailyShiftScheduleScreen} options={{ headerShown: false }} />
         <Stack.Screen name="MonthlySummary" component={MonthlySummaryScreen} options={{ title: 'Monthly Summary' }} />
-        <Stack.Screen name="LeaveReport" component={LeaveReportScreen} options={{ title: 'Leave Report' }} />
-        <Stack.Screen name="TaskAssign" component={TaskAssignScreen} options={{ title: 'Assign Task' }} />
-        <Stack.Screen name="TaskReport" component={TaskReportScreen} options={{ title: 'Task Report' }} />
+        <Stack.Screen name="LeaveReport" component={LeaveReportScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TaskAssign" component={TaskAssignScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TaskReport" component={JobReportScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupAssign" component={PickupAssignScreen} options={{ title: 'Assign Pickup' }} />
         <Stack.Screen name="PickupReport" component={PickupReportScreen} options={{ title: 'Pickup Report' }} />
         <Stack.Screen name="PickupRepairEstimate" component={PickupRepairEstimateScreen} options={{ title: 'Repair Estimate Processing' }} />
@@ -201,9 +216,9 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="Payslip" component={PayslipScreen} options={{ title: 'Pay slip' }} />
 
         {/* Existing technician workflow */}
-        <Stack.Screen name="TechnicianProfile" component={TechnicianProfileScreen} options={{ title: 'My Profile' }} />
+        <Stack.Screen name="TechnicianProfile" component={TechnicianProfileScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TechnicianDashboard" component={TechnicianDashboardScreen} options={{ title: 'Dashboard' }} />
-        <Stack.Screen name="TechnicianTicketDetail" component={TechnicianTicketDetailScreen} options={{ title: 'Ticket Detail' }} />
+        <Stack.Screen name="TechnicianTicketDetail" component={JobDetailsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TechnicianBookingTimeline" component={TechnicianBookingTimelineScreen} options={{ headerShown: false }} />
         <Stack.Screen name="UploadRepairImages" component={UploadRepairImagesScreen} options={{ title: 'Upload Images' }} />
         <Stack.Screen name="TechnicianApplyLeave" component={TechnicianApplyLeaveScreen} options={{ title: 'Apply for leave' }} />
@@ -211,7 +226,8 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="SolutionPackUpload" component={SolutionPackUploadScreen} options={{ title: 'New Issue Solution Pack Upload' }} />
         <Stack.Screen name="SolutionPackReferenceView" component={SolutionPackReferenceViewScreen} options={{ title: 'Issue Reference Solution Pack View' }} />
         <Stack.Screen name="WorkExperience" component={WorkExperienceScreen} options={{ title: 'Work Experience' }} />
-        <Stack.Screen name="TechnicianKycIntro" component={TechnicianKycIntroScreen} options={{ title: 'KYC Verification' }} />
+        <Stack.Screen name="HelpSupport" component={HelpSupportScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TechnicianKycIntro" component={TechnicianKycIntroScreen} options={{ title: 'KYC Details' }} />
         <Stack.Screen name="TechnicianKycUpload" component={TechnicianKycUploadScreen} options={{ title: 'Upload Documents' }} />
         <Stack.Screen name="TechnicianKycView" component={TechnicianKycViewScreen} options={{ title: 'KYC Documents' }} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />

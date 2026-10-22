@@ -1,15 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  Modal,
-  Platform,
-  TextInput,
-} from 'react-native';
+import { View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Modal, Platform } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import {
@@ -25,11 +16,11 @@ import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
 import { rf } from '../utils/responsive';
 
-// GGFIX palette, same as Ticket Detail.
+// Near G Fix palette, same as Ticket Detail.
 const C = {
-  green: '#09AD2A', greenTint: '#E6F7EA', red: '#F84141',
-  ink: '#1E1E1E', muted: '#6E6E6E', faint: '#A3A3A3',
-  bg: '#F8F8F8', border: '#ECECEC', line: '#D4D4D4',
+  green: '#035C6C', greenTint: '#E5F3F5', red: '#F32C26',
+  ink: '#111111', muted: '#6B7280', faint: '#A3A3A3',
+  bg: '#F3F4F6', border: '#E5E7EB', line: '#E5E7EB',
 };
 
 // "New Issue Solution Pack Upload" screen.
@@ -247,9 +238,9 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
         </View>
 
         {/* Main category — radio grid driven by master_repair_categories */}
-        <Text className="font-bold text-text mb-2" style={{ fontSize: rf(12) }}>Select Issue Main Category</Text>
+        <Text className="mb-2" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Select Issue Main Category</Text>
         {mainCats.length === 0 ? (
-          <Text className="text-text-muted mb-2" style={{ fontSize: rf(11) }}>
+          <Text className="mb-2" style={{ fontSize: rf(12), color: '#6B7280' }}>
             No categories yet — ask the admin to add Repair Categories in the dashboard.
           </Text>
         ) : null}
@@ -285,7 +276,7 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
         </View>
 
         {/* Sub category — dropdown of master_repair_services rows */}
-        <Text className="font-bold text-text mb-2" style={{ fontSize: rf(12) }}>Select Issue Sub Category</Text>
+        <Text className="mb-2" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Select Issue Sub Category</Text>
         <DropdownTrigger
           label={subCat?.name || (subCats.length ? 'Select sub-category' : 'Pick a main category first')}
           onPress={() => subCats.length ? setSubPickerOpen(true) : null}
@@ -295,7 +286,7 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
         {/* Issue name — the specific fault in the technician's own words. The
             two pickers above are catalogue labels; this is what actually went
             wrong, and it is what makes a pack findable later. */}
-        <Text className="font-bold text-text mt-4 mb-2" style={{ fontSize: rf(12) }}>Issue Name</Text>
+        <Text className="mt-4 mb-2" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Issue Name</Text>
         <TextInput
           value={issueName}
           onChangeText={setIssueName}
@@ -315,7 +306,7 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
         />
 
         {/* Solution Documents */}
-        <Text className="font-bold text-text mt-4 mb-2" style={{ fontSize: rf(13) }}>Solution Documents</Text>
+        <Text className="mt-4 mb-2" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Solution Documents</Text>
 
         <AttachmentRow
           icon={<Mic size={15} color={C.green} />}
@@ -408,7 +399,7 @@ function ReadonlyField({ label }) {
   return (
     <View
       className="px-3 py-2"
-      style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, backgroundColor: '#F3F3F3' }}
+      style={{ borderWidth: 1, borderColor: C.border, borderRadius: 10, backgroundColor: '#F3F4F6' }}
     >
       <Text className="text-text" style={{ fontSize: rf(12) }} numberOfLines={1}>{label}</Text>
     </View>
@@ -475,7 +466,7 @@ function PickerModal({ visible, title, options, onPick, onClose }) {
       <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
         <View className="bg-card rounded-t-2xl p-4" style={{ maxHeight: '70%' }}>
           <View className="flex-row items-center justify-between mb-3">
-            <Text className="font-extrabold text-text" style={{ fontSize: rf(15) }}>{title}</Text>
+            <Text style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>{title}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={8}>
               <X size={18} color={C.ink} />
             </TouchableOpacity>
@@ -489,7 +480,7 @@ function PickerModal({ visible, title, options, onPick, onClose }) {
                   key={String(opt.key)}
                   onPress={() => onPick(opt)}
                   className="px-3 py-3"
-                  style={{ borderBottomWidth: 1, borderBottomColor: '#F3F3F3' }}
+                  style={{ borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}
                 >
                   <Text className="text-text" style={{ fontSize: rf(13) }}>{opt.label}</Text>
                 </TouchableOpacity>

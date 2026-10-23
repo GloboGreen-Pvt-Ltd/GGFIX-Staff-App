@@ -22,8 +22,9 @@ export const CATEGORY_DEFS = {
   leave_request:    { label: 'Leave\nRequest', icon: LogOut, route: 'TechnicianApplyLeave' },
   apply_permission: { label: 'Apply\nPermission', icon: Timer, route: 'PermissionApply' },
   leave_report:     { label: 'Leave\nReport', icon: ClipboardList, route: 'LeaveReport' },
+  permission_report: { label: 'Permission\nReport', icon: ClipboardList, route: 'LeaveReport', params: { type: 'PERMISSION' } },
   assign_task:      { label: 'Assign\nTask', icon: Laptop, route: 'TaskAssign' },
-  task_report:      { label: 'Task\nReport', icon: ListChecks, route: 'TaskReport' },
+  task_report:      { label: 'Job\nReport', icon: ListChecks, route: 'TaskReport' },
   assign_pickup:    { label: 'Assign\nPickup', icon: Truck, route: 'PickupAssign' },
   pickup_report:    { label: 'Pickup\nReport', icon: ScrollText, route: 'PickupReport' },
   salary_report:    { label: 'Salary\nReport', icon: ReceiptText, route: 'SalaryReport' },
@@ -36,15 +37,15 @@ export const CATEGORY_DEFS = {
 const ROLE_CATEGORIES = {
   STAFF: [
     'daily_attendance', 'daily_shift', 'monthly_summary', 'leave_request',
-    'apply_permission', 'leave_report', 'salary_report',
+    'apply_permission', 'leave_report', 'permission_report', 'salary_report',
   ],
   TECHNICIAN: [
     'daily_attendance', 'daily_shift', 'monthly_summary', 'leave_request',
-    'apply_permission', 'leave_report', 'assign_task', 'task_report', 'salary_report',
+    'apply_permission', 'leave_report', 'permission_report', 'salary_report',
   ],
   PICKUP_PERSON: [
     'daily_attendance', 'daily_shift', 'monthly_summary', 'leave_request',
-    'apply_permission', 'leave_report', 'assign_pickup', 'pickup_report', 'salary_report',
+    'apply_permission', 'leave_report', 'permission_report', 'assign_pickup', 'pickup_report', 'salary_report',
   ],
 };
 

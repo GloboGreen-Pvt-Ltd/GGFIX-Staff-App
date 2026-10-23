@@ -6,7 +6,7 @@
 import { readPickupPersonLocation } from './pickupLocation';
 
 // Keep this in lockstep with the backend SHOP_ATTENDANCE_RADIUS_METERS.
-export const GEOFENCE_RADIUS_METERS = 100;
+export const GEOFENCE_RADIUS_METERS = 50;
 
 // Reuse the pickup flow's foreground GPS reader — same permission handling and
 // structured error codes (LOCATION_PERMISSION_DENIED / LOCATION_UNAVAILABLE).

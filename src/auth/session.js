@@ -88,6 +88,17 @@ export async function saveSession(session) {
   ]);
 }
 
+// Merge fresh profile fields (e.g. an owner-updated phone) into the persisted
+// non-secret profile. No-op when there is no saved session (logged out).
+export async function updateSavedProfile(patch) {
+  if (!patch || !Object.keys(patch).length) return;
+  const raw = await AsyncStorage.getItem(USER_KEY);
+  if (!raw) return;
+  let current;
+  try { current = JSON.parse(raw) || {}; } catch { return; }
+  await AsyncStorage.setItem(USER_KEY, JSON.stringify({ ...current, ...patch }));
+}
+
 export async function clearSession() {
   await Promise.all([
     deleteToken(),

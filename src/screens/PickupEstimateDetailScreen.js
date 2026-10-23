@@ -1,19 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { getPickupRepairEstimate } from '../api/pickups';
 import { normalizeDeviceImageUrl } from '../utils/images';
-import { rf } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
 
 // Pickup-side Estimate Details. Visual language mirrors the shop-owner
 // "Booking Details" screen (cards stacked vertically: device hero with a
@@ -128,11 +121,11 @@ function statusBadge(status) {
   if (s === 'PICKUP_PERSON_ASSIGNED' || s === 'PICKUP_ASSIGNED' || s === 'PICKUP_REASSIGNED') {
     return { label: 'Assigned', bg: '#FEF3C7', fg: '#92400E' };
   }
-  if (s === 'PICKUP_ON_THE_WAY') return { label: 'On The Way', bg: '#DBEAFE', fg: '#1E3A8A' };
+  if (s === 'PICKUP_ON_THE_WAY') return { label: 'On The Way', bg: '#DBEAFE', fg: '#1C3053' };
   if (s === 'REPAIR_ESTIMATE_PROCESSING') return { label: 'In Diagnosis', bg: '#FEF3C7', fg: '#92400E' };
-  if (s === 'DEVICE_PICKED_UP' || s === 'PICKED_UP') return { label: 'Picked Up', bg: '#E0E7FF', fg: '#00008B' };
-  if (s === 'REACHED_SHOP') return { label: 'Reached Shop', bg: '#DCFCE7', fg: '#004C40' };
-  if (s === 'RECEIVED_AT_SHOP') return { label: 'Received', bg: '#DCFCE7', fg: '#004C40' };
+  if (s === 'DEVICE_PICKED_UP' || s === 'PICKED_UP') return { label: 'Picked Up', bg: '#E0E7FF', fg: '#035C6C' };
+  if (s === 'REACHED_SHOP') return { label: 'Reached Shop', bg: '#DCFCE7', fg: '#609138' };
+  if (s === 'RECEIVED_AT_SHOP') return { label: 'Received', bg: '#DCFCE7', fg: '#609138' };
   if (s === 'CANCELLED') return { label: 'Cancelled', bg: '#FEE2E2', fg: '#991B1B' };
   if (!s) return null;
   return { label: s.replace(/_/g, ' '), bg: '#E5E7EB', fg: '#374151' };
@@ -245,7 +238,7 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content}>
         {loading && !data ? (
-          <ActivityIndicator size="small" color="#00008B" style={{ marginTop: 24 }} />
+          <ActivityIndicator size="small" color="#035C6C" style={{ marginTop: 24 }} />
         ) : null}
 
         {/* Device Hero — image + tracking + device + color, with status pill
@@ -255,7 +248,7 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
             <Image source={{ uri: imageUri }} style={styles.heroImage} resizeMode="cover" />
           ) : (
             <View style={styles.heroImagePlaceholder}>
-              <Ionicons name="phone-portrait-outline" size={26} color="#00008B" />
+              <Ionicons name="phone-portrait-outline" size={26} color="#035C6C" />
             </View>
           )}
           <View style={{ flex: 1, paddingRight: badge ? 86 : 0 }}>
@@ -283,7 +276,7 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
         {/* Customer Details */}
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Ionicons name="person-circle-outline" size={16} color="#1E3A8A" />
+            <Ionicons name="person-circle-outline" size={rs(18)} color="#035C6C" />
             <Text style={styles.sectionTitle}>Customer Details</Text>
           </View>
           <KvRow icon="person-outline" label="Name" value={booking.customerName || '—'} />
@@ -305,7 +298,7 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
             customer reads. */}
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Ionicons name="calendar-outline" size={16} color="#1E3A8A" />
+            <Ionicons name="calendar-outline" size={rs(18)} color="#035C6C" />
             <Text style={styles.sectionTitle}>Service Schedule</Text>
           </View>
           <KvRow
@@ -339,7 +332,7 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
         {/* Price Summary */}
         <View style={styles.card}>
           <View style={styles.sectionHeaderRow}>
-            <Ionicons name="cash-outline" size={16} color="#004C40" />
+            <Ionicons name="cash-outline" size={rs(18)} color="#035C6C" />
             <Text style={styles.sectionTitle}>Price Summary</Text>
           </View>
           {services.length === 0 ? (
@@ -372,19 +365,19 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
 
         {/* Quick Actions — pickup-side flavour of the owner grid. The full
             edit wizard is still reached from the bottom green CTA below. */}
-        <Text style={styles.quickActionsHeader}>QUICK ACTIONS</Text>
+        <Text style={styles.quickActionsHeader}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
           <ActionTile
             icon="create-outline"
             iconBg="#DBEAFE"
-            iconColor="#1E3A8A"
+            iconColor="#1C3053"
             label="Edit Repair Estimate"
             onPress={goEditEstimate}
           />
           <ActionTile
             icon="time-outline"
             iconBg="#E0E7FF"
-            iconColor="#00008B"
+            iconColor="#035C6C"
             label="View History"
             onPress={goPickupHistory}
           />
@@ -435,7 +428,7 @@ const styles = StyleSheet.create({
   // Cards
   card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14, marginBottom: 10 },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
-  sectionTitle: { fontSize: rf(14), fontWeight: '800', color: '#111827' },
+  sectionTitle: { fontSize: rf(16), fontWeight: '800', color: '#1C3053' },
 
   // Hero card
   heroCard: {
@@ -444,15 +437,15 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   heroImage: {
-    width: 64, height: 80, borderRadius: 12, backgroundColor: '#F1F5F9', marginRight: 12,
+    width: 64, height: 80, borderRadius: 12, backgroundColor: '#F3F4F6', marginRight: 12,
   },
   heroImagePlaceholder: {
     width: 64, height: 80, borderRadius: 12, backgroundColor: 'rgba(0,0,139,0.1)',
     alignItems: 'center', justifyContent: 'center', marginRight: 12,
   },
   heroLabel: { fontSize: rf(11), color: '#6B7280' },
-  heroTracking: { fontSize: rf(16), fontWeight: '800', color: '#111827', marginTop: 1 },
-  heroDevice: { fontSize: rf(13), fontWeight: '800', color: '#111827', marginTop: 6 },
+  heroTracking: { fontSize: rf(16), fontWeight: '800', color: '#1C3053', marginTop: 1 },
+  heroDevice: { fontSize: rf(13), fontWeight: '800', color: '#111111', marginTop: 6 },
   heroSpec: { fontSize: rf(11), color: '#6B7280', marginTop: 2 },
   heroColor: { fontSize: rf(12), color: '#9CA3AF', marginTop: 2 },
 
@@ -467,7 +460,7 @@ const styles = StyleSheet.create({
   kvRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 6 },
   kvIconWrap: { width: 18, alignItems: 'center', marginRight: 6, marginTop: 2 },
   kvLabel: { width: 100, fontSize: rf(12), color: '#6B7280', fontWeight: '600' },
-  kvValue: { flex: 1, fontSize: rf(13), color: '#111827', fontWeight: '700' },
+  kvValue: { flex: 1, fontSize: rf(13), color: '#111111', fontWeight: '700' },
 
   muted: { fontSize: rf(12), color: '#6B7280' },
 
@@ -477,20 +470,20 @@ const styles = StyleSheet.create({
     width: 22, height: 22, borderRadius: 999, borderWidth: 1, borderColor: '#E5E7EB',
     alignItems: 'center', justifyContent: 'center', marginRight: 10,
   },
-  serviceIndexText: { fontSize: rf(10), color: '#111827', fontWeight: '800' },
-  serviceName: { flex: 1, fontSize: rf(13), color: '#111827' },
-  servicePrice: { fontSize: rf(13), fontWeight: '800', color: '#111827' },
+  serviceIndexText: { fontSize: rf(10), color: '#111111', fontWeight: '800' },
+  serviceName: { flex: 1, fontSize: rf(13), color: '#111111' },
+  servicePrice: { fontSize: rf(13), fontWeight: '800', color: '#111111' },
   totalDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E7EB', marginTop: 10, marginBottom: 8 },
   totalRow: { flexDirection: 'row', alignItems: 'center' },
-  totalLabel: { flex: 1, fontSize: rf(13), fontWeight: '800', color: '#111827' },
-  totalValue: { fontSize: rf(14), fontWeight: '800', color: '#111827' },
+  totalLabel: { flex: 1, fontSize: rf(13), fontWeight: '800', color: '#111111' },
+  totalValue: { fontSize: rf(14), fontWeight: '800', color: '#111111' },
 
-  errorText: { color: '#DC2626', fontSize: rf(11), marginVertical: 6, textAlign: 'center' },
+  errorText: { color: '#F32C26', fontSize: rf(11), marginVertical: 6, textAlign: 'center' },
 
   // Quick actions grid
   quickActionsHeader: {
-    fontSize: rf(11), fontWeight: '800', color: '#6B7280',
-    letterSpacing: 1.3, marginTop: 6, marginBottom: 8, paddingHorizontal: 2,
+    fontSize: rf(16), fontWeight: '800', color: '#1C3053',
+    marginTop: 6, marginBottom: 8, paddingHorizontal: 2,
   },
   actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   actionTile: {
@@ -502,17 +495,17 @@ const styles = StyleSheet.create({
     width: 40, height: 40, borderRadius: 999,
     alignItems: 'center', justifyContent: 'center', marginBottom: 6,
   },
-  actionTileLabel: { fontSize: rf(12), fontWeight: '800', color: '#111827' },
+  actionTileLabel: { fontSize: rf(12), fontWeight: '800', color: '#111111' },
 
   // Bottom CTA
   bottomBar: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
     paddingHorizontal: 12, paddingTop: 10, paddingBottom: 18,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F3F4F6',
   },
   editBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#004C40', borderRadius: 999, paddingVertical: 14,
+    backgroundColor: '#609138', borderRadius: 999, paddingVertical: 14,
     gap: 8,
   },
   editBtnText: { color: '#FFFFFF', fontSize: rf(15), fontWeight: '800' },

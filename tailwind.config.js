@@ -9,9 +9,9 @@ module.exports = {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#00008B',
-          light: '#1E1EAC',
-          dark: '#00006B',
+          DEFAULT: '#035C6C',
+          light: '#035C6C',
+          dark: '#024A57',
           50: '#EEF2FF',
           100: '#E0E7FF',
           200: '#C7D2FE',
@@ -24,18 +24,18 @@ module.exports = {
           900: '#312E81',
         },
         secondary: {
-          DEFAULT: '#2563EB',
+          DEFAULT: '#035C6C',
           light: '#3B82F6',
           dark: '#1D4ED8',
         },
         background: '#FFFFFF',
         card: '#FFFFFF',
         text: {
-          DEFAULT: '#0F172A',
-          muted: '#64748B',
+          DEFAULT: '#111111',
+          muted: '#6B7280',
         },
-        border: '#E2E8F0',
-        success: '#10B981',
+        border: '#E5E7EB',
+        success: '#609138',
         warning: '#F59E0B',
         danger: '#EF4444',
         error: '#EF4444',

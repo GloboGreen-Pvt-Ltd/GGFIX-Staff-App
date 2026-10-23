@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { Text } from '../Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { cn } from './cn';
 
@@ -25,7 +26,7 @@ export function Select({ value, options = [], placeholder = 'Select…', onChang
         )}
       >
         <Text className={cn('text-base', selected ? 'text-text' : 'text-text-muted')}>{label}</Text>
-        <Ionicons name="chevron-down" size={16} color="#64748B" />
+        <Ionicons name="chevron-down" size={16} color="#6B7280" />
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable className="flex-1 bg-black/50 justify-center px-6" onPress={() => setOpen(false)}>

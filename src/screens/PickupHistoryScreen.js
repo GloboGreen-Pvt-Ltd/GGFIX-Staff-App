@@ -1,9 +1,10 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
 import { listMyAssignedPickups } from '../api/pickups';
 import { Ionicons } from '@expo/vector-icons';
-import { rf } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
 
 function trackingId(booking) {
   return booking?.bookingNumber
@@ -76,11 +77,11 @@ export default function PickupHistoryScreen({ route }) {
     <View style={styles.safe}>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#09AD2A" colors={['#09AD2A']} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#035C6C" colors={['#035C6C']} />}
       >
         <View style={styles.summary}>
           <View style={styles.summaryIcon}>
-            <Ionicons name="time-outline" size={18} color="#09AD2A" />
+            <Ionicons name="time-outline" size={rs(18)} color="#035C6C" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.summaryTitle}>{trackingId(booking)}</Text>
@@ -91,7 +92,7 @@ export default function PickupHistoryScreen({ route }) {
         <View style={styles.timeline}>
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {loading && events.length === 0 ? (
-            <ActivityIndicator color="#09AD2A" style={{ paddingVertical: 16 }} />
+            <ActivityIndicator color="#035C6C" style={{ paddingVertical: 16 }} />
           ) : events.length === 0 ? (
             <Text style={styles.empty}>No pickup history yet.</Text>
           ) : events.map((event, index) => {
@@ -121,7 +122,7 @@ export default function PickupHistoryScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F8F8' },
+  safe: { flex: 1, backgroundColor: '#F3F4F6' },
   content: { padding: 14, paddingBottom: 36 },
   summary: {
     flexDirection: 'row',
@@ -130,25 +131,25 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderColor: '#E5E7EB',
     marginBottom: 12,
   },
   summaryIcon: {
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#E6F7EA',
+    backgroundColor: '#E5F3F5',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
-  summaryTitle: { fontSize: rf(15), fontWeight: '800', color: '#1E1E1E' },
-  summarySub: { fontSize: rf(11), color: '#6E6E6E', marginTop: 2, fontWeight: '600' },
+  summaryTitle: { fontSize: rf(16), fontWeight: '800', color: '#1C3053' },
+  summarySub: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
   timeline: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#ECECEC',
+    borderColor: '#E5E7EB',
     padding: 12,
   },
   eventRow: { flexDirection: 'row' },
@@ -157,15 +158,15 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#09AD2A',
+    backgroundColor: '#035C6C',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  line: { flex: 1, width: 2, backgroundColor: '#CFEFD6', marginVertical: 3 },
+  line: { flex: 1, width: 2, backgroundColor: '#E5F3F5', marginVertical: 3 },
   eventBody: { flex: 1, paddingBottom: 14 },
-  eventStatus: { fontSize: rf(13), color: '#1E1E1E', fontWeight: '800' },
-  eventNote: { fontSize: rf(11), color: '#4A4A4A', marginTop: 2 },
-  eventMeta: { fontSize: rf(10), color: '#6E6E6E', marginTop: 2 },
-  empty: { textAlign: 'center', color: '#6E6E6E', fontSize: rf(12), paddingVertical: 16 },
-  error: { color: '#F84141', fontSize: rf(11.5), marginBottom: 8, fontWeight: '600' },
+  eventStatus: { fontSize: rf(13), color: '#111111', fontWeight: '800' },
+  eventNote: { fontSize: rf(11), color: '#6B7280', marginTop: 2 },
+  eventMeta: { fontSize: rf(10), color: '#6B7280', marginTop: 2 },
+  empty: { textAlign: 'center', color: '#6B7280', fontSize: rf(12), paddingVertical: 16 },
+  error: { color: '#F32C26', fontSize: rf(11.5), marginBottom: 8, fontWeight: '600' },
 });

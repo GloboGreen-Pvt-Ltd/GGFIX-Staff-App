@@ -1,54 +1,82 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
   useWindowDimensions,
+  RefreshControl,
+  Modal,
+  PanResponder,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Calendar, Clock, LogIn, LogOut } from 'lucide-react-native';
+import {
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
+  CirclePlay,
+  CircleCheck,
+  Coffee,
+  LogIn,
+  LogOut,
+  ArrowLeftRight,
+  X,
+} from 'lucide-react-native';
 import { useSelector } from 'react-redux';
 import { ticketApi } from '../api/client';
+import { listMyTickets } from '../api/tickets';
+import { applyEmployeeLeave } from '../api/technician';
+import { listModelsForBrand } from '../api/master';
 import { useTechnicianIdState } from '../auth/useTechnicianId';
 import TechIdPending from '../components/TechIdPending';
+import MintScreenHeader from '../components/MintScreenHeader';
+import TimePickerField, { to12h } from '../components/TimePickerField';
+import DatePickerField from '../components/DatePickerField';
+import { notify } from '../components/confirm';
 import { selectSession } from '../store/authSlice';
 import { effectiveLateMinutes } from './DailyAttendanceScreen';
-import { rf, rlh, rs } from '../utils/responsive';
-import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
+import { rf, rs } from '../utils/responsive';
+import { useBreak, formatMinutes } from '../utils/breakTracker';
 
-// Screen palette (GGFIX green + mint).
+const fmtClock = (ms) => { if (!ms) return '—'; const d = new Date(ms); const h = d.getHours(); return `${String(h % 12 || 12).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
+import { resolveDeviceImageSource } from '../utils/images';
+
 const C = {
-  deep: '#09AD2A',
-  primary: '#09AD2A',
-  green: '#09AD2A',
-  mint: '#E6F7EA',
-  softMint: '#F3FBF4',
-  bg: '#F8F8F8',
-  card: '#FFFFFF',
-  border: '#E6E6E6',
-  text: '#1E1E1E',
-  muted: '#6E6E6E',
-  // Duty-start events: yellow from the palette (blue isn't in it).
-  blue: '#F3BF23',
-  softBlue: '#FEFAF0',
-  red: '#F84141',
+  green: '#035C6C',
+  mint: '#E5F3F5',
+  mintBorder: '#E5F3F5',
+  red: '#F32C26',
   softRed: '#FEECEC',
+  redBorder: '#FBD0D0',
+  blue: '#0788C9',
+  softBlue: '#EAF1FE',
+  yellow: '#FAA700',
+  softYellow: '#FDF6E0',
+  ink: '#111111',
+  muted: '#6B7280',
+  faint: '#A3A3A3',
+  bg: '#F3F4F6',
+  card: '#FFFFFF',
+  border: '#E5E7EB',
+  grey: '#F3F4F6',
+  white: '#FFFFFF',
 };
 const MAX_CONTENT_WIDTH = 720;
 
+// Duty window fallbacks (used when the technician's profile has no
+// defaultCheckIn / defaultCheckOut) — same defaults as DailyAttendanceScreen.
 const DEFAULT_DUTY_CHECK_IN = '09:30:00';
+const DEFAULT_DUTY_CHECK_OUT = '18:30:00';
 
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-// Default duty window (9 AM–10 PM). The rendered range widens at runtime to
-// include any check-in/out that falls outside it (see scheduleHours below), so
-// an early check-in or a late check-out is never silently dropped.
-const DEFAULT_SCHEDULE_START = 9;
-const DEFAULT_SCHEDULE_END = 22;
+const OFF_STATUSES = new Set(['WEEK_OFF', 'HOLIDAY', 'LEAVE']);
+const FINAL_TICKET_STATUSES = new Set(['DELIVERED', 'CANCELLED']);
 
 function pad2(n) {
   return String(n).padStart(2, '0');
@@ -58,11 +86,6 @@ function ampmOf(h24) {
   return h24 >= 12 ? 'PM' : 'AM';
 }
 
-function hourLabel(h24) {
-  const h12 = ((h24 + 11) % 12) + 1;
-  return `${pad2(h12)}:00 ${ampmOf(h24)}`;
-}
-
 function parseTime(t) {
   if (!t || typeof t !== 'string') return null;
   const [hh, mm] = t.split(':');
@@ -70,9 +93,7 @@ function parseTime(t) {
   const minute = Number(mm || 0);
   if (Number.isNaN(hour)) return null;
   const h12 = ((hour + 11) % 12) + 1;
-  // Include AM/PM — a 13:30 check-out rendered as "(01:30)" was indistinguishable
-  // from 1:30 AM.
-  return { hour, minute, label: `${pad2(h12)}:${pad2(minute)} ${ampmOf(hour)}` };
+  return { hour, minute, mins: hour * 60 + minute, hhmm: `${pad2(hour)}:${pad2(minute)}`, label: `${pad2(h12)}:${pad2(minute)} ${ampmOf(hour)}` };
 }
 
 function isoDate(d) {
@@ -85,51 +106,128 @@ function isoDate(d) {
 }
 
 function parseIsoLocal(str) {
-  // Build a LOCAL date from "YYYY-MM-DD". `new Date("YYYY-MM-DD")` parses as UTC
-  // midnight, so in any negative-UTC timezone the header/weekday render a day
-  // early — the same trap isoDate() above was written to avoid.
+  // `new Date("YYYY-MM-DD")` parses as UTC midnight — build a LOCAL date instead.
   const [y, m, d] = String(str).split('-').map(Number);
   return new Date(y || 1970, (m || 1) - 1, d || 1);
 }
 
-function formatDuration(minutes) {
-  if (!minutes || minutes <= 0) return '';
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h && m) return `${h}h ${m}m`;
-  if (h) return `${h}h`;
-  return `${m}m`;
+function addDays(iso, n) {
+  const d = parseIsoLocal(iso);
+  d.setDate(d.getDate() + n);
+  return isoDate(d);
 }
 
+function toDate(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// Assignment time: prefer explicit assignment fields if the API sends them,
+// otherwise the booking's creation time.
+function ticketStart(t) {
+  return t?.assignedAt || t?.technicianAssignedAt || t?.createdAt || null;
+}
+
+// Tickets relevant to a day: assigned / created / accepted / updated on it, or —
+// for today — any still-open ticket (that's today's live workload).
+function ticketsForDay(list, dayIso, isToday) {
+  const onDay = (v) => {
+    const d = toDate(v);
+    return !!d && isoDate(d) === dayIso;
+  };
+  const out = list.filter((t) => {
+    if (onDay(ticketStart(t)) || onDay(t.technicianAcceptedAt) || onDay(t.updatedAt)) return true;
+    return isToday && !FINAL_TICKET_STATUSES.has(String(t.status || '').toUpperCase());
+  });
+  return out.sort((a, b) => (toDate(ticketStart(a))?.getTime() || 0) - (toDate(ticketStart(b))?.getTime() || 0));
+}
+
+// brandId → Promise<models[]>, shared by all rows so each brand is fetched once
+// (same pattern as JobReportScreen's DeviceBadge).
+const modelsByBrand = new Map();
+
+const STATUS_META = {
+  scheduled: { label: 'Scheduled', Icon: CalendarDays },
+  working: { label: 'Working', Icon: CirclePlay },
+  completed: { label: 'Completed', Icon: CircleCheck },
+  off: { label: 'Off', Icon: Coffee },
+};
+
 export default function DailyShiftScheduleScreen({ navigation }) {
-  useHideNativeHeader(navigation);
   const { width: winW } = useWindowDimensions();
   const { id: technicianId, failed: techIdFailed, retry: retryTechId } = useTechnicianIdState();
   const session = useSelector(selectSession);
   const dutyCheckIn = session?.defaultCheckIn || DEFAULT_DUTY_CHECK_IN;
+  const dutyCheckOut = session?.defaultCheckOut || DEFAULT_DUTY_CHECK_OUT;
   const todayIso = isoDate(new Date());
   const [selectedDate, setSelectedDate] = useState(todayIso);
   const [dayData, setDayData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [dayError, setDayError] = useState(false);
+  const [tickets, setTickets] = useState([]);
+  const [ticketsLoading, setTicketsLoading] = useState(true);
+  const [ticketsError, setTicketsError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const reqSeq = useRef(0);
 
   const loadDay = useCallback(async (dateStr) => {
     if (!technicianId) return;
+    const seq = ++reqSeq.current;
     setLoading(true);
     try {
       const res = await ticketApi.get(`/technicians/${technicianId}/attendance/day`, {
         query: { date: dateStr },
       });
+      if (seq !== reqSeq.current) return;
       setDayData(res);
+      setDayError(false);
     } catch {
+      if (seq !== reqSeq.current) return;
       setDayData(null);
+      setDayError(true);
     } finally {
-      setLoading(false);
+      if (seq === reqSeq.current) setLoading(false);
     }
   }, [technicianId]);
 
-  React.useEffect(() => {
+  const loadTickets = useCallback(async () => {
+    try {
+      const page = await listMyTickets({ page: 0, size: 100 });
+      const items = Array.isArray(page?.content) ? page.content : (Array.isArray(page) ? page : []);
+      setTickets(items);
+      setTicketsError(false);
+    } catch {
+      setTicketsError(true);
+    } finally {
+      setTicketsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
     loadDay(selectedDate);
   }, [selectedDate, loadDay]);
+
+  useEffect(() => {
+    loadTickets();
+  }, [loadTickets]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([loadDay(selectedDate), loadTickets()]);
+    setRefreshing(false);
+  }, [loadDay, loadTickets, selectedDate]);
+
+  // Week paging (swipe the strip or tap the small arrows).
+  const shiftWeek = useCallback((dir) => setSelectedDate((d) => addDays(d, dir * 7)), []);
+  const swipe = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 18 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onPanResponderRelease: (_, g) => {
+      if (g.dx < -40) shiftWeek(1);
+      else if (g.dx > 40) shiftWeek(-1);
+    },
+  }), [shiftWeek]);
 
   const selected = parseIsoLocal(selectedDate);
   const dayLong = DAYS_LONG[selected.getDay()];
@@ -147,55 +245,99 @@ export default function DailyShiftScheduleScreen({ navigation }) {
 
   const checkIn = parseTime(dayData?.checkInTime);
   const checkOut = parseTime(dayData?.checkOutTime);
-  const duty = parseTime(dutyCheckIn);
-  // Use the shared helper so this screen's "Late by Xh Ym" matches the Late
-  // HR's column on the Daily Attendance screen for the same date.
+  const shiftStart = parseTime(dutyCheckIn);
+  const shiftEnd = parseTime(dutyCheckOut);
+  let durationMin = shiftStart && shiftEnd ? shiftEnd.mins - shiftStart.mins : 0;
+  if (durationMin < 0) durationMin += 24 * 60; // overnight shift
+  // Shared helper so "Late" here matches the Daily Attendance screen.
   const lateMinutes = effectiveLateMinutes(dayData, dutyCheckIn);
   const isLate = lateMinutes > 0;
+  const earlyOut = !!(checkOut && shiftEnd && checkOut.mins < shiftEnd.mins);
 
-  // Widen the timeline to include any event outside the default 9 AM–10 PM
-  // window. Without this, a check-in at 08:50 (or a check-out after 22:59)
-  // rendered no chip at all — while its truthy value suppressed the
-  // "No attendance recorded" note, so the day looked empty.
-  const eventHours = [checkIn?.hour, checkOut?.hour, duty?.hour].filter(
-    (h) => typeof h === 'number' && !Number.isNaN(h),
-  );
-  const startHour = Math.min(DEFAULT_SCHEDULE_START, ...eventHours);
-  const endHour = Math.max(DEFAULT_SCHEDULE_END, ...eventHours);
-  const scheduleHours = Array.from(
-    { length: endHour - startHour + 1 },
-    (_, i) => startHour + i,
-  );
-
-  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(32);
   const isTodaySelected = selectedDate === todayIso;
+  const brk = useBreak(session?.userId || session?.technicianId || session?.email || null, selected);
+  const isPast = selectedDate < todayIso;
+  const isFuture = selectedDate > todayIso;
+  const recStatus = String(dayData?.status || '').toUpperCase();
+  const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+  const shiftOver = isPast || (isTodaySelected && shiftEnd && nowMins >= shiftEnd.mins);
+
+  // Real shift status, derived from the attendance record.
+  let status;
+  if (checkIn && checkOut) status = 'completed';
+  else if (checkIn) status = 'working';
+  else if (OFF_STATUSES.has(recStatus) || selected.getDay() === 0) status = 'off';
+  else if (!shiftOver || isFuture) status = 'scheduled';
+  else status = 'absent';
+  const pill = status === 'absent'
+    ? { label: 'Absent', fg: C.red, bg: C.softRed }
+    : status === 'working'
+      ? { label: 'Working', fg: C.yellow, bg: C.softYellow }
+      : status === 'off'
+        ? { label: recStatus === 'HOLIDAY' ? 'Holiday' : recStatus === 'LEAVE' ? 'Leave' : 'Off', fg: C.red, bg: C.softRed }
+        : { label: STATUS_META[status].label, fg: C.green, bg: C.mint };
+
+  const shiftTitle = isTodaySelected
+    ? "Today's Shift"
+    : `Shift · ${DAYS_SHORT[selected.getDay()]} ${selected.getDate()}`;
+
+  const dayTickets = useMemo(
+    () => ticketsForDay(tickets, selectedDate, isTodaySelected),
+    [tickets, selectedDate, isTodaySelected],
+  );
+
+  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(24);
+
+  const header = <MintScreenHeader title="Daily Shift Schedule" navigation={navigation} />;
 
   if (!technicianId) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <MintBackdrop />
-        <MintScreenHeader title="Daily Shift Schedule" navigation={navigation} />
+        {header}
         <TechIdPending failed={techIdFailed} onRetry={retryTechId} />
       </SafeAreaView>
     );
   }
 
+  // Timeline pills: Scheduled, or the real punch with Done / Late / Early.
+  const startPill = checkIn
+    ? { text: `${isLate ? 'Late' : 'Done'} · ${checkIn.label}`, fg: isLate ? C.red : C.green, bg: isLate ? C.softRed : C.mint }
+    : status === 'off'
+      ? { text: 'Off', fg: C.muted, bg: C.grey }
+      : status === 'absent'
+        ? { text: 'Missed', fg: C.red, bg: C.softRed }
+        : { text: 'Scheduled', fg: C.green, bg: C.mint };
+  const endPill = checkOut
+    ? { text: `${earlyOut ? 'Early' : 'Done'} · ${checkOut.label}`, fg: earlyOut ? C.yellow : C.green, bg: earlyOut ? C.softYellow : C.mint }
+    : status === 'off'
+      ? { text: 'Off', fg: C.muted, bg: C.grey }
+      : status === 'working'
+        ? { text: 'Pending', fg: C.yellow, bg: C.softYellow }
+        : { text: 'Scheduled', fg: C.red, bg: C.softRed };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <MintBackdrop />
-      <MintScreenHeader title="Daily Shift Schedule" navigation={navigation} />
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      {header}
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.green]} tintColor={C.green} />}
+      >
         <View style={{ width: contentW }}>
-          {/* Selected date + week strip */}
+          {/* 1. Selected date + week strip */}
           <View style={styles.card}>
-            <View style={styles.headerRow}>
-              <View style={styles.headerLeft}>
-                <Text style={styles.headerDate}>{selected.getDate()}</Text>
-                <View style={{ flexShrink: 1 }}>
-                  <Text style={styles.headerDayLong} numberOfLines={1}>{dayLong}</Text>
-                  <Text style={styles.headerMonth} numberOfLines={1}>{monthYear}</Text>
-                </View>
+            <View style={styles.dateRow}>
+              <Text style={styles.bigDate}>{selected.getDate()}</Text>
+              <View style={styles.dateTextCol}>
+                <Text style={styles.dayLong} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{dayLong}</Text>
+                <Text style={styles.monthYear} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{monthYear}</Text>
               </View>
+              <TouchableOpacity style={styles.weekArrow} onPress={() => shiftWeek(-1)} activeOpacity={0.8} hitSlop={6}>
+                <ChevronLeft size={rs(14)} color={C.muted} strokeWidth={2.4} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.weekArrow} onPress={() => shiftWeek(1)} activeOpacity={0.8} hitSlop={6}>
+                <ChevronRight size={rs(14)} color={C.muted} strokeWidth={2.4} />
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.todayBtn, isTodaySelected && styles.todayBtnActive]}
                 onPress={() => setSelectedDate(todayIso)}
@@ -205,28 +347,26 @@ export default function DailyShiftScheduleScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.weekStrip}>
+            <View style={styles.weekStrip} {...swipe.panHandlers}>
               {weekDays.map((dt) => {
                 const dateStr = isoDate(dt);
                 const isSelected = dateStr === selectedDate;
                 const isSunday = dt.getDay() === 0;
+                const isToday = dateStr === todayIso;
                 return (
                   <TouchableOpacity
                     key={dateStr}
                     style={[
                       styles.weekDay,
-                      isSunday && !isSelected && styles.weekDaySunday,
+                      isSunday && styles.weekDaySunday,
+                      isToday && !isSelected && styles.weekDayToday,
                       isSelected && styles.weekDaySelected,
                     ]}
                     onPress={() => setSelectedDate(dateStr)}
                     activeOpacity={0.85}
                   >
                     <Text
-                      style={[
-                        styles.weekDayName,
-                        isSunday && !isSelected && styles.weekDayTextSunday,
-                        isSelected && styles.weekDayTextSelected,
-                      ]}
+                      style={[styles.weekDayName, isSunday && styles.textRed, isSelected && styles.textWhite]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.75}
@@ -234,11 +374,7 @@ export default function DailyShiftScheduleScreen({ navigation }) {
                       {DAYS_SHORT[dt.getDay()]}
                     </Text>
                     <Text
-                      style={[
-                        styles.weekDayNum,
-                        isSunday && !isSelected && styles.weekDayTextSunday,
-                        isSelected && styles.weekDayTextSelected,
-                      ]}
+                      style={[styles.weekDayNum, isSunday && styles.textRed, isSelected && styles.textWhite]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                       minimumFontScale={0.75}
@@ -251,169 +387,364 @@ export default function DailyShiftScheduleScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Schedule timeline */}
-          <View style={[styles.card, { marginTop: rs(14) }]}>
-            <Text style={styles.scheduleTitle}>Schedule</Text>
+          {/* 4. Timeline */}
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Daily Shift Timeline</Text>
+            <View style={{ marginTop: rs(8) }}>
+              <TimelineRow
+                time={shiftStart?.label || '—'}
+                dot={C.green}
+                connector="down"
+                Icon={LogIn}
+                iconFg={C.green}
+                iconBg={C.mint}
+                title="Duty Start"
+                sub="Scheduled shift start time"
+                value={shiftStart?.label || '—'}
+                pill={startPill}
+              />
+              <TimelineRow
+                time={fmtClock(brk.lastStart)} dot="#FAA700" connector="both"
+                Icon={Coffee} iconFg="#FAA700" iconBg="#FFE8CC"
+                title="Break Start" sub="Break started (logged on this phone)"
+                value={fmtClock(brk.lastStart)}
+                pill={brk.lastStart ? { text: 'Done', fg: '#609138', bg: '#E4EFDA' } : { text: 'No break', fg: C.muted, bg: '#F3F4F6' }}
+              />
+              <TimelineRow
+                time={fmtClock(brk.lastEnd)} dot="#FAA700" connector="both"
+                Icon={Coffee} iconFg="#FAA700" iconBg="#FFE8CC"
+                title="Break End" sub={brk.breakMinutes() ? `Total break ${formatMinutes(brk.breakMinutes())}` : 'Break finished'}
+                value={fmtClock(brk.lastEnd)}
+                pill={brk.onBreak ? { text: 'On break', fg: '#FAA700', bg: '#FFE8CC' } : brk.lastEnd ? { text: 'Done', fg: '#609138', bg: '#E4EFDA' } : { text: '—', fg: C.muted, bg: '#F3F4F6' }}
+              />
+              <TimelineRow
+                time={shiftEnd?.label || '—'}
+                dot={C.red}
+                connector="up"
+                Icon={LogOut}
+                iconFg={C.red}
+                iconBg={C.softRed}
+                title="Duty End"
+                sub="Scheduled shift end time"
+                value={shiftEnd?.label || '—'}
+                pill={endPill}
+              />
+            </View>
+          </View>
 
-            {loading ? (
-              <ActivityIndicator size="small" color={C.deep} style={{ marginVertical: rs(24) }} />
-            ) : (
-              <View>
-                {scheduleHours.map((h, idx) => {
-                  const isCheckIn = checkIn && checkIn.hour === h;
-                  const isCheckOut = checkOut && checkOut.hour === h;
-                  const isDuty = duty && duty.hour === h;
-                  // Events stack in normal flow (not absolutely overlaid) so two
-                  // events in the same hour can never cover each other.
-                  const events = [];
-                  if (isDuty && !isCheckIn) {
-                    events.push(
-                      <EventChip key="duty" tone="duty" icon={Calendar} label="Duty Start" time={duty.label} />,
-                    );
-                  }
-                  if (isCheckIn) {
-                    events.push(
-                      <EventChip
-                        key="in"
-                        tone={isLate ? 'late' : 'ok'}
-                        icon={isLate ? Clock : LogIn}
-                        label={isLate ? `Check-In Late by ${formatDuration(lateMinutes)}` : 'Check-In Time'}
-                        time={checkIn.label}
-                      />,
-                    );
-                  }
-                  if (isCheckOut) {
-                    events.push(
-                      <EventChip key="out" tone="ok" icon={LogOut} label="Check-Out Time" time={checkOut.label} />,
-                    );
-                  }
-                  const dotColor = isCheckIn ? (isLate ? C.red : C.green)
-                    : isDuty ? C.blue
-                    : isCheckOut ? C.green
-                    : null;
-                  return (
-                    <View key={h} style={styles.hourRow}>
-                      <View style={styles.hourPill}>
-                        <Text style={styles.hourPillText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{hourLabel(h)}</Text>
-                      </View>
-                      <View style={styles.markerCol}>
-                        <View style={[
-                          styles.markerLine,
-                          idx === 0 && { top: '50%' },
-                          idx === scheduleHours.length - 1 && { bottom: '50%' },
-                        ]} />
-                        <View style={dotColor ? [styles.markerDotActive, { backgroundColor: dotColor }] : styles.markerDot} />
-                      </View>
-                      <View style={styles.hourContent}>
-                        {events.length ? events : <View style={styles.hourLine} />}
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-
-            {!loading && !checkIn && !checkOut && (
-              <Text style={styles.empty}>No attendance recorded for this day.</Text>
-            )}
-
-            {dayData?.status && dayData.status !== 'GENERAL' && (
-              <View style={styles.statusNote}>
-                <Text style={styles.statusNoteText}>
-                  {dayData.status}
-                  {dayData.notes ? ` — ${dayData.notes}` : ''}
-                </Text>
-              </View>
-            )}
+          {/* 6. Shift change request */}
+          <View style={[styles.card, styles.changeCard]}>
+            <View style={{ flex: 1, marginRight: rs(8) }}>
+              <Text style={styles.cardTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Shift Change Request</Text>
+              <Text style={styles.changeSub}>Request to change your shift timing or date.</Text>
+            </View>
+            <TouchableOpacity style={styles.changeBtn} onPress={() => setRequestOpen(true)} activeOpacity={0.85}>
+              <ArrowLeftRight size={rs(14)} color={C.green} strokeWidth={2.4} />
+              <Text style={styles.changeBtnText} numberOfLines={2}>Request Shift Change</Text>
+              <ChevronRight size={rs(14)} color={C.green} strokeWidth={2.4} />
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
+
+      <ShiftChangeModal
+        visible={requestOpen}
+        onClose={() => setRequestOpen(false)}
+        initialDate={selectedDate < todayIso ? todayIso : selectedDate}
+        minDate={todayIso}
+        currentStart={shiftStart}
+        currentEnd={shiftEnd}
+      />
     </SafeAreaView>
   );
 }
 
-const EVENT_TONES = {
-  duty: { bg: C.softBlue, border: '#F7E3A6', iconBg: '#FDF2D0', iconColor: '#1E1E1E', text: C.text },
-  late: { bg: C.softRed, border: '#FBD0D0', iconBg: C.red, iconColor: '#FFFFFF', text: C.text },
-  ok:   { bg: C.mint, border: '#CDEFD5', iconBg: '#FFFFFF', iconColor: C.green, text: C.text },
-};
-
-function EventChip({ tone, icon: Icon, label, time }) {
-  const t = EVENT_TONES[tone];
-  const circle = rs(26);
+function DashedLine({ style }) {
   return (
-    <View style={[styles.eventChip, { backgroundColor: t.bg, borderColor: t.border }]}>
-      <View style={{ width: circle, height: circle, borderRadius: circle / 2, backgroundColor: t.iconBg, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon size={rs(14)} color={t.iconColor} strokeWidth={2.4} />
-      </View>
-      <Text style={[styles.eventLabel, { color: t.text }]} numberOfLines={2}>{label}</Text>
-      <Text style={[styles.eventTime, { color: t.text }]} numberOfLines={1}>({time})</Text>
+    <View style={[styles.dashWrap, style]} pointerEvents="none">
+      {Array.from({ length: 14 }, (_, i) => <View key={i} style={styles.dash} />)}
     </View>
   );
 }
 
+function TimelineRow({ time, dot, connector, Icon, iconFg, iconBg, title, sub, value, pill }) {
+  return (
+    <View style={[styles.tlRow, connector !== 'up' && { marginBottom: rs(8) }]}>
+      <Text style={styles.tlTime} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{time}</Text>
+      <View style={styles.tlDotCol}>
+        {connector === 'down'
+          ? <DashedLine style={{ top: '50%', bottom: -rs(8) }} />
+          : connector === 'both'
+            ? <DashedLine style={{ top: 0, bottom: -rs(8) }} />
+            : <DashedLine style={{ top: 0, bottom: '50%' }} />}
+        <View style={[styles.tlDot, { backgroundColor: dot }]} />
+      </View>
+      <View style={styles.tlCard}>
+        <View style={[styles.tlIcon, { backgroundColor: iconBg }]}>
+          <Icon size={rs(15)} color={iconFg} strokeWidth={2.4} />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.tlTitle} numberOfLines={1}>{title}</Text>
+          <Text style={styles.tlSub} numberOfLines={2}>{sub}</Text>
+        </View>
+        <View style={styles.tlRight}>
+          <Text style={styles.tlValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
+          <View style={[styles.tlPill, { backgroundColor: pill.bg }]}>
+            <Text style={[styles.tlPillText, { color: pill.fg }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+              {pill.text}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// Shift change request. There is no shift-change endpoint in src/api, so this
+// is filed through the existing employee-leave channel as a same-day
+// PERMISSION request (totalDays 0) — it lands in the owner's pending-leaves
+// approval list, who also owns the shift timings. The requested window and
+// reason are carried in the reason text, as PermissionApplyScreen does.
+function ShiftChangeModal({ visible, onClose, initialDate, minDate, currentStart, currentEnd }) {
+  const [date, setDate] = useState(initialDate);
+  const [from, setFrom] = useState(currentStart?.hhmm || '');
+  const [to, setTo] = useState(currentEnd?.hhmm || '');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    setDate(initialDate);
+    setFrom(currentStart?.hhmm || '');
+    setTo(currentEnd?.hhmm || '');
+    setReason('');
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const submit = async () => {
+    if (!date) { notify('Check the form', 'Please pick a date.'); return; }
+    if (!from || !to) { notify('Check the form', 'Pick your preferred start and end time.'); return; }
+    if (to <= from) { notify('Check the form', 'End time must be after start time.'); return; }
+    if (currentStart && currentEnd && from === currentStart.hhmm && to === currentEnd.hhmm) {
+      notify('No change', 'The requested timing is the same as your current shift.');
+      return;
+    }
+    if (!reason.trim()) { notify('Check the form', 'Please enter a reason.'); return; }
+    setSaving(true);
+    try {
+      const current = currentStart && currentEnd ? ` (current ${currentStart.label} – ${currentEnd.label})` : '';
+      await applyEmployeeLeave({
+        leaveType: 'PERMISSION',
+        startDate: date,
+        endDate: date,
+        totalDays: 0,
+        reason: `Shift change request: ${to12h(from)} – ${to12h(to)}${current}: ${reason.trim()}`,
+        attachmentUrl: null,
+      });
+      notify('Request sent', 'Your shift change request was sent to the owner for approval.', { preset: 'done' });
+      onClose();
+    } catch (e) {
+      notify('Could not submit', e?.message ?? 'Failed to send shift change request', { preset: 'error', haptic: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHead}>
+            <Text style={styles.cardTitle}>Request Shift Change</Text>
+            <TouchableOpacity style={styles.sheetClose} onPress={onClose} activeOpacity={0.8} hitSlop={8}>
+              <X size={rs(16)} color={C.ink} strokeWidth={2.4} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.sheetHint}>Sent to the shop owner for approval.</Text>
+
+          <Text style={styles.fieldLabel}>Date</Text>
+          <DatePickerField value={date} onChange={setDate} minimumDate={minDate} fieldStyle={styles.field} accent={C.green} accentSoft={C.mint} />
+
+          <View style={styles.timeRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Preferred start</Text>
+              <TimePickerField value={from} placeholder="Start" onChange={setFrom} fieldStyle={styles.field} accent={C.green} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Preferred end</Text>
+              <TimePickerField value={to} placeholder="End" onChange={setTo} fieldStyle={styles.field} accent={C.green} />
+            </View>
+          </View>
+
+          <Text style={styles.fieldLabel}>Reason</Text>
+          <TextInput
+            value={reason}
+            onChangeText={setReason}
+            placeholder="Why do you need this change?"
+            placeholderTextColor={C.faint}
+            multiline
+            style={styles.reasonInput}
+            maxLength={300}
+          />
+
+          <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.7 }]} onPress={submit} disabled={saving} activeOpacity={0.85}>
+            {saving
+              ? <ActivityIndicator size="small" color={C.white} />
+              : <Text style={styles.submitText}>Send Request</Text>}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 const cardShadow = {
-  shadowColor: '#1E1E1E', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  shadowColor: '#111111', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
 };
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scroll: { alignItems: 'center', paddingTop: rs(2), paddingBottom: rs(16) },
+  scroll: { alignItems: 'center', paddingTop: rs(2), paddingBottom: rs(20) },
 
   card: {
-    backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border,
-    padding: rs(11), ...cardShadow,
+    backgroundColor: C.card, borderRadius: rs(15), borderWidth: 1, borderColor: C.border,
+    padding: rs(10), marginBottom: rs(10), ...cardShadow,
   },
+  cardHeadRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: rs(8) },
+  cardTitle: { fontSize: rf(16), fontWeight: '800', color: C.ink, flexShrink: 1 },
 
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: rs(10), flex: 1, marginRight: rs(8) },
-  headerDate: { fontSize: rf(34), fontWeight: '800', color: C.text, lineHeight: rlh(40) },
-  headerDayLong: { fontSize: rf(16), fontWeight: '800', color: C.text },
-  headerMonth: { fontSize: rf(12.5), color: C.muted, marginTop: 1 },
+  dateRow: { flexDirection: 'row', alignItems: 'center' },
+  bigDate: { fontSize: rf(32), fontWeight: '800', color: C.ink, marginRight: rs(8), letterSpacing: -1 },
+  dateTextCol: { flex: 1, minWidth: 0 },
+  dayLong: { fontSize: rf(16), fontWeight: '800', color: C.ink },
+  monthYear: { fontSize: rf(12.5), color: C.muted, marginTop: 1 },
+  weekArrow: {
+    width: rs(24), height: rs(24), borderRadius: rs(12), backgroundColor: C.grey,
+    alignItems: 'center', justifyContent: 'center', marginRight: rs(5),
+  },
   todayBtn: {
-    backgroundColor: C.card, borderWidth: 1, borderColor: '#CDEFD5',
-    paddingHorizontal: rs(14), paddingVertical: rs(6), borderRadius: rs(11),
+    borderWidth: 1.5, borderColor: C.green, backgroundColor: C.white,
+    paddingHorizontal: rs(12), paddingVertical: rs(5), borderRadius: rs(10), marginLeft: rs(1),
   },
-  todayBtnActive: { backgroundColor: C.mint, borderColor: C.green },
-  todayBtnText: { color: C.text, fontSize: rf(13), fontWeight: '700' },
+  todayBtnActive: { backgroundColor: C.mint },
+  todayBtnText: { color: C.ink, fontSize: rf(13), fontWeight: '700' },
 
-  weekStrip: { flexDirection: 'row', gap: rs(5), marginTop: rs(10) },
+  weekStrip: { flexDirection: 'row', gap: rs(4), marginTop: rs(10) },
   weekDay: {
-    flex: 1, paddingVertical: rs(6), alignItems: 'center', borderRadius: rs(11),
-    backgroundColor: '#F3F3F3', borderWidth: 1, borderColor: '#EDEDED',
+    flex: 1, paddingVertical: rs(6), alignItems: 'center', borderRadius: rs(10),
+    backgroundColor: C.grey, borderWidth: 1, borderColor: '#E5E7EB',
   },
+  weekDayToday: { borderColor: C.green },
   weekDaySelected: { backgroundColor: C.green, borderColor: C.green },
-  weekDaySunday: { backgroundColor: C.softRed, borderColor: '#FBD0D0' },
+  weekDaySunday: { backgroundColor: C.softRed, borderColor: C.redBorder },
   weekDayName: { fontSize: rf(11), color: C.muted, fontWeight: '600' },
-  weekDayNum: { fontSize: rf(15), fontWeight: '800', color: C.text, marginTop: 1 },
-  weekDayTextSelected: { color: '#FFFFFF' },
-  weekDayTextSunday: { color: C.red },
+  weekDayNum: { fontSize: rf(15), fontWeight: '800', color: C.ink, marginTop: 1 },
+  textWhite: { color: C.white },
+  textRed: { color: C.red },
 
-  scheduleTitle: { fontSize: rf(16), fontWeight: '800', color: C.text, marginBottom: rs(6) },
+  statusPill: { paddingHorizontal: rs(10), paddingVertical: rs(4), borderRadius: rs(8) },
+  statusPillText: { fontSize: rf(11.5), fontWeight: '700' },
 
-  hourRow: { flexDirection: 'row', alignItems: 'center', minHeight: rs(36) },
-  hourPill: {
-    width: rs(72), paddingVertical: rs(3), borderRadius: 999, backgroundColor: '#F3F3F3',
-    alignItems: 'center',
+  tileRow: { flexDirection: 'row', gap: rs(6), marginTop: rs(8) },
+  tile: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', borderRadius: rs(11),
+    paddingHorizontal: rs(6), paddingVertical: rs(8), gap: rs(5),
   },
-  hourPillText: { fontSize: rf(11), fontWeight: '600', color: C.text },
-  markerCol: { width: rs(22), alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
-  markerLine: { position: 'absolute', top: 0, bottom: 0, width: 1.5, backgroundColor: '#E6E6E6' },
-  markerDot: { width: rs(7), height: rs(7), borderRadius: rs(4), backgroundColor: '#D4D4D4' },
-  markerDotActive: { width: rs(11), height: rs(11), borderRadius: rs(6), borderWidth: 2.5, borderColor: '#FFFFFF' },
-  hourContent: { flex: 1, justifyContent: 'center', paddingVertical: rs(3), gap: rs(5) },
-  hourLine: { height: 1, borderStyle: 'dashed', borderWidth: 0.5, borderColor: '#DDDDDD' },
-
-  eventChip: {
-    flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: rs(11),
-    paddingHorizontal: rs(8), paddingVertical: rs(5),
+  tileIcon: {
+    width: rs(26), height: rs(26), borderRadius: rs(13), backgroundColor: C.white, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center',
   },
-  eventLabel: { flex: 1, fontSize: rf(12.5), fontWeight: '700', marginLeft: rs(8) },
-  eventTime: { fontSize: rf(12), fontWeight: '600', marginLeft: rs(6) },
+  tileLabel: { fontSize: rf(10), color: C.muted },
+  tileValue: { fontSize: rf(13), fontWeight: '800', color: C.ink, marginTop: 1 },
 
-  empty: { fontSize: rf(12.5), color: C.muted, textAlign: 'center', marginTop: rs(12) },
+  errorRow: { flexDirection: 'row', alignItems: 'center', gap: rs(6), marginTop: rs(8) },
+  errorText: { flex: 1, fontSize: rf(11.5), color: C.red, fontWeight: '600' },
+  noteText: { fontSize: rf(11.5), color: C.muted, marginTop: rs(8) },
 
-  statusNote: { marginTop: rs(10), backgroundColor: '#FDF6E0', borderRadius: rs(11), padding: rs(10) },
-  statusNoteText: { fontSize: rf(12), fontWeight: '600', color: C.text },
+  segRow: { flexDirection: 'row', gap: rs(5), marginTop: rs(8) },
+  seg: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(4),
+    paddingVertical: rs(8), paddingHorizontal: rs(4), borderRadius: rs(10),
+    backgroundColor: C.grey, borderWidth: 1, borderColor: C.grey,
+  },
+  segText: { fontSize: rf(11.5), fontWeight: '600', flexShrink: 1 },
+
+  tlRow: { flexDirection: 'row', alignItems: 'center' },
+  tlTime: { width: rs(58), fontSize: rf(11.5), fontWeight: '600', color: C.ink },
+  tlDotCol: { width: rs(16), alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  tlDot: { width: rs(10), height: rs(10), borderRadius: rs(5) },
+  dashWrap: {
+    position: 'absolute', width: 1.5, alignItems: 'center', justifyContent: 'space-between', overflow: 'hidden',
+  },
+  dash: { width: 1.5, height: rs(3), backgroundColor: '#C9C9C9' },
+  tlCard: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(7), marginLeft: rs(4),
+    borderWidth: 1, borderColor: C.border, borderRadius: rs(12), paddingHorizontal: rs(8), paddingVertical: rs(8),
+    backgroundColor: C.white,
+  },
+  tlIcon: { width: rs(30), height: rs(30), borderRadius: rs(9), alignItems: 'center', justifyContent: 'center' },
+  tlTitle: { fontSize: rf(13), fontWeight: '800', color: C.ink },
+  tlSub: { fontSize: rf(10.5), color: C.muted, marginTop: 1 },
+  tlRight: { alignItems: 'flex-end', maxWidth: rs(96), gap: rs(3) },
+  tlValue: { fontSize: rf(11.5), fontWeight: '600', color: C.ink },
+  tlPill: { paddingHorizontal: rs(7), paddingVertical: rs(2), borderRadius: rs(7) },
+  tlPillText: { fontSize: rf(10), fontWeight: '700' },
+
+  accentTitle: { flexDirection: 'row', alignItems: 'center', flex: 1, minWidth: 0 },
+  accentBar: { width: rs(4), height: rs(18), borderRadius: 2, backgroundColor: C.green, marginRight: rs(7) },
+  viewAll: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(3), borderWidth: 1, borderColor: '#E5E7EB',
+    borderRadius: rs(9), paddingHorizontal: rs(9), paddingVertical: rs(4),
+  },
+  viewAllText: { fontSize: rf(11.5), fontWeight: '600', color: C.ink },
+
+  workRow: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(7), backgroundColor: '#F7F9F8',
+    borderRadius: rs(12), paddingHorizontal: rs(8), paddingVertical: rs(8),
+  },
+  workTimeCol: { width: rs(52) },
+  workTimeTop: { fontSize: rf(11.5), fontWeight: '600', color: C.ink },
+  workTimeBot: { fontSize: rf(11), color: C.muted, marginTop: 1 },
+  workDivider: { width: 1, alignSelf: 'stretch', backgroundColor: '#DCDCDC' },
+  devTile: {
+    width: rs(32), height: rs(32), borderRadius: rs(9), backgroundColor: C.mint,
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+  },
+  devTileImg: { backgroundColor: C.white, borderWidth: 1, borderColor: C.border },
+  workRef: { fontSize: rf(12.5), fontWeight: '800', color: C.ink },
+  workSub: { fontSize: rf(10.5), color: C.muted, marginTop: 1 },
+  workPill: { paddingHorizontal: rs(8), paddingVertical: rs(3), borderRadius: rs(8) },
+  workPillText: { fontSize: rf(10.5), fontWeight: '700' },
+
+  emptyBox: { alignItems: 'center', gap: rs(5), paddingVertical: rs(14) },
+  emptyText: { fontSize: rf(12), color: C.muted, textAlign: 'center' },
+
+  changeCard: { flexDirection: 'row', alignItems: 'center' },
+  changeSub: { fontSize: rf(12), color: C.muted, marginTop: 2 },
+  changeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(5), backgroundColor: C.mint,
+    borderWidth: 1, borderColor: C.mintBorder, borderRadius: rs(11),
+    paddingHorizontal: rs(9), paddingVertical: rs(8), maxWidth: '55%',
+  },
+  changeBtnText: { fontSize: rf(12), fontWeight: '700', color: C.green, flexShrink: 1 },
+
+  modalWrap: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', padding: rs(16) },
+  sheet: { backgroundColor: C.white, borderRadius: rs(16), padding: rs(14), width: '100%', maxWidth: 480, alignSelf: 'center' },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetClose: {
+    width: rs(28), height: rs(28), borderRadius: rs(14), backgroundColor: C.grey,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  sheetHint: { fontSize: rf(12), color: C.muted, marginTop: 2, marginBottom: rs(6) },
+  fieldLabel: { fontSize: rf(11.5), fontWeight: '700', color: C.ink, marginTop: rs(8), marginBottom: rs(4) },
+  field: { borderRadius: rs(10), minHeight: rs(40) },
+  timeRow: { flexDirection: 'row', gap: rs(8) },
+  reasonInput: {
+    borderWidth: 1, borderColor: '#E5E7EB', borderRadius: rs(10), minHeight: rs(64),
+    paddingHorizontal: rs(10), paddingVertical: rs(8), fontSize: rf(12.5), color: C.ink, textAlignVertical: 'top',
+  },
+  submitBtn: {
+    marginTop: rs(12), backgroundColor: C.green, borderRadius: rs(11), paddingVertical: rs(11), alignItems: 'center',
+  },
+  submitText: { color: C.white, fontSize: rf(13.5), fontWeight: '800' },
 });

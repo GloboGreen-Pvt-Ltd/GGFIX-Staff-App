@@ -1,16 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  TextInput,
-  ActivityIndicator,
-  Pressable,
-  Platform,
-  Alert,
-} from 'react-native';
+import { markNotificationsSeen } from './NotificationsScreen';
+import { View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Pressable, Platform, Alert } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from '../utils/audio';
 import {
@@ -24,7 +15,10 @@ import {
 } from '../api/tickets';
 import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
-import { rf } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronLeft } from 'lucide-react-native';
+import { ticketRef } from '../utils/ticketRef';
 import { resolveDeviceImageSource } from '../utils/images';
 import { listModelsForBrand } from '../api/master';
 import ImageViewerModal from '../components/ImageViewerModal';
@@ -135,28 +129,28 @@ function photoUrl(item) {
   return item.url || item.uri || item.imageUrl || null;
 }
 
-// Screen palette — GGFIX green / red / yellow on light neutrals, the same set
+// Screen palette — Near G Fix green / red / yellow on light neutrals, the same set
 // the restyled Home and attendance screens use.
 const C = {
-  green: '#09AD2A',
-  greenTint: '#E6F7EA',
-  greenSoft: '#F3FBF4',
-  greenLine: '#CFEFD6',
-  red: '#F84141',
+  green: '#035C6C',
+  greenTint: '#E5F3F5',
+  greenSoft: '#E5F3F5',
+  greenLine: '#E5F3F5',
+  red: '#F32C26',
   redTint: '#FEECEC',
   redLine: '#FBD0D0',
-  yellow: '#F3BF23',
+  yellow: '#FAA700',
   yellowTint: '#FDF6E0',
   yellowSoft: '#FFFBEF',
   yellowLine: '#F6DE8D',
   yellowInk: '#8A6700',
-  ink: '#1E1E1E',
-  muted: '#6E6E6E',
+  ink: '#111111',
+  muted: '#6B7280',
   faint: '#A3A3A3',
-  bg: '#F8F8F8',
-  surface: '#F3F3F3',
-  border: '#ECECEC',
-  line: '#D4D4D4',
+  bg: '#F3F4F6',
+  surface: '#F3F4F6',
+  border: '#E5E7EB',
+  line: '#E5E7EB',
 };
 
 // Section header: a small vertical accent bar + bold title + optional right
@@ -166,8 +160,67 @@ function SectionHeader({ title, accent = C.green, right = null }) {
   return (
     <View className="flex-row items-center" style={{ marginTop: 2, marginBottom: 6 }}>
       <View style={{ width: 3, height: 14, borderRadius: 2, backgroundColor: accent, marginRight: 7 }} />
-      <Text className="font-extrabold flex-1" style={{ fontSize: rf(13), color: C.ink }}>{title}</Text>
+      <Text className="flex-1" style={{ fontSize: rf(14), fontWeight: '700', color: '#1C3053' }}>{title}</Text>
       {right}
+    </View>
+  );
+}
+
+// Page header (same white bar as Job Report / Job Assign Report): back ·
+// centred "Job Details" + job reference sub-heading. Pads the status-bar inset
+// itself because the stack's native header is hidden for this screen.
+function JobHeader({ navigation, sub }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ paddingTop: insets.top, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: C.border }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: rs(10), paddingHorizontal: rs(14), paddingVertical: rs(10) }}>
+        <View style={{ width: rs(36) }}>
+          {navigation.canGoBack() ? (
+            <TouchableOpacity
+              onPress={() => navigation.goBack()} hitSlop={8} accessibilityLabel="Back" activeOpacity={0.7}
+              style={{ width: rs(36), height: rs(36), borderRadius: rs(18), backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <ChevronLeft size={rs(20)} color={C.ink} strokeWidth={2.4} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        <View style={{ flex: 1, minWidth: 0, alignItems: 'center' }}>
+          <Text style={{ fontSize: rf(17), fontWeight: '800', color: '#1C3053', textAlign: 'center' }} numberOfLines={1}>Job Details</Text>
+          {sub ? <Text style={{ fontSize: rf(12), color: C.muted, marginTop: 1, textAlign: 'center' }} numberOfLines={1}>{sub}</Text> : null}
+        </View>
+        <View style={{ width: rs(36) }} />
+      </View>
+    </View>
+  );
+}
+
+// Device name → name, number, storage. Handles both
+//   "Oppo A5 5G · CPH2751 (6GB / 128GB)"  (storage in brackets) and
+//   "Oppo A5 5G · CPH2753 · 8GB · 128GB"  (storage as extra parts).
+function deviceParts(ticket) {
+  const clean = (x) => String(x).replace(/^[\s ]+|[\s ]+$/g, '');
+  let raw = String(ticket?.deviceDisplayName || '');
+  let storage = '';
+  const paren = raw.match(/\(([^)]*\d\s*[GMT]B[^)]*)\)/i);
+  if (paren) {
+    storage = paren[1];
+    raw = raw.replace(paren[0], '');
+  }
+  const parts = raw.split(/[·•|]/).map(clean).filter(Boolean);
+  if (!storage) storage = parts.slice(2).join(' / ');
+  return {
+    name: parts[0] || [ticket?.brandName, ticket?.modelName].filter(Boolean).join(' ') || '—',
+    number: parts[1] || '—',
+    storage: clean(storage.replace(/\s*\/\s*/g, ' / ')) || '—',
+  };
+}
+
+// One label → value line of a listing card (value may wrap freely).
+function InfoLine({ label, value, first }) {
+  return (
+    <View className="flex-row" style={{ marginTop: first ? 0 : 5 }}>
+      <Text style={{ width: rs(96), fontSize: rf(11.5), color: C.muted }}>{label}</Text>
+      <Text style={{ flex: 1, fontSize: rf(12), fontWeight: '700', color: C.ink }}>{value}</Text>
     </View>
   );
 }
@@ -178,7 +231,7 @@ function Card({ children, style }) {
   return (
     <View
       style={[
-        { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 10, marginBottom: 12,
+        { backgroundColor: '#FFFFFF', borderRadius: 12, padding: 10, marginBottom: 10,
           borderWidth: 1, borderColor: C.border, shadowColor: C.ink,
           shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
           elevation: 1 },
@@ -208,18 +261,18 @@ function EstimateRow({
       </View>
       <View className="flex-1" style={{ marginLeft: 10 }}>
         <View className="flex-row items-center">
-          <Text className="font-extrabold flex-1" style={{ fontSize: rf(12), color: C.ink }}>
+          <Text className="font-bold flex-1" style={{ fontSize: rf(12), color: C.ink }}>
             {title}
           </Text>
           {pill ? (
             <View className="rounded-full px-2 py-0.5 ml-2" style={{ backgroundColor: pillTint }}>
-              <Text className="font-extrabold" style={{ fontSize: rf(9), color: pillColor }}>
+              <Text className="font-bold" style={{ fontSize: rf(9), color: pillColor }}>
                 {pill}
               </Text>
             </View>
           ) : null}
         </View>
-        <Text className="font-extrabold" style={{ fontSize: rf(11.5), color: whenColor, marginTop: 3 }}>
+        <Text className="font-bold" style={{ fontSize: rf(11.5), color: whenColor, marginTop: 3 }}>
           {when}
         </Text>
         {note ? (
@@ -233,7 +286,7 @@ function EstimateRow({
 
 // Empty image-upload slot: dashed tile with a green + circle and an
 // "Add Photo" label, so the tap target reads as an obvious "add" affordance.
-function AddPhotoSlot({ onPress, height = 86 }) {
+function AddPhotoSlot({ onPress, height = 72 }) {
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -245,21 +298,25 @@ function AddPhotoSlot({ onPress, height = 86 }) {
     >
       <View
         style={{
-          width: 30, height: 30, borderRadius: 15, backgroundColor: C.green,
+          width: 26, height: 26, borderRadius: 13, backgroundColor: C.green,
           alignItems: 'center', justifyContent: 'center',
         }}
       >
-        <Plus size={17} color="#FFFFFF" />
+        <Plus size={15} color="#FFFFFF" />
       </View>
       <Text className="font-bold" style={{ fontSize: rf(9.5), color: C.muted, marginTop: 6 }}>Add Photo</Text>
     </TouchableOpacity>
   );
 }
 
-export default function TechnicianTicketDetailScreen({ route, navigation }) {
+export default function JobDetailsScreen({ route, navigation }) {
   const { ticketId } = route.params || {};
+  // Bottom padding below the scroll content clears the system nav bar.
+  const insets = useSafeAreaInsets();
 
   const [ticket, setTicket] = useState(null);
+  // Opening a ticket auto-reads its notification.
+  useEffect(() => { if (ticket?.id) markNotificationsSeen({ tickets: [ticket] }); }, [ticket?.id, ticket?.updatedAt]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   // Which customer photo the full-screen viewer is on (-1 = closed). Must sit
@@ -393,6 +450,15 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
       // Who marked each done row, so the checklist can say "Marked by shop"
       // on a step the owner closed from their Service History screen.
       const actorByKey = {};
+      // A re-estimate restarts the checklist: steps marked before the latest
+      // RE_ESTIMATED_CONFIRMED belong to the old quote and are not shown as done.
+      const evTime = (e) => Math.max(
+        new Date(e?.createdAt || 0).getTime() || 0,
+        new Date(e?.updatedAt || 0).getTime() || 0,
+      );
+      const reEstimatedAt = (Array.isArray(rows) ? rows : [])
+        .filter((e) => (e.status || '').toUpperCase() === 'RE_ESTIMATED_CONFIRMED')
+        .reduce((max, e) => Math.max(max, evTime(e)), 0);
       // Only pre-tick rows a PERSON explicitly submitted:
       //   TECHNICIAN — this checklist
       //   OWNER      — the shop app's own action (Quality Check Completed)
@@ -403,6 +469,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
         const actor = (e.actor || '').toUpperCase();
         const isProgressRow = PROGRESS_ROWS.some((r) => r.key === k);
         if (!isProgressRow) return;
+        if (reEstimatedAt && evTime(e) < reEstimatedAt) return;
         if (actor === 'TECHNICIAN' || actor === 'OWNER') {
           done[k] = true;
           actorByKey[k] = actor;
@@ -464,9 +531,9 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
     return unsubscribe;
   }, [navigation, refreshTicket, refreshNotes, refreshProgress]);
 
-  const submitProgress = useCallback(async (row) => {
-    if (!progressChecked[row.key] && !progressDone[row.key]) {
-      notify('Tick the box first', `Check "${row.label}" before submitting.`);
+  const submitProgress = useCallback(async (row, lockReason) => {
+    if (lockReason) {
+      notify('Step locked', lockReason);
       return;
     }
     // PARTS_REQUIRED row requires the technician to spell out which part is
@@ -494,7 +561,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
     } finally {
       setProgressBusy(null);
     }
-  }, [ticketId, progressChecked, progressDone, progressNotes, refreshProgress]);
+  }, [ticketId, progressNotes, refreshProgress]);
 
 
   const devicePhotos = useMemo(
@@ -535,6 +602,32 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
       || new Date(approved.createdAt || 0) >= new Date(reEstimated.createdAt || 0));
     return { reEstimated, approved, approvalIsCurrent };
   }, [ticketEvents]);
+
+  // Step-by-step gate for the Service Progress checklist: a row stays locked
+  // until the steps before it on the Service History rail are recorded.
+  // Returns { [rowKey]: reason } for locked rows; unlocked rows are absent.
+  const progressLock = useMemo(() => {
+    const has = (key) => ticketEvents.some((e) => (e.status || '').toUpperCase() === key);
+    const verifiedDone = has('TECHNICIAN_COMPLIANCE_ISSUE_VERIFIED_UPDATED') || notesList.length > 0;
+    // No device-image step: the technician-side image upload was removed from
+    // this screen, so the chain starts at the verified issue note.
+    const verifyReason = !verifiedDone ? 'Verify the issue (submit a compliance note) first.' : null;
+    // Same rule as the "Customer Approved" card: a legacy ticket carrying only
+    // the customerApproval flag (no CUSTOMER_APPROVED event) counts as approved.
+    const approvedNow = estimateApproval.approvalIsCurrent
+      || (!estimateApproval.approved && ticket?.customerApproval === true);
+    const repairReason = verifyReason
+      || (!approvedNow ? 'Waiting for customer approval.' : null);
+    const lock = {
+      IN_REPAIR: repairReason,
+      PARTS_REQUIRED: repairReason || (!progressDone.IN_REPAIR ? 'Mark Repair Work In Progress first.' : null),
+      REPAIR_COMPLETED: repairReason || (!progressDone.IN_REPAIR ? 'Mark Repair Work In Progress first.' : null),
+      QUALITY_CHECK_COMPLETED: !progressDone.REPAIR_COMPLETED ? 'Mark Repair Completed first.' : null,
+      REPAIR_NOT_COMPLETED: verifyReason,
+    };
+    Object.keys(lock).forEach((k) => { if (!lock[k] || progressDone[k]) delete lock[k]; });
+    return lock;
+  }, [ticketEvents, yourPhotos, notesList, estimateApproval, progressDone, ticket?.customerApproval]);
 
   // Estimate breakdown that the re-estimate produced. priceItemsJson always
   // holds the CURRENT quote, which after a re-estimate is the re-estimated one.
@@ -634,6 +727,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
       uploaded.slice(0, 3).forEach((u, i) => { nextSlots[i] = { uri: u, remoteUrl: u }; });
       setYourPhotos(nextSlots);
       setPhotosEditing(uploaded.length === 0);
+      refreshProgress();
       notify('Saved', 'Your device images have been uploaded.');
     } catch (e) {
       const msg = e?.message || 'Could not save photos';
@@ -803,7 +897,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
 
   const submitNote = async () => {
     const trimmed = note.trim();
-    if (!trimmed) return;
+    if (!trimmed || !noteImages.some((s) => !!s?.uri)) return;
     setNoteSubmitting(true);
     try {
       // Audio was uploaded synchronously when recording stopped; just use the
@@ -838,6 +932,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
       // Submit. The timeline rail on the owner/customer side updates on its
       // own refresh from the backend event we just emitted.
       refreshNotes();
+      refreshProgress();
       notify('Note added', 'Your compliance note has been saved.');
     } catch (e) {
       // Surface the backend's actual message so a stale ticket-service or a
@@ -935,22 +1030,39 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
 
   if (loading && !ticket) {
     return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: C.bg }}>
-        <ActivityIndicator color={C.green} />
+      <View className="flex-1" style={{ backgroundColor: C.bg }}>
+        <JobHeader navigation={navigation} />
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={C.green} />
+        </View>
       </View>
     );
   }
 
   if (error || !ticket) {
     return (
-      <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: C.bg }}>
-        <Text className="font-bold mb-2" style={{ color: C.red }}>Ticket not found</Text>
-        <Text className="text-center" style={{ fontSize: rf(12), color: C.muted }}>{error || 'Try again from the task list.'}</Text>
+      <View className="flex-1" style={{ backgroundColor: C.bg }}>
+        <JobHeader navigation={navigation} />
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="font-bold mb-2" style={{ color: C.red }}>Job not found</Text>
+          <Text className="text-center" style={{ fontSize: rf(12), color: C.muted }}>{error || 'Try again from the job list.'}</Text>
+        </View>
       </View>
     );
   }
 
-  const noteReady = !!note.trim();
+  // Delivered / cancelled job: Job Details turns read-only.
+  const jobClosed = ['DELIVERED', 'CANCELLED'].includes(String(ticket.status || '').toUpperCase());
+  // Quality Check Completed ends the Service Progress process: from then on
+  // only the recorded steps are shown (Spare Parts Waiting / Repair Not
+  // Completed drop out if they were never used) and nothing can be ticked.
+  const progressClosed = !!progressDone.QUALITY_CHECK_COMPLETED;
+  const visibleProgressRows = progressClosed
+    ? PROGRESS_ROWS.filter((r) => progressDone[r.key])
+    : PROGRESS_ROWS;
+  // Description + at least one photo are mandatory; the voice note is optional.
+  const noteHasPhoto = noteImages.some((s) => !!s?.uri);
+  const noteReady = !!note.trim() && noteHasPhoto;
   const noteSubmitBlocked = noteSubmitting || !noteReady || isRecording || uploadingAudio;
   const noteAttachmentCount =
     ((noteAudioUrl || noteAudioLocalUri) ? 1 : 0)
@@ -996,73 +1108,75 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
 
   return (
     <View className="flex-1" style={{ backgroundColor: C.bg }}>
-      <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-        {/* Device hero card: thumbnail, bold device name, red pill for the
-            repair being done. */}
+      <JobHeader navigation={navigation} sub={ticketRef(ticket)} />
+      {/* No tab bar on this screen, so clear the system nav bar ourselves. */}
+      <ScrollView contentContainerStyle={{ padding: 10, paddingBottom: 32 + insets.bottom }} showsVerticalScrollIndicator={false}>
+        {/* Device card: photo, then Model Name / Model Number / Storage one per
+            line, and the issue in full (no truncation). */}
         <Card>
-          <View className="flex-row items-center">
+          <View className="flex-row items-start">
             {deviceImage && !deviceImageFailed ? (
               <Image
                 source={{ uri: deviceImage }}
                 resizeMode="contain"
                 onError={() => setDeviceImageFailed(true)}
-                style={{ width: 52, height: 64, borderRadius: 10, backgroundColor: C.surface }}
+                style={{ width: 56, height: 68, borderRadius: 10, backgroundColor: C.surface }}
               />
             ) : (
               <View
-                style={{ width: 52, height: 64, borderRadius: 10, backgroundColor: C.surface }}
+                style={{ width: 56, height: 68, borderRadius: 10, backgroundColor: C.surface }}
                 className="items-center justify-center"
               >
-                <Smartphone size={22} color={C.faint} />
+                <Smartphone size={24} color={C.faint} />
               </View>
             )}
-            <View className="flex-1" style={{ marginLeft: 10 }}>
-              <Text className="font-bold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>Device</Text>
-              <Text className="font-extrabold mt-0.5" style={{ fontSize: rf(14), color: C.ink }} numberOfLines={2}>
-                {ticket.deviceDisplayName || '—'}
-              </Text>
-              {ticket.repairServicesSummary ? (
-                <View
-                  className="self-start rounded-full px-2 py-0.5"
-                  style={{ backgroundColor: C.redTint, marginTop: 6 }}
-                >
-                  <Text className="font-extrabold" style={{ fontSize: rf(10), color: C.red }} numberOfLines={1}>
-                    {ticket.repairServicesSummary}
-                  </Text>
-                </View>
-              ) : null}
+            <View className="flex-1" style={{ marginLeft: 12 }}>
+              <InfoLine first label="Model Name" value={deviceParts(ticket).name} />
+              <InfoLine label="Model Number" value={deviceParts(ticket).number} />
+              <InfoLine label="Storage" value={deviceParts(ticket).storage} />
+              <InfoLine label="Issue" value={ticket.issueDescription || ticket.repairServicesSummary || '—'} />
             </View>
           </View>
         </Card>
 
-        {/* Customer-side device images. Read-only strip; if empty, show a
-            friendly placeholder instead of a dashed empty box. */}
-        <SectionHeader title="Customer Device Images" />
+        {/* Device summary: customer images, security and missing / damage
+            parts listed in one card, one icon row each. */}
+        <SectionHeader title="Device Summary" />
         <Card>
-          {devicePhotos.length === 0 ? (
-            <View className="items-center" style={{ paddingVertical: 8 }}>
-              <ImageIcon size={18} color={C.faint} />
-              <Text style={{ fontSize: rf(10.5), color: C.muted, marginTop: 4 }}>No images uploaded by the customer yet.</Text>
+          {/* Customer device images row */}
+          <View className="flex-row">
+            <View
+              className="rounded-full items-center justify-center"
+              style={{ width: 28, height: 28, backgroundColor: C.greenTint }}
+            >
+              <ImageIcon size={14} color={C.green} />
             </View>
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View className="flex-row">
-                {devicePhotos.map((url, i) => (
-                  <Pressable key={i} onPress={() => setPhotoAt(i)}>
-                    <Image
-                      source={{ uri: url }}
-                      style={{ width: 72, height: 80, borderRadius: 10, marginRight: 8, backgroundColor: C.surface }}
-                    />
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-          )}
-        </Card>
+            <View className="flex-1" style={{ marginLeft: 10 }}>
+              <Text className="font-bold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>
+                Customer Device Images
+              </Text>
+              {devicePhotos.length === 0 ? (
+                <Text className="font-bold mt-0.5" style={{ fontSize: rf(12), color: C.muted }}>No images uploaded yet</Text>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
+                  <View className="flex-row">
+                    {devicePhotos.map((url, i) => (
+                      <Pressable key={i} onPress={() => setPhotoAt(i)}>
+                        <Image
+                          source={{ uri: url }}
+                          style={{ width: 56, height: 62, borderRadius: 10, marginRight: 8, backgroundColor: C.surface }}
+                        />
+                      </Pressable>
+                    ))}
+                  </View>
+                </ScrollView>
+              )}
+            </View>
+          </View>
 
-        {/* Device Security + Missing/Damage Parts — paired card. */}
-        <SectionHeader title="Device Security & Missing / Damage Parts" accent={C.red} />
-        <Card>
+          {/* Divider */}
+          <View style={{ height: 1, backgroundColor: C.surface, marginVertical: 8 }} />
+
           {/* Security row */}
           <View className="flex-row items-center">
             <View
@@ -1077,25 +1191,25 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
               </Text>
               {ticket.deviceSecurityType && ticket.deviceSecurityType !== 'NONE' ? (
                 <View className="flex-row items-center mt-0.5">
-                  <Text className="font-extrabold" style={{ fontSize: rf(12.5), color: C.ink }}>
+                  <Text className="font-bold" style={{ fontSize: rf(12), color: C.ink }}>
                     {ticket.deviceSecurityType}
                   </Text>
-                  <Text className="font-extrabold mx-1" style={{ fontSize: rf(12.5), color: C.ink }}>·</Text>
+                  <Text className="font-bold mx-1" style={{ fontSize: rf(12), color: C.ink }}>·</Text>
                   <Text
-                    className="font-extrabold"
-                    style={{ fontSize: rf(12.5), color: C.ink, letterSpacing: 1 }}
+                    className="font-bold"
+                    style={{ fontSize: rf(12), color: C.ink, letterSpacing: 1 }}
                   >
                     {ticket.deviceSecurityValue || '—'}
                   </Text>
                 </View>
               ) : (
-                <Text className="font-bold mt-0.5" style={{ fontSize: rf(12.5), color: C.muted }}>No lock set</Text>
+                <Text className="font-bold mt-0.5" style={{ fontSize: rf(12), color: C.muted }}>No lock set</Text>
               )}
             </View>
           </View>
 
           {/* Divider */}
-          <View style={{ height: 1, backgroundColor: C.surface, marginVertical: 10 }} />
+          <View style={{ height: 1, backgroundColor: C.surface, marginVertical: 8 }} />
 
           {/* Missing / Damage parts row */}
           <View className="flex-row">
@@ -1117,87 +1231,22 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                       className="rounded-full px-2 py-0.5 mx-0.5 mb-1"
                       style={{ backgroundColor: C.redTint, borderWidth: 1, borderColor: C.redLine }}
                     >
-                      <Text className="font-extrabold" style={{ fontSize: rf(10.5), color: C.red }}>
+                      <Text className="font-bold" style={{ fontSize: rf(10.5), color: C.red }}>
                         {label}
                       </Text>
                     </View>
                   ))}
                 </View>
               ) : (
-                <Text className="font-bold mt-0.5" style={{ fontSize: rf(12.5), color: C.muted }}>Nil</Text>
+                <Text className="font-bold mt-0.5" style={{ fontSize: rf(12), color: C.muted }}>Nil</Text>
               )}
             </View>
           </View>
         </Card>
 
-        {/* Your-Side upload card. Three "+" slots; once filled, the
-            technician must tap Save to persist the URLs to the ticket. */}
-        <SectionHeader
-          title="Your Side Device Images"
-          right={
-            !photosEditing && yourPhotos.some((s) => s?.remoteUrl) ? (
-              <TouchableOpacity
-                onPress={() => setPhotosEditing(true)}
-                activeOpacity={0.8}
-                className="flex-row items-center rounded-full px-2.5 py-1"
-                style={{ backgroundColor: C.greenTint }}
-              >
-                <Pencil size={11} color={C.green} />
-                <Text className="font-extrabold ml-1" style={{ fontSize: rf(10.5), color: C.green }}>Edit</Text>
-              </TouchableOpacity>
-            ) : null
-          }
-        />
-        <Card>
-          <View className="flex-row -mx-1">
-            {yourPhotos.map((slot, i) => (
-              <View key={i} className="flex-1 px-1">
-                {slot ? (
-                  <View
-                    className="overflow-hidden"
-                    style={{ height: 86, borderRadius: 12, backgroundColor: C.surface }}
-                  >
-                    <Image source={{ uri: slot.uri }} style={{ width: '100%', height: '100%' }} />
-                    {photosEditing ? (
-                      <TouchableOpacity
-                        onPress={() => removePhoto(i)}
-                        hitSlop={8}
-                        style={{
-                          position: 'absolute', top: 5, right: 5,
-                          backgroundColor: 'rgba(30,30,30,0.75)', borderRadius: 12, padding: 3,
-                        }}
-                      >
-                        <X size={12} color="#FFFFFF" />
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                ) : (
-                  <AddPhotoSlot
-                    onPress={() => (photosEditing ? promptPickPhoto(i) : setPhotosEditing(true))}
-                  />
-                )}
-              </View>
-            ))}
-          </View>
-          {photosEditing ? (
-            <TouchableOpacity
-              onPress={submitPhotos}
-              disabled={photosSubmitting}
-              activeOpacity={0.85}
-              className="items-center justify-center"
-              style={{
-                backgroundColor: C.green, borderRadius: 12,
-                paddingVertical: 10, marginTop: 10,
-                opacity: photosSubmitting ? 0.6 : 1,
-              }}
-            >
-              {photosSubmitting
-                ? <ActivityIndicator color="#FFFFFF" />
-                : <Text className="text-white font-extrabold" style={{ fontSize: rf(12.5) }}>Save Device Images</Text>}
-            </TouchableOpacity>
-          ) : null}
-        </Card>
-
+        {/* Closed job: details only — the note / voice / image entry form is hidden. */}
+        {!jobClosed ? (
+          <>
         {/* Compliance Notes — single card with the textarea, voice-note row,
             three image slots, and a full-width "Save Note" CTA at the bottom. */}
         <SectionHeader title="Technician Issue Verified & Updated" accent={C.yellow} />
@@ -1209,10 +1258,10 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
             placeholder="Describe the issue you verified — what was found, what's been updated, anything the customer should know."
             placeholderTextColor={C.faint}
             style={{
-              fontSize: rf(12.5), color: C.ink,
+              fontSize: rf(12), color: C.ink,
               backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
               borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
-              minHeight: 72, textAlignVertical: 'top',
+              minHeight: 60, textAlignVertical: 'top',
             }}
           />
 
@@ -1220,8 +1269,8 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                 (a) idle, no clip → green "Record voice note" button
                 (b) recording     → red dot + mm:ss timer + Stop button
                 (c) clip ready    → play/pause + status + remove */}
-          <Text className="font-extrabold tracking-widest" style={{ fontSize: rf(9.5), color: C.muted, marginTop: 12, marginBottom: 6 }}>
-            VOICE NOTE
+          <Text className="font-bold tracking-widest" style={{ fontSize: rf(9.5), color: C.muted, marginTop: 10, marginBottom: 5 }}>
+            VOICE NOTE (OPTIONAL)
           </Text>
           {isRecording ? (
             <View
@@ -1230,7 +1279,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
             >
               <View className="h-2.5 w-2.5 rounded-full mr-2" style={{ backgroundColor: C.red }} />
               <View className="flex-1">
-                <Text className="font-extrabold" style={{ fontSize: rf(11.5), color: C.red }}>Recording…</Text>
+                <Text className="font-bold" style={{ fontSize: rf(11.5), color: C.red }}>Recording…</Text>
                 <Text className="font-bold" style={{ fontSize: rf(10.5), color: C.red }}>{recLabel}</Text>
               </View>
               <TouchableOpacity
@@ -1240,7 +1289,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                 style={{ backgroundColor: C.red }}
               >
                 <Square size={11} color="#FFFFFF" fill="#FFFFFF" />
-                <Text className="text-white font-extrabold ml-1.5" style={{ fontSize: rf(11.5) }}>Stop</Text>
+                <Text className="text-white font-bold ml-1.5" style={{ fontSize: rf(11.5) }}>Stop</Text>
               </TouchableOpacity>
             </View>
           ) : (noteAudioUrl || noteAudioLocalUri) ? (
@@ -1260,7 +1309,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                   : <Play size={15} color="#FFFFFF" />}
               </TouchableOpacity>
               <View className="flex-1 ml-2.5">
-                <Text className="font-extrabold" style={{ fontSize: rf(12), color: C.ink }}>Voice note attached</Text>
+                <Text className="font-bold" style={{ fontSize: rf(12), color: C.ink }}>Voice note attached</Text>
                 <Text style={{ fontSize: rf(10), color: C.muted }}>
                   {uploadingAudio
                     ? 'Uploading to cloud…'
@@ -1286,10 +1335,10 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
               onPress={startNoteRecording}
               activeOpacity={0.85}
               className="flex-row items-center justify-center"
-              style={{ backgroundColor: C.green, borderRadius: 12, paddingVertical: 10 }}
+              style={{ backgroundColor: C.green, borderRadius: 12, paddingVertical: 8 }}
             >
               <Mic size={15} color="#FFFFFF" />
-              <Text className="text-white font-extrabold ml-2" style={{ fontSize: rf(12.5) }}>Record voice note</Text>
+              <Text className="text-white font-bold ml-2" style={{ fontSize: rf(12) }}>Record voice note</Text>
             </TouchableOpacity>
           )}
 
@@ -1300,8 +1349,8 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
             const filled = noteImages.filter((s) => !!s?.uri).length;
             return (
               <>
-                <View className="flex-row items-center justify-between" style={{ marginTop: 12, marginBottom: 6 }}>
-                  <Text className="font-extrabold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>
+                <View className="flex-row items-center justify-between" style={{ marginTop: 10, marginBottom: 5 }}>
+                  <Text className="font-bold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>
                     Attach Photos
                   </Text>
                   <Text className="font-bold" style={{ fontSize: rf(10), color: C.muted }}>
@@ -1314,7 +1363,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                       {slot ? (
                         <View
                           className="overflow-hidden"
-                          style={{ height: 80, borderRadius: 12, backgroundColor: C.surface }}
+                          style={{ height: 68, borderRadius: 12, backgroundColor: C.surface }}
                         >
                           <Image source={{ uri: slot.uri }} style={{ width: '100%', height: '100%' }} />
                           <TouchableOpacity
@@ -1329,7 +1378,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                           </TouchableOpacity>
                         </View>
                       ) : (
-                        <AddPhotoSlot onPress={() => promptPickNoteImage(i)} height={80} />
+                        <AddPhotoSlot onPress={() => promptPickNoteImage(i)} height={68} />
                       )}
                     </View>
                   ))}
@@ -1346,14 +1395,14 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
             className="items-center justify-center"
             style={{
               backgroundColor: C.green, borderRadius: 12,
-              paddingVertical: 11, marginTop: 12,
+              paddingVertical: 9, marginTop: 10,
               opacity: noteSubmitBlocked ? 0.5 : 1,
             }}
           >
             {noteSubmitting
               ? <ActivityIndicator color="#FFFFFF" />
               : (
-                <Text className="text-white font-extrabold" style={{ fontSize: rf(13) }}>
+                <Text className="text-white font-bold" style={{ fontSize: rf(12.5) }}>
                   Save Note{noteAttachmentCount ? ` (+${noteAttachmentCount} ${noteAttachmentCount === 1 ? 'attachment' : 'attachments'})` : ''}
                 </Text>
               )}
@@ -1365,11 +1414,15 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                 : isRecording
                 ? 'Stop the recording first.'
                 : !noteReady
-                ? 'Enter a note to submit. Voice + photos are optional.'
+                ? (!note.trim()
+                  ? 'Enter a description to submit. At least 1 photo is required; voice is optional.'
+                  : 'Add at least 1 photo to submit. Voice is optional.')
                 : null}
             </Text>
           ) : null}
         </Card>
+          </>
+        ) : null}
 
         {/* Previously-submitted notes — each rendered as a left-accented
             card so the technician can re-read what they've recorded. The
@@ -1377,9 +1430,15 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
             it is the context the notes below were written against, and the
             technician must not start work on a price the customer hasn't
             signed off on yet. */}
+        {jobClosed && notesList.length === 0 && !showEstimateBlock ? (
+          <>
+            <SectionHeader title="Technician Issue Verified & Updated" accent={C.yellow} />
+            <Card><Text style={{ fontSize: rf(12), color: C.muted }}>No notes recorded.</Text></Card>
+          </>
+        ) : null}
         {notesList.length > 0 || showEstimateBlock ? (
           <>
-            <SectionHeader title="Submitted Notes" accent={C.ink} />
+            <SectionHeader title={jobClosed ? 'Technician Issue Verified & Updated' : 'Service Re-estimated'} accent={jobClosed ? C.yellow : C.ink} />
             {showEstimateBlock ? (
               <View
                 style={{
@@ -1426,7 +1485,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                 ) : null}
 
                 {estimateApproval.reEstimated ? (
-                  <View style={{ height: 1, backgroundColor: C.surface, marginVertical: 10 }} />
+                  <View style={{ height: 1, backgroundColor: C.surface, marginVertical: 8 }} />
                 ) : null}
 
                 <EstimateRow {...approvalRowProps} />
@@ -1461,7 +1520,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                       /* ---- Edit mode: text, attachments, Save / Cancel ---- */
                       <View className="flex-1">
                         <Text
-                          className="font-extrabold uppercase tracking-wider mb-1.5"
+                          className="font-bold uppercase tracking-wider mb-1.5"
                           style={{ fontSize: rf(9.5), color: C.muted }}
                         >
                           Editing note
@@ -1473,7 +1532,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                           placeholder="Update what you recorded for this ticket."
                           placeholderTextColor={C.faint}
                           style={{
-                            fontSize: rf(12.5), color: C.ink,
+                            fontSize: rf(12), color: C.ink,
                             backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
                             borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
                             minHeight: 68, textAlignVertical: 'top',
@@ -1505,7 +1564,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                               style={{ backgroundColor: C.redTint }}
                             >
                               <Trash2 size={11} color={C.red} />
-                              <Text className="font-extrabold ml-1" style={{ fontSize: rf(10.5), color: C.red }}>
+                              <Text className="font-bold ml-1" style={{ fontSize: rf(10.5), color: C.red }}>
                                 Remove
                               </Text>
                             </TouchableOpacity>
@@ -1550,7 +1609,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                             className="items-center justify-center px-4 mr-2"
                             style={{ borderRadius: 10, paddingVertical: 8, borderWidth: 1, borderColor: C.line, backgroundColor: '#FFFFFF' }}
                           >
-                            <Text className="font-extrabold" style={{ fontSize: rf(12), color: C.muted }}>
+                            <Text className="font-bold" style={{ fontSize: rf(12), color: C.muted }}>
                               Cancel
                             </Text>
                           </TouchableOpacity>
@@ -1567,7 +1626,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                             {editNoteSaving
                               ? <ActivityIndicator color="#FFFFFF" />
                               : (
-                                <Text className="text-white font-extrabold" style={{ fontSize: rf(12.5) }}>
+                                <Text className="text-white font-bold" style={{ fontSize: rf(12) }}>
                                   Save Changes
                                 </Text>
                               )}
@@ -1578,9 +1637,10 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                       /* ---- Read-only ---- */
                       <View className="flex-1">
                         <View className="flex-row items-start">
-                          <Text className="flex-1 pr-2" style={{ fontSize: rf(12.5), color: C.ink }}>{n.note}</Text>
+                          <Text className="flex-1 pr-2" style={{ fontSize: rf(12), color: C.ink }}>{n.note}</Text>
                           {/* Disabled while another note is open for editing so
                               two drafts can't fight over the single edit slot. */}
+                          {!jobClosed ? (
                           <TouchableOpacity
                             onPress={() => beginEditNote(n)}
                             disabled={!!editingNoteId}
@@ -1590,10 +1650,11 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                             style={{ backgroundColor: C.greenTint, opacity: editingNoteId ? 0.4 : 1 }}
                           >
                             <Pencil size={11} color={C.green} />
-                            <Text className="font-extrabold ml-1" style={{ fontSize: rf(10.5), color: C.green }}>
+                            <Text className="font-bold ml-1" style={{ fontSize: rf(10.5), color: C.green }}>
                               Edit
                             </Text>
                           </TouchableOpacity>
+                          ) : null}
                         </View>
                         {n.audioUrl ? (
                           <View className="flex-row items-center mt-2">
@@ -1637,71 +1698,90 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
         ) : null}
 
         {/* Service Progress checklist — matches the Service History timeline
-            row-for-row. Each row has three visual states:
-              * idle    → numbered chip + label + Mark chip
-              * pending → chip turns yellow; [Done] (confirms emit) + [Cancel]
-                          (clears the tick) appear as a chip pair
-              * done    → green tick + DONE pill */}
+            row-for-row, drawn as a vertical timeline (plain nodes joined by
+            a rail). Each row ends in a tick only:
+              * idle    → grey node + label + grey tick (pale when locked)
+              * pending → Spare Parts Waiting only: green tick + note input + [Save]
+              * done    → green tick, "Recorded" under the label */}
         <SectionHeader title="Service Progress" />
         <Card>
-          <Text style={{ fontSize: rf(10), color: C.muted, marginBottom: 2 }}>
-            Tick a row and tap Done to record that step on the customer's Service History.
+          <Text style={{ fontSize: rf(12), color: '#6B7280', marginBottom: 2 }}>
+            {progressClosed
+              ? 'Quality check completed — service progress is closed.'
+              : 'Tap the tick to record that step on the customer\'s Service History.'}
           </Text>
-          {PROGRESS_ROWS.map((row, idx) => {
+          {visibleProgressRows.map((row, idx) => {
             const checked = !!progressChecked[row.key];
             const done = !!progressDone[row.key];
             const busy = progressBusy === row.key;
-            const stepNo = String(idx + 1).padStart(2, '0');
-            const toggleTick = () =>
+            const lockReason = progressLock[row.key] || null;
+            const toggleTick = () => {
+              if (lockReason && !checked) { notify('Step locked', lockReason); return; }
               setProgressChecked((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
+            };
             const needsNote = row.key === 'PARTS_REQUIRED';
             const noteValue = progressNotes[row.key] || '';
             const showNoteInput = needsNote && (checked || done);
+            // One tap on the tick records the step and turns it green. Spare
+            // Parts Waiting first opens its note input (saved from there).
+            const onTickPress = () => {
+              if (needsNote) { toggleTick(); return; }
+              submitProgress(row, lockReason);
+            };
+            const isLast = idx === visibleProgressRows.length - 1;
+            const prevDone = idx > 0 && !!progressDone[visibleProgressRows[idx - 1].key];
+            const nextDone = !isLast && !!progressDone[visibleProgressRows[idx + 1].key];
             return (
-              <View
-                key={row.key}
-                style={{
-                  paddingVertical: 9,
-                  borderTopWidth: idx > 0 ? 1 : 0, borderTopColor: C.surface,
-                }}
-              >
-                <View className="flex-row items-center">
-                {/* Numbered chip — green when done, yellow when ticked, grey otherwise. */}
-                <View
-                  className="rounded-full items-center justify-center"
-                  style={{
-                    width: 26, height: 26,
-                    backgroundColor: done ? C.greenTint : checked ? C.yellowTint : C.surface,
-                  }}
-                >
-                  {done
-                    ? <Check size={13} color={C.green} />
-                    : (
-                      <Text
-                        className="font-extrabold"
-                        style={{ fontSize: rf(9.5), color: checked ? C.yellowInk : C.muted }}
-                      >
-                        {stepNo}
-                      </Text>
-                    )}
+              <View key={row.key} className="flex-row">
+                {/* Timeline rail: connector above, step node, connector below.
+                    A recorded step's node turns green with a tick; a connector
+                    turns green once the steps at both its ends are recorded. */}
+                <View style={{ width: 26, alignItems: 'center' }}>
+                  <View
+                    style={{
+                      width: 2, height: 7,
+                      backgroundColor: idx === 0 ? 'transparent' : (prevDone && done ? C.green : C.line),
+                    }}
+                  />
+                  <View
+                    className="rounded-full items-center justify-center"
+                    style={{
+                      width: 26, height: 26,
+                      backgroundColor: done ? C.green : checked ? C.yellowTint : C.surface,
+                    }}
+                  >
+                    {done ? <Check size={14} color="#FFFFFF" strokeWidth={3} /> : null}
+                  </View>
+                  <View
+                    style={{
+                      width: 2, flex: 1,
+                      backgroundColor: isLast ? 'transparent' : (done && nextDone ? C.green : C.line),
+                    }}
+                  />
                 </View>
 
+                <View style={{ flex: 1, marginLeft: 10, paddingVertical: 7 }}>
+                <View className="flex-row items-start">
                 <TouchableOpacity
-                  onPress={done ? null : toggleTick}
-                  disabled={done}
+                  onPress={done ? null : onTickPress}
+                  disabled={done || busy}
                   activeOpacity={0.7}
-                  style={{ flex: 1, marginLeft: 10 }}
+                  style={{ flex: 1, paddingTop: 4 }}
                 >
                   <Text
-                    style={{ fontSize: rf(12.5), color: C.ink }}
-                    className={done ? 'font-extrabold' : 'font-bold'}
+                    style={{ fontSize: rf(12), color: C.ink }}
+                    className={done ? 'font-bold' : 'font-bold'}
                     numberOfLines={1}
                   >
                     {row.label}
                   </Text>
-                  {checked && !done ? (
+                  {lockReason && !done ? (
+                    <Text className="mt-0.5" style={{ fontSize: rf(10), color: C.muted }} numberOfLines={2}>
+                      🔒 {lockReason}
+                    </Text>
+                  ) : checked && !done ? (
                     <Text className="mt-0.5" style={{ fontSize: rf(10), color: C.muted }}>
-                      Tap Done to confirm.
+                      Add the part below, then tap Save.
                     </Text>
                   ) : done ? (
                     <Text className="mt-0.5" style={{ fontSize: rf(10), color: C.green }}>
@@ -1710,64 +1790,28 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                   ) : null}
                 </TouchableOpacity>
 
-                {/* Right action area: changes by state. */}
-                {done ? (
-                  <View className="rounded-full px-2.5 py-1" style={{ backgroundColor: C.greenTint }}>
-                    <Text className="font-extrabold" style={{ fontSize: rf(9.5), color: C.green }}>DONE</Text>
-                  </View>
-                ) : checked ? (
-                  <View className="flex-row items-center">
-                    {/* Done — primary confirmation, fires the emit. */}
-                    <TouchableOpacity
-                      onPress={() => submitProgress(row)}
-                      disabled={busy}
-                      activeOpacity={0.85}
-                      className="rounded-full flex-row items-center"
-                      style={{
-                        backgroundColor: C.green,
-                        paddingHorizontal: 12, paddingVertical: 6,
-                        opacity: busy ? 0.6 : 1,
-                      }}
-                    >
-                      {busy
-                        ? <ActivityIndicator color="#FFFFFF" size="small" />
-                        : (
-                          <>
-                            <Check size={12} color="#FFFFFF" />
-                            <Text className="font-extrabold text-white ml-1" style={{ fontSize: rf(11) }}>Done</Text>
-                          </>
-                        )}
-                    </TouchableOpacity>
-                    {/* Cancel — clears the tick, no emit. */}
-                    <TouchableOpacity
-                      onPress={toggleTick}
-                      disabled={busy}
-                      activeOpacity={0.8}
-                      className="rounded-full flex-row items-center ml-1.5"
-                      style={{
-                        backgroundColor: '#FFFFFF',
-                        borderWidth: 1, borderColor: C.line,
-                        paddingHorizontal: 10, paddingVertical: 5,
-                      }}
-                    >
-                      <X size={11} color={C.muted} />
-                      <Text className="font-extrabold ml-1" style={{ fontSize: rf(11), color: C.muted }}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
+                {/* Right: the tick only. Grey → tap → green (recorded). While
+                    saving, a spinner stands in for it. */}
+                <View style={{ marginTop: 2 }}>
+                {busy ? (
+                  <ActivityIndicator color={C.green} size="small" />
                 ) : (
-                  // Idle: a Mark chip that ticks the row (same as tapping the label).
                   <TouchableOpacity
-                    onPress={toggleTick}
+                    onPress={done ? null : onTickPress}
+                    disabled={done}
                     activeOpacity={0.8}
-                    className="rounded-full"
-                    style={{
-                      backgroundColor: C.surface,
-                      paddingHorizontal: 12, paddingVertical: 6,
-                    }}
+                    hitSlop={8}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: done || checked }}
                   >
-                    <Text className="font-extrabold" style={{ fontSize: rf(11), color: C.ink }}>Mark</Text>
+                    <Check
+                      size={22}
+                      color={done || checked ? C.green : lockReason ? C.line : C.muted}
+                      strokeWidth={done || checked ? 3 : 2.5}
+                    />
                   </TouchableOpacity>
                 )}
+                </View>
                 </View>
 
                 {/* Note input — only on the Spare Parts Waiting row. Backend
@@ -1775,8 +1819,8 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                     what the customer + shop + technician timelines render
                     below the matching step row. */}
                 {showNoteInput ? (
-                  <View style={{ marginLeft: 36, marginTop: 8 }}>
-                    <Text className="font-extrabold uppercase tracking-wider mb-1" style={{ fontSize: rf(9.5), color: C.muted }}>
+                  <View style={{ marginTop: 8 }}>
+                    <Text className="font-bold uppercase tracking-wider mb-1" style={{ fontSize: rf(9.5), color: C.muted }}>
                       Which spare part is waiting?
                     </Text>
                     <TextInput
@@ -1787,7 +1831,7 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                       multiline
                       placeholder="e.g. Display + battery on order from Samsung distributor, ETA 3 days."
                       placeholderTextColor={C.faint}
-                      editable={!busy}
+                      editable={!busy && !progressClosed}
                       style={{
                         fontSize: rf(12), color: C.ink,
                         backgroundColor: C.yellowSoft,
@@ -1800,8 +1844,20 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
                     <Text className="mt-1" style={{ fontSize: rf(9.5), color: C.muted }}>
                       Shown to the customer, shop owner, and on your own history rail.
                     </Text>
+                    {checked && !done ? (
+                      <TouchableOpacity
+                        onPress={() => submitProgress(row, lockReason)}
+                        disabled={busy}
+                        activeOpacity={0.85}
+                        className="self-start rounded-full mt-2"
+                        style={{ backgroundColor: C.green, paddingHorizontal: 14, paddingVertical: 6, opacity: busy ? 0.6 : 1 }}
+                      >
+                        <Text className="font-bold text-white" style={{ fontSize: rf(11) }}>Save</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 ) : null}
+                </View>
               </View>
             );
           })}
@@ -1818,17 +1874,17 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
               className="flex-row items-center"
               style={{
                 backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: C.border,
-                paddingVertical: 10, paddingHorizontal: 10,
+                paddingVertical: 8, paddingHorizontal: 10,
               }}
             >
               <View
                 className="rounded-full items-center justify-center"
-                style={{ width: 32, height: 32, backgroundColor: C.greenTint }}
+                style={{ width: 28, height: 28, backgroundColor: C.greenTint }}
               >
                 <Search size={15} color={C.green} />
               </View>
               <View className="flex-1" style={{ marginLeft: 8 }}>
-                <Text className="font-extrabold" style={{ fontSize: rf(12.5), color: C.ink }} numberOfLines={1}>View Reference</Text>
+                <Text className="font-bold" style={{ fontSize: rf(12), color: C.ink }} numberOfLines={1}>View Reference</Text>
                 <Text style={{ fontSize: rf(9.5), color: C.muted, marginTop: 1 }} numberOfLines={2}>Find an existing solution pack</Text>
               </View>
             </TouchableOpacity>
@@ -1840,17 +1896,17 @@ export default function TechnicianTicketDetailScreen({ route, navigation }) {
               className="flex-row items-center"
               style={{
                 backgroundColor: C.green, borderRadius: 14, borderWidth: 1, borderColor: C.green,
-                paddingVertical: 10, paddingHorizontal: 10,
+                paddingVertical: 8, paddingHorizontal: 10,
               }}
             >
               <View
                 className="rounded-full items-center justify-center"
-                style={{ width: 32, height: 32, backgroundColor: 'rgba(255,255,255,0.2)' }}
+                style={{ width: 28, height: 28, backgroundColor: 'rgba(255,255,255,0.2)' }}
               >
                 <UploadCloud size={15} color="#FFFFFF" />
               </View>
               <View className="flex-1" style={{ marginLeft: 8 }}>
-                <Text className="text-white font-extrabold" style={{ fontSize: rf(12.5) }} numberOfLines={1}>Upload New</Text>
+                <Text className="text-white font-bold" style={{ fontSize: rf(12) }} numberOfLines={1}>Upload New</Text>
                 <Text style={{ fontSize: rf(9.5), color: 'rgba(255,255,255,0.85)', marginTop: 1 }} numberOfLines={2}>Share your fix with the team</Text>
               </View>
             </TouchableOpacity>

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Pressable, View } from 'react-native';
+import { Text } from '../components/Typography';
 import { Card, SearchBar } from '../components/rnr';
 import { Check, Smartphone } from 'lucide-react-native';
 import { listBrands, listBrandsForCategory } from '../api/master';
-import { rf } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
 
 function trackingId(booking) {
   return booking?.bookingNumber
@@ -107,7 +108,7 @@ export default function PickupSelectBrandScreen({ navigation, route }) {
               {uri ? (
                 <Image source={{ uri }} style={{ width: 40, height: 40 }} resizeMode="contain" />
               ) : (
-                <Smartphone size={22} color="#00008B" />
+                <Smartphone size={22} color="#035C6C" />
               )}
             </View>
             <Text
@@ -128,17 +129,17 @@ export default function PickupSelectBrandScreen({ navigation, route }) {
       <View className="px-4 pt-3 pb-2">
         <Card className="flex-row items-center mb-3">
           <View className="w-11 h-11 rounded-xl bg-primary/10 items-center justify-center mr-3">
-            <Smartphone size={20} color="#00008B" />
+            <Smartphone size={rs(18)} color="#035C6C" />
           </View>
           <View className="flex-1">
             <Text className="text-text-muted uppercase tracking-widest font-bold" style={{ fontSize: rf(10) }}>
               Tracking
             </Text>
-            <Text className="font-extrabold text-text mt-0.5" style={{ fontSize: rf(13) }} numberOfLines={1}>
+            <Text className="font-extrabold text-text mt-0.5" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }} numberOfLines={1}>
               {trackingId(booking)}
             </Text>
             {booking?.customerName ? (
-              <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(11) }} numberOfLines={1}>
+              <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(12), color: '#6B7280' }} numberOfLines={1}>
                 Customer · <Text className="font-bold text-text">{booking.customerName}</Text>
               </Text>
             ) : null}
@@ -164,7 +165,7 @@ export default function PickupSelectBrandScreen({ navigation, route }) {
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#00008B" />
+          <ActivityIndicator color="#035C6C" />
         </View>
       ) : (
         <FlatList

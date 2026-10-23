@@ -1,10 +1,11 @@
 import React from 'react';
-import { Pressable, TextInput, View, Text } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { TextInput, Text } from '../Typography';
 import { Search, X } from 'lucide-react-native';
 import { cn } from './cn';
 
 const shadow = {
-  shadowColor: '#0F172A',
+  shadowColor: '#111111',
   shadowOpacity: 0.06,
   shadowRadius: 10,
   shadowOffset: { width: 0, height: 3 },
@@ -31,7 +32,7 @@ export function SearchBar({
       )}
       style={shadow}
     >
-      <Search size={18} color="#64748B" />
+      <Search size={18} color="#6B7280" />
       {onPress ? (
         <Text className="flex-1 ml-2 text-sm text-text-muted">{placeholder}</Text>
       ) : (
@@ -47,7 +48,7 @@ export function SearchBar({
       )}
       {value ? (
         <Pressable onPress={onClear} className="h-6 w-6 items-center justify-center rounded-full bg-background ml-2">
-          <X size={14} color="#64748B" />
+          <X size={14} color="#6B7280" />
         </Pressable>
       ) : null}
       {rightAccessory}

@@ -1,19 +1,17 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Pressable,
-  ScrollView,
-  ActivityIndicator,
-  useWindowDimensions,
-} from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Pressable, ScrollView, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  BriefcaseBusiness, BriefcaseMedical, Check, ChevronRight, CircleCheck, Clock,
-  CloudUpload, PersonStanding, Send, UserRound,
+  BriefcaseBusiness,
+  BriefcaseMedical,
+  ChevronRight,
+  CircleCheck,
+  Clock,
+  CloudUpload,
+  PersonStanding,
+  Send,
+  UserRound,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { applyEmployeeLeave } from '../api/technician';
@@ -24,28 +22,28 @@ import DatePickerField from '../components/DatePickerField';
 import MintScreenHeader, { useHideNativeHeader } from '../components/MintScreenHeader';
 import { rf, rlh, rs } from '../utils/responsive';
 
-// Design tokens (GGFIX green + mint).
+// Design tokens (Near G Fix green + mint).
 const C = {
-  green: '#09AD2A',
-  red: '#F84141',
-  yellow: '#F3BF23',
-  ink: '#1E1E1E',
-  bg: '#F8F8F8',
-  surface: '#F3F3F3',
-  greenTint: '#E6F7EA',
-  greenSoft: '#F3FBF4',
+  green: '#035C6C',
+  red: '#F32C26',
+  yellow: '#FAA700',
+  ink: '#111111',
+  bg: '#F3F4F6',
+  surface: '#F3F4F6',
+  greenTint: '#E5F3F5',
+  greenSoft: '#E5F3F5',
   redTint: '#FEECEC',
   yellowTint: '#FDF6E0',
   // roles
-  deep: '#09AD2A',
-  primary: '#09AD2A',
-  bright: '#09AD2A',
-  mint: '#E6F7EA',
+  deep: '#035C6C',
+  primary: '#035C6C',
+  bright: '#035C6C',
+  mint: '#E5F3F5',
 };
 const CARD = '#FFFFFF';
-const BORDER = '#E6E6E6';
-const TEXT = '#1E1E1E';
-const MUTED = '#6E6E6E';
+const BORDER = '#E5E7EB';
+const TEXT = '#111111';
+const MUTED = '#6B7280';
 const SUBTLE = '#A3A3A3';
 const MAX_CONTENT_WIDTH = 720;
 
@@ -65,10 +63,10 @@ const TYPE_LOOK = {
 // pending-leaves list they already approve from. Each type carries an icon +
 // accent colour for the selectable cards.
 const PERMISSION_TYPES = [
-  { value: 'PERSONAL',    label: 'Personal',                 icon: 'person-outline',    color: '#2563EB', soft: '#EFF6FF' },
-  { value: 'MEDICAL',     label: 'Medical',                  icon: 'medkit-outline',    color: '#E11D48', soft: '#FFF1F2' },
-  { value: 'OFFICIAL',    label: 'Official',                 icon: 'briefcase-outline', color: '#0D9488', soft: '#F0FDFA' },
-  { value: 'SHORT_LEAVE', label: 'Short Leave / Early Going', icon: 'walk-outline',      color: '#7C3AED', soft: '#F5F3FF' },
+  { value: 'PERSONAL',    label: 'Personal',                 icon: 'person-outline',    color: '#035C6C', soft: '#EFF6FF' },
+  { value: 'MEDICAL',     label: 'Medical',                  icon: 'medkit-outline',    color: '#F32C26', soft: '#FFF1F2' },
+  { value: 'OFFICIAL',    label: 'Official',                 icon: 'briefcase-outline', color: '#035C6C', soft: '#F0FDFA' },
+  { value: 'SHORT_LEAVE', label: 'Short Leave / Early Going', icon: 'walk-outline',      color: '#1C3053', soft: '#F5F3FF' },
 ];
 
 function toISO(date) {
@@ -218,7 +216,6 @@ export default function PermissionApplyScreen({ navigation }) {
               <Clock size={rs(22)} color={C.green} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.title}>Apply for Permission</Text>
               <Text style={styles.subtitle}>
                 Short, same-day permission (e.g. early going). Once approved, you can check out before your duty end time.
               </Text>
@@ -236,7 +233,7 @@ export default function PermissionApplyScreen({ navigation }) {
                 <Pressable
                   key={t.value}
                   onPress={() => setPermType(t.value)}
-                  style={[styles.typeChip, { width: typeW }, active && styles.typeChipActive]}
+                  style={[styles.typeChip, active && styles.typeChipActive]}
                   android_ripple={{ color: C.greenTint }}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: active }}
@@ -244,14 +241,7 @@ export default function PermissionApplyScreen({ navigation }) {
                   <View style={[styles.typeIcon, { backgroundColor: active ? look.strong : look.soft }]}>
                     <Icon size={rs(17)} color={active ? look.onStrong : look.fg} strokeWidth={2.2} />
                   </View>
-                  <Text style={styles.typeLabel} numberOfLines={2}>{t.label}</Text>
-                  {active ? (
-                    <View style={styles.radioOn}>
-                      <Check size={rs(13)} color="#FFFFFF" strokeWidth={3} />
-                    </View>
-                  ) : (
-                    <View style={styles.radioOff} />
-                  )}
+                  <Text style={styles.typeLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.8}>{t.label.replace(' / ', '\n')}</Text>
                 </Pressable>
               );
             })}
@@ -344,6 +334,7 @@ export default function PermissionApplyScreen({ navigation }) {
               )}
             </TouchableOpacity>
           </View>
+
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -368,29 +359,28 @@ const styles = StyleSheet.create({
     width: rs(42), height: rs(42), borderRadius: rs(21), backgroundColor: C.greenTint,
     alignItems: 'center', justifyContent: 'center',
   },
-  title: { fontSize: rf(16), fontWeight: '800', color: TEXT },
-  subtitle: { fontSize: rf(11.5), color: MUTED, marginTop: 1, lineHeight: rlh(16) },
+  subtitle: { fontSize: rf(12), color: '#6B7280', lineHeight: rlh(16) },
 
   // Section header
   sectionRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(10), marginBottom: rs(6) },
   sectionAccent: { width: rs(4), height: rs(16), borderRadius: 2, backgroundColor: C.green, marginRight: rs(8) },
-  sectionLabel: { fontSize: rf(15), fontWeight: '800', color: TEXT },
+  sectionLabel: { fontSize: rf(16), fontWeight: '800', color: '#1C3053' },
   sectionHint: {
     marginLeft: rs(8), fontSize: rf(11), fontWeight: '600', color: MUTED,
     backgroundColor: C.surface, paddingHorizontal: rs(8), paddingVertical: rs(2), borderRadius: 999, overflow: 'hidden',
   },
 
   // Type cards
-  typeGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  typeGrid: { flexDirection: 'row' },
   typeChip: {
-    minHeight: rs(48), flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    flex: 1, minHeight: rs(72), flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: rs(5),
     backgroundColor: CARD, borderWidth: 1.5, borderColor: BORDER, borderRadius: rs(14),
-    paddingVertical: rs(6), paddingHorizontal: rs(8), ...cardShadow,
+    paddingVertical: rs(6), paddingHorizontal: rs(3), ...cardShadow,
   },
   typeChipActive: { borderColor: C.green, backgroundColor: C.greenSoft },
-  typeIcon: { width: rs(32), height: rs(32), borderRadius: rs(10), alignItems: 'center', justifyContent: 'center' },
-  typeLabel: { flex: 1, fontSize: rf(13), fontWeight: '700', color: TEXT, lineHeight: rlh(16) },
-  radioOff: { width: rs(20), height: rs(20), borderRadius: rs(10), borderWidth: 2, borderColor: '#D4D4D4' },
+  typeIcon: { width: rs(34), height: rs(34), borderRadius: rs(17), alignItems: 'center', justifyContent: 'center' },
+  typeLabel: { fontSize: rf(11), fontWeight: '700', color: TEXT, lineHeight: rlh(14), textAlign: 'center' },
+  radioOff: { width: rs(20), height: rs(20), borderRadius: rs(10), borderWidth: 2, borderColor: '#E5E7EB' },
   radioOn: {
     width: rs(22), height: rs(22), borderRadius: rs(11), backgroundColor: C.green,
     alignItems: 'center', justifyContent: 'center',
@@ -398,7 +388,7 @@ const styles = StyleSheet.create({
 
   // Cards
   card: {
-    backgroundColor: CARD, borderRadius: rs(16), borderWidth: 1, borderColor: BORDER, padding: rs(10), ...cardShadow,
+    backgroundColor: CARD, borderRadius: rs(16), borderWidth: 1, borderColor: BORDER, padding: rs(8), ...cardShadow,
   },
 
   // Fields
@@ -408,7 +398,7 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: rf(12), fontWeight: '700', color: TEXT },
   fieldHint: { fontSize: rf(11), fontWeight: '500', color: MUTED },
   pickerField: {
-    minHeight: rs(42), borderRadius: rs(12), borderColor: BORDER, paddingHorizontal: rs(10), gap: rs(8),
+    minHeight: rs(38), borderRadius: rs(12), borderColor: BORDER, paddingHorizontal: rs(10), gap: rs(8),
   },
 
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
@@ -416,14 +406,14 @@ const styles = StyleSheet.create({
 
   // Reason
   textArea: {
-    minHeight: rs(80), textAlignVertical: 'top', fontSize: rf(13), color: TEXT,
+    minHeight: rs(64), textAlignVertical: 'top', fontSize: rf(13), color: TEXT,
     backgroundColor: C.bg, borderWidth: 1, borderColor: BORDER, borderRadius: rs(12), padding: rs(10),
   },
 
   // Attachment
   upload: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(10), minHeight: rs(56),
-    backgroundColor: CARD, borderWidth: 1.5, borderColor: '#D4D4D4', borderStyle: 'dashed',
+    flexDirection: 'row', alignItems: 'center', gap: rs(10), minHeight: rs(48),
+    backgroundColor: CARD, borderWidth: 1.5, borderColor: '#E5E7EB', borderStyle: 'dashed',
     borderRadius: rs(14), paddingVertical: rs(8), paddingHorizontal: rs(10),
   },
   uploadDone: { borderStyle: 'solid', borderColor: C.green, backgroundColor: C.greenSoft },

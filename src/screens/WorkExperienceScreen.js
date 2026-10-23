@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, Image, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, ScrollView, Image, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Store,
@@ -15,20 +16,21 @@ import {
 import { useSelector } from 'react-redux';
 import { useTechnicianId } from '../auth/useTechnicianId';
 import { getMyExperiences, getMyTechnicianProfile } from '../api/technician';
-import { shopApi } from '../api/client';
+import { shopApi, authApi } from '../api/client';
+import { listMyTickets } from '../api/tickets';
 import { selectShopId } from '../store/authSlice';
 import { rf } from '../utils/responsive';
 
 const COLORS = {
-  background: '#F8F8F8',
+  background: '#F3F4F6',
   card: '#FFFFFF',
-  border: '#ECECEC',
-  text: '#1E1E1E',
-  textMuted: '#6E6E6E',
-  primary: '#09AD2A',
-  banner: '#09AD2A',
-  green: '#09AD2A',
-  red: '#F84141',
+  border: '#E5E7EB',
+  text: '#111111',
+  textMuted: '#6B7280',
+  primary: '#035C6C',
+  banner: '#035C6C',
+  green: '#035C6C',
+  red: '#F32C26',
 };
 
 function formatDate(d) {
@@ -80,7 +82,7 @@ function CurrentShopCard({ shop, me }) {
   const address = [shop?.address, shop?.city, shop?.state, shop?.pincode]
     .filter((x) => x && String(x).trim())
     .join(', ') || '—';
-  const image = Array.isArray(shop?.images) && shop.images[0] ? shop.images[0] : null;
+  const image = shop?.frontImageUrl || shop?.shopImageUrl || shop?.logoUrl || (Array.isArray(shop?.images) && shop.images[0]) || null;
   const joinDate = formatDate(me?.dateOfJoin);
   const role = me?.roleLabel || '—';
   const salary = me?.salaryAmount
@@ -216,6 +218,27 @@ export default function WorkExperienceScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [history, setHistory] = useState(null); // { total, completed, rejected }
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const res = await listMyTickets({ page: 0, size: 1000 });
+      const list = Array.isArray(res) ? res : (Array.isArray(res?.content) ? res.content : []);
+      const st = (t) => String(t?.status || '').toUpperCase();
+      // Every finished job in the database: repair done (READY / REPAIR_COMPLETED /
+      // COMPLETED) or already handed over (DELIVERED).
+      const DONE = new Set(['READY', 'DELIVERED', 'COMPLETED', 'REPAIR_COMPLETED']);
+      const done = list.filter((t) => DONE.has(st(t)))
+        .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+      setHistory({
+        total: list.length,
+        completed: done.length,
+        rejected: list.filter((t) => st(t) === 'CANCELLED' || st(t) === 'REJECTED').length,
+        doneList: done,
+      });
+    } catch { setHistory({ total: 0, completed: 0, rejected: 0, doneList: [] }); }
+  }, []);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
 
   // Live "currently working" shop — technician profile (join/role/salary) +
   // the shops record (name/address). Best-effort: failures just hide the card.
@@ -223,7 +246,13 @@ export default function WorkExperienceScreen() {
     try {
       const me = await getMyTechnicianProfile().catch(() => null);
       const sid = sessionShopId || me?.shopId;
-      const shop = sid ? await shopApi.get(`/shops/${sid}`).catch(() => null) : null;
+      // Shop photo (frontImageUrl) lives on auth-service's shop record; the shop
+      // directory adds gallery images. Merge both — either may be missing.
+      const [dir, pub] = sid ? await Promise.all([
+        shopApi.get(`/shops/${sid}`).catch(() => null),
+        authApi.get(`/auth/shops/${sid}/public`).catch(() => null),
+      ]) : [null, null];
+      const shop = dir || pub ? { ...(dir || {}), ...(pub || {}) } : null;
       if (me || shop) setCurrent({ me, shop });
     } catch { /* non-fatal */ }
   }, [sessionShopId]);
@@ -254,6 +283,7 @@ export default function WorkExperienceScreen() {
     setRefreshing(true);
     load();
     loadCurrent();
+    loadHistory();
   };
 
   return (
@@ -267,6 +297,37 @@ export default function WorkExperienceScreen() {
         {current && (current.shop || current.me) ? (
           <CurrentShopCard shop={current.shop} me={current.me} />
         ) : null}
+
+        {/* Technician history at this shop: assigned ticket totals */}
+        <View style={styles.banner}>
+          <View style={styles.bannerBar} />
+          <Text style={styles.bannerText}>Technician History</Text>
+        </View>
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', padding: 12, marginBottom: 14 }}>
+          {!history ? (
+            <ActivityIndicator color={COLORS.primary} />
+          ) : (
+            <>
+              <Text style={{ fontSize: rf(12.5), color: COLORS.textMuted }}>
+                Total <Text style={{ fontWeight: '800', color: '#1C3053' }}>{history.total}</Text>
+                {'  ·  '}Completed <Text style={{ fontWeight: '800', color: '#609138' }}>{history.completed}</Text>
+                {'  ·  '}Rejected <Text style={{ fontWeight: '800', color: '#F32C26' }}>{history.rejected}</Text>
+              </Text>
+              {history.doneList.length === 0 ? (
+                <Text style={{ fontSize: rf(12), color: COLORS.textMuted, marginTop: 8 }}>No completed work yet.</Text>
+              ) : history.doneList.map((t, i) => (
+                <View key={t.id || i} style={{ paddingVertical: 8, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: '#E5E7EB', marginTop: i === 0 ? 8 : 0 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ flex: 1, fontSize: rf(13.5), fontWeight: '800', color: '#111111' }} numberOfLines={1}>{t.deviceDisplayName || 'Device'}</Text>
+                    <Text style={{ fontSize: rf(11), color: COLORS.textMuted }}>{formatDate(t.updatedAt || t.createdAt)}</Text>
+                  </View>
+                  <Text style={{ fontSize: rf(12), color: '#374151', marginTop: 2 }} numberOfLines={2}>{t.repairServicesSummary || t.issueDescription || '—'}</Text>
+                  <Text style={{ fontSize: rf(11.5), color: COLORS.textMuted, marginTop: 1 }} numberOfLines={1}>{t.customerName || 'Customer'}{t.ticketNumber ? ` · #${t.ticketNumber}` : ''}</Text>
+                </View>
+              ))}
+            </>
+          )}
+        </View>
 
         <View style={styles.banner}>
           <View style={styles.bannerBar} />
@@ -300,23 +361,20 @@ const styles = StyleSheet.create({
   content: { padding: 12, paddingBottom: 24 },
 
   banner: {
-    backgroundColor: COLORS.banner,
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  bannerBar: { width: 3, height: 15, backgroundColor: '#FFFFFF', borderRadius: 2, marginRight: 8 },
-  bannerText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '700' },
+  bannerBar: { width: 4, height: 18, backgroundColor: '#035C6C', borderRadius: 2, marginRight: 8 },
+  bannerText: { color: '#111111', fontSize: rf(16), fontWeight: '800' },
 
   // Current working shop
   currentCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: '#CFEFD6',
+    borderColor: '#E5F3F5',
     padding: 10,
     marginBottom: 10,
     shadowColor: COLORS.green,
@@ -329,7 +387,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#E6F7EA',
+    backgroundColor: '#E5F3F5',
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -337,11 +395,11 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   currentDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.green },
-  currentBadgeText: { fontSize: rf(10), fontWeight: '800', color: '#09AD2A', letterSpacing: 0.6 },
+  currentBadgeText: { fontSize: rf(10), fontWeight: '800', color: '#035C6C', letterSpacing: 0.6 },
   currentTopRow: { flexDirection: 'row', alignItems: 'center' },
   currentPhotoBox: {
     width: 52, height: 52, borderRadius: 10, overflow: 'hidden', marginRight: 10,
-    backgroundColor: '#F3FBF4', borderWidth: 1, borderColor: '#E6F7EA',
+    backgroundColor: '#E5F3F5', borderWidth: 1, borderColor: '#E5F3F5',
   },
   currentHeadCol: { flex: 1 },
   currentShopName: { fontSize: rf(14.5), fontWeight: '800', color: COLORS.text },
@@ -349,7 +407,7 @@ const styles = StyleSheet.create({
   currentAddr: { flex: 1, fontSize: rf(11), color: COLORS.textMuted, lineHeight: rf(16) },
   currentMetaGrid: {
     flexDirection: 'row', alignItems: 'center', marginTop: 9, paddingTop: 9,
-    borderTopWidth: 1, borderTopColor: '#F3F3F3',
+    borderTopWidth: 1, borderTopColor: '#F3F4F6',
   },
   metaTile: { flex: 1, alignItems: 'center', gap: 3, paddingHorizontal: 2 },
   metaValue: { fontSize: rf(12), fontWeight: '800', color: COLORS.text, marginTop: 2 },
@@ -371,7 +429,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
     marginRight: 8,
-    backgroundColor: '#F3F3F3',
+    backgroundColor: '#F3F4F6',
   },
   photo: { width: '100%', height: '100%' },
   photoPlaceholder: { alignItems: 'center', justifyContent: 'center' },

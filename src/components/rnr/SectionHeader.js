@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from '../Typography';
 import { ChevronRight } from 'lucide-react-native';
 import { cn } from './cn';
 import { rf } from '../../utils/responsive';
@@ -16,7 +17,7 @@ export function SectionHeader({ title, action, onAction, className, caption }) {
       {action ? (
         <Pressable onPress={onAction} className="flex-row items-center active:opacity-70">
           <Text className="font-bold text-primary" style={{ fontSize: rf(11) }}>{action}</Text>
-          <ChevronRight size={12} color="#00008B" />
+          <ChevronRight size={12} color="#035C6C" />
         </Pressable>
       ) : null}
     </View>

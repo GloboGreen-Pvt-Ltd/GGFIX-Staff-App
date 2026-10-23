@@ -1,21 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { getPickupRepairEstimate, submitPickupRepairEstimate } from '../api/pickups';
 import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
-import { rf } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
 
 // `key` is the estimate payload field; `slot` is the short name the media
 // endpoint uses as the S3 filename stem (Devicefiles/front-3f9c11ab.jpg), which
@@ -233,7 +224,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color="#00008B" />
+        <ActivityIndicator color="#035C6C" />
       </View>
     );
   }
@@ -243,7 +234,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.headerCard}>
           <View style={styles.headerIcon}>
-            <Ionicons name="receipt-outline" size={18} color="#00008B" />
+            <Ionicons name="receipt-outline" size={rs(18)} color="#035C6C" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>{trackingId(booking, estimate)}</Text>
@@ -267,7 +258,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
                     </>
                   ) : (
                     <View style={styles.emptySlot}>
-                      <Ionicons name="camera-outline" size={20} color="#64748B" />
+                      <Ionicons name="camera-outline" size={20} color="#6B7280" />
                       <Text style={styles.emptySlotText}>Upload</Text>
                     </View>
                   )}
@@ -407,7 +398,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F4F6' },
   content: { padding: 14, paddingBottom: 36 },
   headerCard: {
     flexDirection: 'row',
@@ -417,7 +408,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E5E7EB',
   },
   headerIcon: {
     width: 38,
@@ -428,32 +419,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 10,
   },
-  headerTitle: { fontSize: rf(15), fontWeight: '800', color: '#111827' },
-  headerSub: { fontSize: rf(11), color: '#64748B', marginTop: 2, fontWeight: '600' },
+  headerTitle: { fontSize: rf(16), fontWeight: '800', color: '#1C3053' },
+  headerSub: { fontSize: rf(12), color: '#6B7280', marginTop: 2 },
   section: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E5E7EB',
   },
-  sectionTitle: { fontSize: rf(13), fontWeight: '800', color: '#111827', marginBottom: 10 },
+  sectionTitle: { fontSize: rf(16), fontWeight: '800', color: '#1C3053', marginBottom: 10 },
   imageRow: { flexDirection: 'row', marginHorizontal: -4 },
   imageCol: { flex: 1, paddingHorizontal: 4 },
-  slotLabel: { fontSize: rf(10), color: '#64748B', fontWeight: '700', marginBottom: 5, textAlign: 'center' },
+  slotLabel: { fontSize: rf(10), color: '#6B7280', fontWeight: '700', marginBottom: 5, textAlign: 'center' },
   imageSlot: {
     height: 96,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E5E7EB',
     borderStyle: 'dashed',
     overflow: 'hidden',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F3F4F6',
   },
   preview: { width: '100%', height: '100%' },
   emptySlot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptySlotText: { fontSize: rf(10), color: '#64748B', marginTop: 4, fontWeight: '700' },
+  emptySlotText: { fontSize: rf(10), color: '#6B7280', marginTop: 4, fontWeight: '700' },
   removeBtn: {
     position: 'absolute',
     top: 5,
@@ -469,28 +460,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E5E7EB',
     borderRadius: 10,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F3F4F6',
     paddingHorizontal: 12,
   },
-  amountPrefix: { fontSize: rf(14), fontWeight: '800', color: '#111827', marginRight: 8 },
-  amountInput: { flex: 1, height: 44, fontSize: rf(15), fontWeight: '700', color: '#111827' },
+  amountPrefix: { fontSize: rf(14), fontWeight: '800', color: '#111111', marginRight: 8 },
+  amountInput: { flex: 1, height: 44, fontSize: rf(15), fontWeight: '700', color: '#111111' },
   noteInput: {
     minHeight: 96,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E5E7EB',
     borderRadius: 10,
     padding: 10,
     textAlignVertical: 'top',
-    color: '#111827',
-    backgroundColor: '#F8FAFC',
+    color: '#111111',
+    backgroundColor: '#F3F4F6',
     fontSize: rf(13),
   },
   submitBtn: {
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#004C40',
+    backgroundColor: '#609138',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -499,27 +490,27 @@ const styles = StyleSheet.create({
   submitText: { color: '#FFFFFF', fontSize: rf(14), fontWeight: '800' },
   row: { flexDirection: 'row', marginHorizontal: -4 },
   rowItem: { flex: 1, paddingHorizontal: 4 },
-  rowLabel: { fontSize: rf(11), color: '#64748B', fontWeight: '700', marginBottom: 6 },
+  rowLabel: { fontSize: rf(11), color: '#6B7280', fontWeight: '700', marginBottom: 6 },
   hoursBox: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E5E7EB',
     borderRadius: 10,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F3F4F6',
     paddingHorizontal: 10,
   },
-  hoursInput: { flex: 1, height: 40, fontSize: rf(14), fontWeight: '700', color: '#111827' },
-  hoursSuffix: { fontSize: rf(11), color: '#64748B', fontWeight: '700', marginLeft: 4 },
+  hoursInput: { flex: 1, height: 40, fontSize: rf(14), fontWeight: '700', color: '#111111' },
+  hoursSuffix: { fontSize: rf(11), color: '#6B7280', fontWeight: '700', marginLeft: 4 },
   hint: { fontSize: rf(10), color: '#94A3B8', marginTop: 6, fontStyle: 'italic' },
   lineInput: {
     height: 42,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E5E7EB',
     borderRadius: 10,
     paddingHorizontal: 12,
-    color: '#111827',
-    backgroundColor: '#F8FAFC',
+    color: '#111111',
+    backgroundColor: '#F3F4F6',
     fontSize: rf(13),
   },
   approvalRow: { flexDirection: 'row', alignItems: 'flex-start' },
@@ -534,7 +525,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 1,
   },
-  checkboxOn: { backgroundColor: '#004C40', borderColor: '#004C40' },
-  approvalTitle: { fontSize: rf(13), fontWeight: '800', color: '#111827' },
-  approvalHint: { fontSize: rf(11), color: '#64748B', marginTop: 2 },
+  checkboxOn: { backgroundColor: '#609138', borderColor: '#609138' },
+  approvalTitle: { fontSize: rf(13), fontWeight: '800', color: '#111111' },
+  approvalHint: { fontSize: rf(11), color: '#6B7280', marginTop: 2 },
 });

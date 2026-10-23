@@ -1,50 +1,79 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  useWindowDimensions,
+  View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl,
+  useWindowDimensions, Modal, Pressable,
 } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Calendar, ChevronLeft, ChevronRight, Clock, ClockAlert, CircleCheck, LogIn, LogOut, Timer,
+  Calendar,
+  ChevronRight,
+  Clock,
+  ClockAlert,
+  LogIn,
+  LogOut,
+  Timer,
+  User,
+  AlarmClock,
+  CircleX,
+  FileText,
+  Zap,
+  X,
+  StickyNote,
+  RefreshCw,
+  Briefcase,
 } from 'lucide-react-native';
 import { useSelector } from 'react-redux';
 import { ticketApi } from '../api/client';
 import { useTechnicianIdState } from '../auth/useTechnicianId';
 import TechIdPending from '../components/TechIdPending';
 import { selectSession } from '../store/authSlice';
-import { rf, rlh, rs } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
 import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
+import { StatIconCard, MonthPill } from '../components/MintKit';
 
-// Screen palette (GGFIX green + mint).
+// Screen palette.
 const C = {
-  green: '#09AD2A',
-  deep: '#09AD2A',
-  primary: '#09AD2A',
-  mint: '#E6F7EA',
-  softMint: '#F3FBF4',
-  bg: '#F8F8F8',
+  green: '#035C6C',
+  mint: '#E5F3F5',
+  softMint: '#E5F3F5',
+  mintBorder: '#E5F3F5',
+  bg: '#F3F4F6',
   card: '#FFFFFF',
-  border: '#E6E6E6',
-  text: '#1E1E1E',
-  muted: '#6E6E6E',
-  red: '#F84141',
-  softRed: '#FEECEC',
-  // Blue isn't in the palette — neutral grey + ink instead.
-  blue: '#1E1E1E',
-  softBlue: '#F3F3F3',
+  border: '#E5E7EB',
+  text: '#111111',
+  muted: '#6B7280',
+  faint: '#B8B8B8',
+  red: '#F32C26',
+  softRed: '#FBCFCF',
+  redBorder: '#F2A3A3',
+  lateText: '#FAA700',
+  lateBg: '#FFF3E0',
+  absentBg: '#FDDCDC',
+  // Distinct colour per status: leave = blue, late = orange, overtime/permission = purple, hours = teal.
+  blue: '#0788C9',
+  softBlue: '#CCDCFB',
+  blueBorder: '#A2BDF5',
+  purple: '#1C3053',
+  softPurple: '#DCCDFB',
+  yellow: '#FAA700',
+  softYellow: '#FFDCAE',
+  yellowBorder: '#FBBE6E',
+  teal: '#035C6C',
+  softTeal: '#C3E2E7',
+  tealBorder: '#98CBD3',
+  grey: '#4B4B4B',
+  softGrey: '#F1F1F1',
 };
 const MAX_CONTENT_WIDTH = 720;
+const DEFAULT_VISIBLE_ROWS = 4;
 
 // Fallback duty start when the technician hasn't configured one yet. Matches
 // the placeholder in TechnicianProfileScreen so the per-day "Late HR's"
 // column lines up with what's visually pre-filled in the profile form.
 const DEFAULT_DUTY_CHECK_IN = '09:30:00';
+// Same idea for duty end — used only to derive the shift length for overtime.
+const DEFAULT_DUTY_CHECK_OUT = '18:30:00';
 
 // "HH:mm[:ss]" → minutes since midnight. Used to compute late minutes
 // client-side when the backend returned 0 (typically because the
@@ -90,23 +119,41 @@ const MONTHS = [
 const DOW = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const STATUS_COLORS = {
-  LEAVE: '#DB2777',
-  LATE: '#EAB308',
-  PERMISSION: '#F97316',
-  WEEK_OFF: '#F472B6',
-  HOLIDAY: '#004C40',
+// Visual config per day kind. "off" = week-off / holiday rows.
+const KIND = {
+  present: { label: 'Present', color: '#609138', bg: '#D3E5C3', border: '#AFCD94', icon: User, dot: '#609138' },
+  late: { label: 'Late', color: C.yellow, bg: C.softYellow, border: C.yellowBorder, icon: AlarmClock, dot: '#FAA700' },
+  absent: { label: 'Absent', color: C.red, bg: C.softRed, border: C.redBorder, icon: CircleX, dot: C.red },
+  leave: { label: 'Leave', color: C.blue, bg: C.softBlue, border: C.blueBorder, icon: FileText, dot: C.blue },
+  off: { label: 'Week Off', color: C.muted, bg: C.softGrey, border: C.border, icon: Calendar, dot: C.faint },
 };
-const RING_COLORS = {
-  present: '#004C40',
-  late: '#EAB308',
-  permission: '#F97316',
-  leaves: '#DB2777',
-  holidays: '#1E3A8A',
-};
+const FILTERS = ['all', 'present', 'late', 'absent', 'leave'];
 
 function pad2(n) {
   return String(n).padStart(2, '0');
+}
+function isoOf(y, m, d) {
+  return `${y}-${pad2(m)}-${pad2(d)}`;
+}
+function todayIso() {
+  const t = new Date();
+  return isoOf(t.getFullYear(), t.getMonth() + 1, t.getDate());
+}
+
+// Backend "HH:mm[:ss]" working-hours string → minutes (0 when missing).
+function workingMinutesOf(record) {
+  const v = parseTimeToMinutes(record?.workingHours);
+  return v && v > 0 ? v : 0;
+}
+
+// Classify an attendance row into one of the KIND buckets.
+function classifyRecord(record, dutyCheckIn) {
+  const s = String(record?.status || '').toUpperCase();
+  if (s === 'LEAVE') return 'leave';
+  if (s === 'WEEK_OFF' || s === 'HOLIDAY') return 'off';
+  if (s === 'ABSENT') return 'absent';
+  if (s === 'LATE' || effectiveLateMinutes(record, dutyCheckIn) > 0) return 'late';
+  return 'present';
 }
 
 export default function DailyAttendanceScreen({ navigation }) {
@@ -115,26 +162,48 @@ export default function DailyAttendanceScreen({ navigation }) {
   const { id: technicianId, failed: techIdFailed, retry: retryTechId } = useTechnicianIdState();
   const session = useSelector(selectSession);
   const dutyCheckIn = session?.defaultCheckIn || DEFAULT_DUTY_CHECK_IN;
+  const dutyCheckOut = session?.defaultCheckOut || DEFAULT_DUTY_CHECK_OUT;
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [data, setData] = useState(null);
+  const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+  const [filter, setFilter] = useState('all');
+  const [expanded, setExpanded] = useState(false);
+  const [selectedIso, setSelectedIso] = useState(null);
+  const [detailDay, setDetailDay] = useState(null);
+  const reqId = useRef(0);
+  const scrollRef = useRef(null);
+  const recordsY = useRef(0);
 
   const load = useCallback(async (isRefresh = false) => {
     if (!technicianId) return;
-    if (isRefresh) setRefreshing(true); else setLoading(true);
+    const id = ++reqId.current;
+    if (isRefresh) setRefreshing(true);
+    else { setLoading(true); setData(null); setLeaves([]); }
+    setError(null);
     try {
-      const res = await ticketApi.get(`/technicians/${technicianId}/attendance`, {
-        query: { month, year },
-      });
-      setData(res);
-    } catch {
-      setData(null);
+      const [res, lv] = await Promise.all([
+        ticketApi.get(`/technicians/${technicianId}/attendance`, { query: { month, year } }),
+        // Approved leave requests let us place leave days on the calendar even
+        // when no per-day attendance row exists. Best-effort only.
+        ticketApi.get(`/technicians/${technicianId}/leaves`, { query: { month, year } }).catch(() => []),
+      ]);
+      if (id !== reqId.current) return;
+      setData(res || { dailyRecords: [] });
+      setLeaves(Array.isArray(lv) ? lv : (lv?.content || []));
+    } catch (e) {
+      if (id !== reqId.current) return;
+      if (!isRefresh) setData(null);
+      setError(e?.message || 'Could not load attendance.');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (id === reqId.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [technicianId, month, year]);
 
@@ -142,25 +211,96 @@ export default function DailyAttendanceScreen({ navigation }) {
 
   const recordsByDate = useMemo(() => {
     const map = {};
-    (data?.dailyRecords || []).forEach((r) => { if (r.date) map[r.date] = r; });
+    (data?.dailyRecords || []).forEach((r) => { if (r.date) map[String(r.date)] = r; });
     return map;
   }, [data]);
 
-  const grid = useMemo(() => {
-    const first = new Date(year, month - 1, 1);
+  // Approved leave requests expanded into a date → leave map for this month.
+  const leaveByDate = useMemo(() => {
+    const map = {};
+    (leaves || []).forEach((l) => {
+      if (String(l?.status || '').toUpperCase() !== 'APPROVED' || !l.startDate) return;
+      const [sy, sm, sd] = String(l.startDate).split('-').map(Number);
+      const endStr = String(l.endDate || l.startDate);
+      const [ey, em, ed] = endStr.split('-').map(Number);
+      if (!sy || !ey) return;
+      const cur = new Date(sy, sm - 1, sd);
+      const end = new Date(ey, em - 1, ed);
+      let guard = 0;
+      while (cur <= end && guard < 400) {
+        if (cur.getFullYear() === year && cur.getMonth() + 1 === month) {
+          map[isoOf(year, month, cur.getDate())] = l;
+        }
+        cur.setDate(cur.getDate() + 1);
+        guard++;
+      }
+    });
+    return map;
+  }, [leaves, month, year]);
+
+  // Every date of the month with its derived kind:
+  //  - row present → classified from status / late minutes
+  //  - no row + approved leave → leave
+  //  - no row + Sunday → week off (not listed)
+  //  - no row + past working day → absent
+  //  - today without a row / future → no mark yet
+  const days = useMemo(() => {
+    if (!data) return [];
+    const tIso = todayIso();
     const lastDay = new Date(year, month, 0).getDate();
-    const startOffset = first.getDay();
-    const cells = [];
-    for (let i = 0; i < startOffset; i++) cells.push(null);
+    const out = [];
     for (let d = 1; d <= lastDay; d++) {
-      const iso = `${year}-${pad2(month)}-${pad2(d)}`;
-      cells.push({ day: d, iso, record: recordsByDate[iso] || null });
+      const iso = isoOf(year, month, d);
+      const dow = new Date(year, month - 1, d).getDay();
+      const record = recordsByDate[iso] || null;
+      const leave = leaveByDate[iso] || null;
+      let kind = null;
+      if (record) kind = classifyRecord(record, dutyCheckIn);
+      else if (leave) kind = 'leave';
+      else if (dow === 0) kind = 'off';
+      else if (iso < tIso) kind = 'absent';
+      out.push({ iso, day: d, dow, month, year, record, leave, kind });
     }
-    while (cells.length % 7 !== 0) cells.push(null);
-    const weeks = [];
-    for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
-    return weeks;
-  }, [year, month, recordsByDate]);
+    return out;
+  }, [data, recordsByDate, leaveByDate, year, month, dutyCheckIn]);
+
+  const shiftMinutes = useMemo(() => {
+    const a = parseTimeToMinutes(dutyCheckIn);
+    const b = parseTimeToMinutes(dutyCheckOut);
+    return a != null && b != null && b > a ? b - a : null;
+  }, [dutyCheckIn, dutyCheckOut]);
+
+  const stats = useMemo(() => {
+    const c = { present: 0, late: 0, absent: 0, leave: 0 };
+    let workTotal = 0; let workedDays = 0; let otTotal = 0;
+    days.forEach((d) => {
+      if (c[d.kind] != null) c[d.kind] += 1;
+      const wm = workingMinutesOf(d.record);
+      if (wm > 0 && (d.kind === 'present' || d.kind === 'late')) {
+        workTotal += wm;
+        workedDays += 1;
+        if (shiftMinutes) otTotal += Math.max(0, wm - shiftMinutes);
+      }
+    });
+    const denom = c.present + c.late + c.absent + c.leave;
+    const pct = (n) => (denom ? `${((n / denom) * 100).toFixed(1)}% of days` : '—');
+    return {
+      ...c,
+      denom,
+      pct,
+      workTotal,
+      workAvg: workedDays ? Math.round(workTotal / workedDays) : 0,
+      otTotal,
+      otAvg: workedDays ? Math.round(otTotal / workedDays) : 0,
+      workedDays,
+    };
+  }, [days, shiftMinutes]);
+
+  // Listable days (most recent first): anything classified except synthetic Sundays.
+  const listDays = useMemo(() => days
+    .filter((d) => d.kind && (d.kind !== 'off' || d.record))
+    .filter((d) => filter === 'all' || d.kind === filter)
+    .sort((a, b) => (a.iso < b.iso ? 1 : -1)), [days, filter]);
 
   const stepMonth = (delta) => {
     let m = month + delta;
@@ -169,216 +309,338 @@ export default function DailyAttendanceScreen({ navigation }) {
     else if (m > 12) { m = 1; y++; }
     setMonth(m);
     setYear(y);
+    setExpanded(false);
+    setSelectedIso(null);
+  };
+
+  const applyFilter = (f, scroll = false) => {
+    setFilter(f);
+    setExpanded(false);
+    if (scroll && scrollRef.current) {
+      scrollRef.current.scrollTo({ y: Math.max(0, recordsY.current - rs(60)), animated: true });
+    }
+  };
+
+  const openDay = (d) => {
+    setSelectedIso(d.iso);
+    setDetailDay(d);
   };
 
   const contentW = Math.min(winW, MAX_CONTENT_WIDTH);
-  // Month controls sit beside the title on wide screens, on their own row on phones.
-  const monthInline = contentW >= 600;
-  // Status pill sits right of the date on wide cards, under it on narrow ones.
-  const pillInline = contentW >= 430;
+  const innerW = contentW - rs(32);
+
+  const header = <MintScreenHeader title="Daily Attendance" navigation={navigation} />;
 
   if (!technicianId) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <MintBackdrop />
-        <MintScreenHeader title="Daily Attendance" navigation={navigation} />
+        {header}
         <TechIdPending failed={techIdFailed} onRetry={retryTechId} />
       </SafeAreaView>
     );
   }
 
-  const present = data?.presentDays ?? 0;
-  const late = data?.lateHours ?? '0';
-  const permission = data?.permissionCount ?? 0;
-  const leaves = data?.leaveDays ?? 0;
-  const holidays = data?.holidayCount ?? 0;
-
-  const monthControls = (
-    <View style={[styles.monthControls, !monthInline && styles.monthControlsStacked]}>
-      <TouchableOpacity onPress={() => stepMonth(-1)} style={styles.monthStepBtn} hitSlop={6} accessibilityLabel="Previous month">
-        <ChevronLeft size={rs(18)} color={C.text} strokeWidth={2.4} />
-      </TouchableOpacity>
-      <View style={[styles.monthPill, !monthInline && { flex: 1 }]}>
-        <Calendar size={rs(15)} color={C.green} />
-        <Text style={styles.monthPillText} numberOfLines={1}>{MONTHS[month - 1]} {year}</Text>
-      </View>
-      <TouchableOpacity onPress={() => stepMonth(1)} style={styles.monthStepBtn} hitSlop={6} accessibilityLabel="Next month">
-        <ChevronRight size={rs(18)} color={C.text} strokeWidth={2.4} />
-      </TouchableOpacity>
-    </View>
-  );
+  const monthLabel = `${MONTHS[month - 1]} ${year}`;
+  const visibleRows = expanded ? listDays : listDays.slice(0, DEFAULT_VISIBLE_ROWS);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <MintBackdrop />
-      <MintScreenHeader title="Daily Attendance" navigation={navigation} />
+      {header}
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} colors={[C.deep]} tintColor={C.deep} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} colors={[C.green]} tintColor={C.green} />}
         showsVerticalScrollIndicator={false}
       >
-        <View style={{ width: contentW - rs(32) }}>
-          {/* This Month selector */}
-          <View style={styles.monthCard}>
-            <View style={styles.monthCardTop}>
+        <View style={{ width: innerW }}>
+          {/* This Month */}
+          <View style={styles.card}>
+            <View style={styles.rowCenter}>
               <View style={styles.monthIconTile}>
-                <Calendar size={rs(20)} color={C.green} strokeWidth={2.2} />
+                <Calendar size={rs(18)} color={C.green} strokeWidth={2.2} />
               </View>
-              <View style={styles.monthTitleWrap}>
-                <Text style={styles.monthTitle} numberOfLines={1}>This Month</Text>
-                <Text style={styles.monthSubtitle} numberOfLines={2}>View your daily attendance records</Text>
-              </View>
-              {monthInline ? monthControls : null}
+              <Text style={[styles.monthTitle, { flex: 1, marginLeft: rs(10) }]} numberOfLines={1}>This Month</Text>
+              <MonthPill month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
             </View>
-            {monthInline ? null : monthControls}
           </View>
 
           {loading && !data ? (
-            <ActivityIndicator size="large" color={C.deep} style={{ marginVertical: rs(24) }} />
-          ) : (data?.dailyRecords && data.dailyRecords.length > 0) ? (
-            data.dailyRecords.map((day) => <DayCard key={day.date} day={day} dutyCheckIn={dutyCheckIn} pillInline={pillInline} />)
-          ) : (
-            <View style={styles.emptyCard}>
-              <Text style={styles.empty}>No attendance records for this month.</Text>
+            <View style={[styles.card, styles.stateCard]}>
+              <ActivityIndicator size="large" color={C.green} />
+              <Text style={styles.stateText}>Loading attendance…</Text>
             </View>
+          ) : error && !data ? (
+            <View style={[styles.card, styles.stateCard]}>
+              <CircleX size={rs(28)} color={C.red} />
+              <Text style={styles.stateText}>{error}</Text>
+              <TouchableOpacity onPress={() => load()} style={styles.retryBtn} accessibilityRole="button">
+                <RefreshCw size={rs(14)} color="#FFFFFF" />
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {/* Stats 3×2 */}
+              <View style={[styles.card, styles.statsGrid]}>
+                <StatTile kind="present" value={stats.present} label="Present" caption={stats.pct(stats.present)}
+                          captionColor={C.text} active={filter === 'present'} onPress={() => applyFilter('present', true)} />
+                <StatTile kind="late" value={stats.late} label="Late" caption={stats.pct(stats.late)}
+                          captionColor={C.text} active={filter === 'late'} onPress={() => applyFilter('late', true)} />
+                <StatTile kind="absent" value={stats.absent} label="Absent" caption={stats.pct(stats.absent)}
+                          captionColor={C.text} active={filter === 'absent'} onPress={() => applyFilter('absent', true)} />
+                <StatTile kind="leave" value={stats.leave} label="Leave" caption={stats.pct(stats.leave)}
+                          captionColor={C.text} active={filter === 'leave'} onPress={() => applyFilter('leave', true)} />
+                <StatTile icon={Clock} color={C.teal} bg={C.softTeal} border={C.tealBorder}
+                          value={fmtHM(stats.workTotal) || '0h'} label="Working Hrs"
+                          caption={stats.workedDays ? `Avg. ${fmtHM(stats.workAvg, true)}/day` : 'No hours yet'} captionColor={C.text} />
+                <StatTile icon={Zap} color="#1C3053" bg={C.softPurple} border="#C1AAF5"
+                          value={shiftMinutes ? (fmtHM(stats.otTotal) || '0m') : '—'} label="Overtime"
+                          caption={shiftMinutes ? (stats.workedDays ? `Avg. ${fmtHM(stats.otAvg, true) || '0m'}/day` : 'No hours yet') : 'Shift not set'}
+                          captionColor={C.text} />
+              </View>
+
+              {/* Filter chips */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={{ marginBottom: rs(10) }}>
+                {FILTERS.map((f) => {
+                  const active = filter === f;
+                  if (f === 'all') {
+                    return (
+                      <TouchableOpacity key={f} onPress={() => applyFilter('all')} style={[styles.chip, active ? styles.chipAllActive : styles.chipAll]} accessibilityRole="button" accessibilityState={{ selected: active }}>
+                        <Text style={[styles.chipText, { color: active ? '#FFFFFF' : C.green }]}>All</Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                  const k = KIND[f];
+                  const Icon = k.icon;
+                  return (
+                    <TouchableOpacity
+                      key={f}
+                      onPress={() => applyFilter(active ? 'all' : f)}
+                      style={[styles.chip, { backgroundColor: active ? k.color : k.bg, borderColor: active ? k.color : k.border }]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Icon size={rs(14)} color={active ? '#FFFFFF' : k.color} strokeWidth={2.2} />
+                      <Text style={[styles.chipText, { color: active ? "#FFFFFF" : C.text }]}>{k.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Records */}
+              <View onLayout={(e) => { recordsY.current = e.nativeEvent.layout.y; }}>
+                <View style={styles.sectionHead}>
+                  <Text style={styles.sectionTitle}>Daily Attendance Records</Text>
+                  {listDays.length > DEFAULT_VISIBLE_ROWS ? (
+                    <TouchableOpacity onPress={() => setExpanded((v) => !v)} style={styles.rowCenter} hitSlop={8} accessibilityRole="button">
+                      <Text style={styles.seeAll}>{expanded ? 'Show Less' : 'See All'}</Text>
+                      <ChevronRight size={rs(15)} color={C.green} strokeWidth={2.4} style={expanded ? { transform: [{ rotate: '-90deg' }] } : null} />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                {visibleRows.length === 0 ? (
+                  <View style={[styles.card, styles.stateCard]}>
+                    <Text style={styles.stateText}>
+                      {filter === 'all' ? 'No attendance records for this month.' : `No ${KIND[filter].label.toLowerCase()} days this month.`}
+                    </Text>
+                  </View>
+                ) : visibleRows.map((d) => (
+                  <RecordRow key={d.iso} d={d} dutyCheckIn={dutyCheckIn} onPress={() => openDay(d)} />
+                ))}
+              </View>
+
+            </>
           )}
         </View>
       </ScrollView>
+
+      <DayDetailsModal
+        d={detailDay}
+        dutyCheckIn={dutyCheckIn}
+        dutyCheckOut={dutyCheckOut}
+        shiftMinutes={shiftMinutes}
+        onClose={() => setDetailDay(null)}
+      />
     </SafeAreaView>
   );
 }
 
-// Day-of-week + day-of-month for the date tile, parsed locally like formatDateLabel.
-function dateTileParts(day) {
-  const parts = String(day?.date || '').split('-');
-  const y = Number(parts[0]);
-  const m = Number(parts[1]);
-  const dd = Number(parts[2]);
-  if (!y || !m || !dd) return null;
-  return { dow: DOW[new Date(y, m - 1, dd).getDay()], dd: pad2(dd) };
+function RoundBtn({ onPress, label, children, size = rs(34) }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={[styles.roundBtn, { width: size, height: size, borderRadius: size / 2 }]}
+    >
+      {children}
+    </TouchableOpacity>
+  );
 }
 
-function StatusPill({ icon: Icon, bg, color, iconColor, text }) {
+function StatTile({ kind, icon, color, value, label, onPress, active }) {
+  const k = kind ? KIND[kind] : null;
   return (
-    <View style={[styles.statusPill, { backgroundColor: bg }]}>
-      {Icon ? <Icon size={rs(13)} color={iconColor || color} strokeWidth={2.4} /> : null}
-      <Text style={[styles.statusPillText, { color }]} numberOfLines={1}>{text}</Text>
+    <View style={styles.statCell}>
+      <StatIconCard icon={icon || k.icon} color={color || k.color} label={label} value={value} active={active} onPress={onPress} />
     </View>
   );
 }
 
-function DayTop({ day, pillInline, children }) {
-  const tile = dateTileParts(day);
+function MiniTile({ icon: Icon, value, label, color, bg, valueColor }) {
   return (
-    <View style={styles.dayTopRow}>
-      {tile ? (
-        <View style={styles.dateTile}>
-          <Text style={styles.dateTileDow}>{tile.dow}</Text>
-          <Text style={styles.dateTileNum}>{tile.dd}</Text>
-        </View>
-      ) : null}
-      <View style={[styles.dayTopMain, pillInline && styles.dayTopMainInline]}>
-        <Text style={[styles.dayDate, pillInline && { flexShrink: 1, marginRight: rs(8) }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-          {formatDateLabel(day)}
-        </Text>
-        <View style={[styles.dayPills, !pillInline && { marginTop: rs(6) }]}>{children}</View>
-      </View>
+    <View style={[styles.mini, { backgroundColor: bg }]}>
+      <Icon size={rs(11)} color={color} strokeWidth={2.3} />
+      <Text style={[styles.miniValue, { color: valueColor || C.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{value}</Text>
+      <Text style={styles.miniLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{label}</Text>
     </View>
   );
 }
 
-function Metric({ icon: Icon, bg, iconBg, iconColor, value, valueColor, label }) {
+function RecordRow({ d, dutyCheckIn, onPress }) {
+  const k = KIND[d.kind] || KIND.present;
+  const r = d.record;
+  const lateMin = r ? effectiveLateMinutes(r, dutyCheckIn) : 0;
+  const isPermission = String(r?.status || '').toUpperCase() === 'PERMISSION';
+  const offLabel = String(r?.status || '').toUpperCase() === 'HOLIDAY' ? 'Holiday' : k.label;
+  const PillIcon = k.icon;
+  const late = lateMin > 0;
   return (
-    <View style={[styles.metric, { backgroundColor: bg }]}>
-      <View style={[styles.metricIcon, { backgroundColor: iconBg }]}>
-        <Icon size={rs(14)} color={iconColor} strokeWidth={2.2} />
-      </View>
-      <Text style={[styles.metricValue, { color: valueColor }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{value}</Text>
-      <Text style={styles.metricLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{label}</Text>
-    </View>
-  );
-}
-
-function DayCard({ day, dutyCheckIn, pillInline }) {
-  const status = (day.status || 'GENERAL').toUpperCase();
-  if (status === 'LEAVE') {
-    return (
-      <View style={styles.dayCard}>
-        <View style={styles.dayInner}>
-          <DayTop day={day} pillInline={pillInline}>
-            <StatusPill icon={Calendar} bg="#FEF6E4" color="#B45309" text="Leave" />
-          </DayTop>
-        </View>
-      </View>
-    );
-  }
-  if (status === 'WEEK_OFF') {
-    return (
-      <View style={styles.dayCard}>
-        <View style={styles.dayInner}>
-          <DayTop day={day} pillInline={pillInline}>
-            <StatusPill icon={Calendar} bg="#FDEBF4" color="#BE185D" text="Week Off" />
-          </DayTop>
-        </View>
-      </View>
-    );
-  }
-  const lateMinutes = effectiveLateMinutes(day, dutyCheckIn);
-  // Promote the visual status to LATE when the client-side computation says
-  // so, even if the backend stored "GENERAL" because defaultCheckIn was null
-  // at check-in time. Otherwise the status pill and the Late HR's column
-  // disagree and the user can't tell which to trust.
-  const isLate = status === 'LATE' || lateMinutes > 0;
-  const isPermission = status === 'PERMISSION';
-  const lateLabel = lateMinutes > 0 ? formatDuration(lateMinutes) : null;
-  const onTimeColor = C.text;
-  return (
-    <View style={styles.dayCard}>
-      {isLate ? <View style={styles.dayLeftAccent} /> : null}
-      <View style={styles.dayInner}>
-        <DayTop day={day} pillInline={pillInline}>
-          {isLate ? (
-            <StatusPill icon={Clock} bg={C.softRed} color={C.red} text={`Late${lateLabel ? ` • ${lateLabel}` : ''}`} />
-          ) : (
-            <StatusPill icon={CircleCheck} bg={C.mint} iconColor={C.green} color={C.text} text="General" />
-          )}
+    <TouchableOpacity onPress={onPress} activeOpacity={0.75} style={[styles.recordCard, { borderLeftColor: k.color }]} accessibilityRole="button" accessibilityLabel={`${formatDateLabel(d)} ${k.label}`}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={[styles.rowCenter, { flexWrap: 'wrap', gap: rs(5), marginBottom: rs(8) }]}>
+          <Text style={{ flex: 1, fontSize: rf(14), fontWeight: '800', color: C.text }} numberOfLines={1}>
+            {DOW[d.dow]}, {pad2(d.day)} {MONTHS_SHORT[d.month - 1]}
+          </Text>
+          <View style={[styles.statusPill, { backgroundColor: k.bg }]}>
+            <PillIcon size={rs(12)} color={k.color} strokeWidth={2.4} />
+            <Text style={[styles.statusPillText, { color: C.text }]}>{d.kind === 'off' ? offLabel : k.label}</Text>
+          </View>
           {isPermission ? (
-            <StatusPill icon={Timer} bg={C.softBlue} color={C.blue} text={day.notes || 'Permission'} />
+            <View style={[styles.statusPill, { backgroundColor: C.softPurple }]}>
+              <Timer size={rs(12)} color={C.purple} strokeWidth={2.4} />
+              <Text style={[styles.statusPillText, { color: C.text }]}>Permission</Text>
+            </View>
           ) : null}
-        </DayTop>
-        <View style={styles.metricsRow}>
-          <Metric icon={LogIn} bg={C.softRed} iconBg="#FDDCDC" iconColor={C.red}
-                  value={formatTime12(day.checkInTime)} valueColor={isLate ? C.red : onTimeColor} label="Check In" />
-          <Metric icon={LogOut} bg={C.softMint} iconBg={C.mint} iconColor={C.deep}
-                  value={formatTime12(day.checkOutTime)} valueColor={onTimeColor} label="Check Out" />
-          <Metric icon={Clock} bg={C.softBlue} iconBg="#E6E6E6" iconColor={C.blue}
-                  value={formatWorkingHours(day.workingHours)} valueColor={isLate ? C.red : onTimeColor} label="Working HR's" />
-          <Metric icon={ClockAlert} bg={C.softRed} iconBg="#FDDCDC" iconColor={C.red}
-                  value={lateMinutes > 0 ? formatDuration(lateMinutes) : '—'} valueColor={lateMinutes > 0 ? C.red : onTimeColor} label="Late HR's" />
         </View>
+        {d.kind === 'leave' || d.kind === 'off' || (d.kind === 'absent' && !r) ? (
+          <Text style={styles.rowNote} numberOfLines={2}>
+            {d.kind === 'leave'
+              ? (d.leave?.leaveType ? `${prettyLeaveType(d.leave.leaveType)}${d.leave.reason ? ` • ${d.leave.reason}` : ''}` : (r?.notes || 'On leave'))
+              : d.kind === 'off' ? (r?.notes || 'No duty scheduled') : 'No check-in recorded'}
+          </Text>
+        ) : (
+          <View style={styles.miniRow}>
+            <MiniTile icon={LogIn} color={C.green} bg={C.softMint} value={formatTime12(r?.checkInTime)} label="Check In" valueColor={C.text} />
+            <MiniTile icon={LogOut} color={C.green} bg={C.softMint} value={formatTime12(r?.checkOutTime)} label="Check Out" />
+            <MiniTile icon={Clock} color={C.teal} bg={C.softTeal} value={formatWorkingHours(r?.workingHours)} label="Working Hrs" />
+            <MiniTile icon={ClockAlert} color={late ? C.yellow : C.green} bg={late ? C.softYellow : C.softMint}
+                      value={late ? fmtHM(lateMin) : '—'} label="Late Hrs" valueColor={C.text} />
+          </View>
+        )}
       </View>
+    </TouchableOpacity>
+  );
+}
+
+function DetailRow({ icon: Icon, color, label, value, valueColor }) {
+  return (
+    <View style={styles.detailRow}>
+      <View style={[styles.detailIcon, { backgroundColor: `${color}1A` }]}>
+        <Icon size={rs(15)} color={color} strokeWidth={2.3} />
+      </View>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={[styles.detailValue, valueColor && { color: valueColor }]}>{value}</Text>
     </View>
   );
 }
 
-function formatDuration(minutes) {
+function DayDetailsModal({ d, dutyCheckIn, dutyCheckOut, shiftMinutes, onClose }) {
+  const visible = !!d;
+  const r = d?.record;
+  const k = d?.kind ? KIND[d.kind] : null;
+  const lateMin = r ? effectiveLateMinutes(r, dutyCheckIn) : 0;
+  const wm = workingMinutesOf(r);
+  const ot = shiftMinutes && wm > 0 && (d?.kind === 'present' || d?.kind === 'late') ? Math.max(0, wm - shiftMinutes) : 0;
+  const isPermission = String(r?.status || '').toUpperCase() === 'PERMISSION';
+  const statusLabel = !k ? (d && d.iso > todayIso() ? 'Upcoming' : 'No record yet')
+    : d.kind === 'off' && String(r?.status || '').toUpperCase() === 'HOLIDAY' ? 'Holiday' : k.label;
+  const PillIcon = k?.icon || Calendar;
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={styles.sheet} onPress={() => {}}>
+          {d ? (
+            <>
+              <View style={styles.sheetHandle} />
+              <View style={[styles.rowCenter, { marginBottom: rs(12) }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sheetTitle}>{formatDateLabel(d)}</Text>
+                  <View style={[styles.rowCenter, { gap: rs(6), marginTop: rs(6), flexWrap: 'wrap' }]}>
+                    <View style={[styles.statusPill, { backgroundColor: k ? k.bg : C.softGrey }]}>
+                      <PillIcon size={rs(12)} color={k ? k.color : C.muted} strokeWidth={2.4} />
+                      <Text style={[styles.statusPillText, { color: C.text }]}>{statusLabel}</Text>
+                    </View>
+                    {isPermission ? (
+                      <View style={[styles.statusPill, { backgroundColor: C.softPurple }]}>
+                        <Timer size={rs(12)} color={C.purple} strokeWidth={2.4} />
+                        <Text style={[styles.statusPillText, { color: C.text }]}>Permission</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+                <RoundBtn onPress={onClose} label="Close"><X size={rs(18)} color={C.text} strokeWidth={2.4} /></RoundBtn>
+              </View>
+
+              <DetailRow icon={LogIn} color={C.green} label="Check In" value={formatTime12(r?.checkInTime)} valueColor={null} />
+              <DetailRow icon={LogOut} color={C.green} label="Check Out" value={formatTime12(r?.checkOutTime)} />
+              <DetailRow icon={Clock} color={C.teal} label="Working Hours" value={formatWorkingHours(r?.workingHours)} />
+              <DetailRow icon={ClockAlert} color={C.yellow} label="Late By" value={lateMin > 0 ? fmtHM(lateMin) : '—'} valueColor={null} />
+              <DetailRow icon={Zap} color={C.purple} label="Overtime" value={ot > 0 ? fmtHM(ot) : '—'} valueColor={ot > 0 ? C.purple : null} />
+              <DetailRow icon={Briefcase} color={C.green} label="Duty Shift" value={`${formatTime12(dutyCheckIn)} – ${formatTime12(dutyCheckOut)}`} />
+              {d.leave ? (
+                <DetailRow icon={FileText} color={C.blue} label="Leave"
+                           value={`${prettyLeaveType(d.leave.leaveType) || 'Approved'}${d.leave.appliedDaysLabel ? ` (${d.leave.appliedDaysLabel})` : ''}`} />
+              ) : null}
+              {d.leave?.reason ? <DetailRow icon={StickyNote} color={C.blue} label="Leave Reason" value={d.leave.reason} /> : null}
+              {r?.notes ? <DetailRow icon={StickyNote} color={C.muted} label="Notes" value={r.notes} /> : null}
+              {d.kind === 'absent' && !r ? (
+                <Text style={styles.sheetHint}>No check-in was recorded on this working day.</Text>
+              ) : null}
+            </>
+          ) : null}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function prettyLeaveType(t) {
+  if (!t) return '';
+  return String(t).toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Minutes → "162h 30m" / "9h 02m" (padMin) / "45m".
+function fmtHM(minutes, padMin = false) {
   if (!minutes || minutes <= 0) return '';
   const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h && m) return `${h}h ${m}m`;
-  if (h) return `${h}h`;
+  const m = Math.round(minutes % 60);
+  if (h && m) return `${h}h ${padMin ? pad2(m) : m}m`;
+  if (h) return padMin ? `${h}h 00m` : `${h}h`;
   return `${m}m`;
 }
 
-// Backend sends workingHours as "HH:mm[:ss]"; render it like the Late column
-// ("8h 30m") instead of the raw "08:30:00".
+// Backend sends workingHours as "HH:mm[:ss]"; render it as "8h 30m".
 function formatWorkingHours(s) {
   if (!s || typeof s !== 'string') return '—';
   const [h, m] = s.split(':');
   const hh = Number(h) || 0;
   const mm = Number(m) || 0;
   if (hh === 0 && mm === 0) return '—';
-  if (hh && mm) return `${hh}h ${mm}m`;
+  if (hh && mm) return `${hh}h ${pad2(mm)}m`;
   return hh ? `${hh}h` : `${mm}m`;
 }
 
@@ -392,87 +654,128 @@ function formatTime12(t) {
   return `${pad2(h12)}:${pad2(Number(mm || 0))} ${period}`;
 }
 
-function formatDateLabel(day) {
-  if (!day?.date) return day?.dayLabel || '—';
+function formatDateLabel(d) {
+  if (!d?.iso) return '—';
   // Parse ISO YYYY-MM-DD locally so the day-of-week doesn't drift by a day under
   // negative-offset timezones (new Date('2026-06-06') is UTC midnight).
-  const parts = String(day.date).split('-');
-  const y = Number(parts[0]);
-  const m = Number(parts[1]);
-  const dd = Number(parts[2]);
-  if (!y || !m || !dd) return day?.dayLabel || '—';
-  const d = new Date(y, m - 1, dd);
-  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+  const [y, m, dd] = d.iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, dd);
+  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dt.getDay()];
   return `${dow}, ${pad2(dd)} ${MONTHS_SHORT[m - 1]} ${y}`;
 }
 
 const cardShadow = {
-  shadowColor: '#1E1E1E', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  shadowColor: '#111111', shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2,
 };
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
-  content: { alignItems: 'center', paddingTop: rs(2), paddingBottom: rs(16) },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  content: { alignItems: 'center', paddingTop: rs(2), paddingBottom: rs(24) },
+  rowCenter: { flexDirection: 'row', alignItems: 'center' },
 
-  // This Month card
-  monthCard: {
+  card: {
     backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border,
-    paddingVertical: rs(9), paddingHorizontal: rs(12), marginBottom: rs(8), ...cardShadow,
+    padding: rs(12), marginBottom: rs(10), ...cardShadow,
   },
-  monthCardTop: { flexDirection: 'row', alignItems: 'center' },
+  stateCard: { alignItems: 'center', paddingVertical: rs(24), gap: rs(8) },
+  stateText: { fontSize: rf(13), color: C.muted, textAlign: 'center' },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(6), backgroundColor: C.green,
+    paddingHorizontal: rs(16), paddingVertical: rs(8), borderRadius: 999, marginTop: rs(4),
+  },
+  retryText: { color: '#FFFFFF', fontWeight: '700', fontSize: rf(13) },
+
+  // This Month
   monthIconTile: {
-    width: rs(38), height: rs(38), borderRadius: rs(11), backgroundColor: C.mint,
+    width: rs(40), height: rs(40), borderRadius: rs(12), backgroundColor: C.mint,
     alignItems: 'center', justifyContent: 'center',
   },
-  monthTitleWrap: { flex: 1, flexShrink: 1, marginLeft: rs(10), marginRight: rs(8) },
   monthTitle: { fontSize: rf(16), fontWeight: '800', color: C.text },
-  monthSubtitle: { fontSize: rf(11.5), color: C.muted, marginTop: 1 },
-  monthControls: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
-  monthControlsStacked: { marginTop: rs(8) },
-  monthStepBtn: {
-    width: rs(32), height: rs(32), borderRadius: rs(16), backgroundColor: C.card,
-    borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center',
+  monthSubtitle: { fontSize: rf(12), color: C.muted, marginTop: 1 },
+  roundBtn: {
+    backgroundColor: C.card, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', ...cardShadow,
   },
   monthPill: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6),
-    backgroundColor: C.mint, borderWidth: 1, borderColor: '#CDEFD5', borderRadius: 999,
-    paddingHorizontal: rs(14), paddingVertical: rs(6),
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6),
+    backgroundColor: C.green, borderWidth: 1, borderColor: C.green, borderRadius: 999,
+    paddingHorizontal: rs(12), paddingVertical: rs(7),
   },
-  monthPillText: { fontSize: rf(13), fontWeight: '700', color: C.text, flexShrink: 1 },
+  monthPillText: { fontSize: rf(13.5), fontWeight: '700', color: '#FFFFFF', flexShrink: 1 },
 
-  // Day card
-  dayCard: {
-    flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border,
-    marginBottom: rs(7), overflow: 'hidden', ...cardShadow,
+  // Stats
+  // Three equal columns via percentages — never wraps to two per row.
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: rs(8), padding: rs(10) },
+  statCell: { width: '32%' },
+  statTile: { borderRadius: rs(14), borderWidth: 1, paddingVertical: rs(10), paddingHorizontal: rs(8), alignItems: 'center', minHeight: rs(70), justifyContent: 'center' },
+  statTop: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center' },
+  statIcon: {
+    width: rs(28), height: rs(28), borderRadius: rs(14), borderWidth: 1.5, backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
   },
-  dayLeftAccent: { width: rs(4), backgroundColor: C.red },
-  dayInner: { flex: 1, padding: rs(9) },
-  dayTopRow: { flexDirection: 'row', alignItems: 'center' },
-  dateTile: {
-    minWidth: rs(44), paddingHorizontal: rs(6), paddingVertical: rs(4), borderRadius: rs(11),
-    backgroundColor: C.softMint, borderWidth: 1, borderColor: '#E1F3E5', alignItems: 'center', marginRight: rs(9),
+  statValue: { fontSize: rf(18), fontWeight: '800', color: C.text },
+  statLabel: { fontSize: rf(12), fontWeight: '600', color: C.muted, marginTop: rs(4), textAlign: 'center' },
+  statCaption: { fontSize: rf(11), fontWeight: '600', marginTop: 1 },
+
+  // Chips
+  chipsRow: { gap: rs(8), paddingVertical: rs(2), paddingRight: rs(4) },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(6), borderRadius: 999, borderWidth: 1,
+    paddingHorizontal: rs(16), paddingVertical: rs(8),
   },
-  dateTileDow: { fontSize: rf(10), fontWeight: '700', color: C.muted, letterSpacing: 0.5 },
-  dateTileNum: { fontSize: rf(18), fontWeight: '800', color: C.text, marginTop: -2 },
-  dayTopMain: { flex: 1 },
-  dayTopMainInline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  dayDate: { fontSize: rf(14.5), fontWeight: '800', color: C.text },
-  dayPills: { flexDirection: 'row', flexWrap: 'wrap', gap: rs(5) },
+  chipAll: { backgroundColor: C.mint, borderColor: C.mintBorder },
+  chipAllActive: { backgroundColor: C.green, borderColor: C.green, paddingHorizontal: rs(22) },
+  chipText: { fontSize: rf(13), fontWeight: '700' },
+
+  // Records
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: rs(8), marginTop: rs(2), gap: rs(8) },
+  sectionTitle: { fontSize: rf(16), fontWeight: '800', color: C.text, flexShrink: 1 },
+  seeAll: { fontSize: rf(13), fontWeight: '700', color: C.green },
+  recordCard: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(12),
+    borderWidth: 1, borderColor: C.border, borderLeftWidth: rs(3), paddingVertical: rs(6), paddingHorizontal: rs(7), marginBottom: rs(6), ...cardShadow,
+  },
+  dateBlock: {
+    width: rs(36), alignItems: 'center', justifyContent: 'center', borderRadius: rs(9),
+    backgroundColor: C.softMint, paddingVertical: rs(3), marginRight: rs(6), alignSelf: 'stretch',
+  },
+  dateDow: { fontSize: rf(10), fontWeight: '700', color: C.muted, letterSpacing: 0.5 },
+  dateNum: { fontSize: rf(16), fontWeight: '800', color: C.text },
+  dateMon: { fontSize: rf(10), color: C.muted },
   statusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(5), alignSelf: 'flex-start',
-    paddingHorizontal: rs(9), paddingVertical: rs(3), borderRadius: 999, maxWidth: '100%',
+    flexDirection: 'row', alignItems: 'center', gap: rs(4), alignSelf: 'flex-start',
+    paddingHorizontal: rs(7), paddingVertical: rs(1), borderRadius: 999,
   },
-  statusPillText: { fontSize: rf(11.5), fontWeight: '700', flexShrink: 1 },
+  statusPillText: { fontSize: rf(11.5), fontWeight: '700' },
+  rowNote: { fontSize: rf(12), color: C.muted },
+  miniRow: { flexDirection: 'row', gap: rs(3) },
+  mini: { flex: 1, minWidth: 0, borderRadius: rs(8), paddingHorizontal: rs(4), paddingVertical: rs(4) },
+  miniValue: { fontSize: rf(12.5), fontWeight: '800', marginTop: rs(1) },
+  miniLabel: { fontSize: rf(9.5), color: C.muted, marginTop: 1 },
 
-  metricsRow: { flexDirection: 'row', gap: rs(5), marginTop: rs(7) },
-  metric: { flex: 1, borderRadius: rs(11), paddingHorizontal: rs(6), paddingVertical: rs(6) },
-  metricIcon: { width: rs(24), height: rs(24), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center' },
-  metricValue: { fontSize: rf(13.5), fontWeight: '800', marginTop: rs(4) },
-  metricLabel: { fontSize: rf(10), lineHeight: rlh(13), color: C.muted, marginTop: 1 },
+  // Calendar
+  calNav: { width: rs(26), height: rs(26), alignItems: 'center', justifyContent: 'center' },
+  calMonth: { fontSize: rf(13), fontWeight: '700', color: C.text },
+  calGrid: { borderWidth: 1, borderColor: C.border, borderRadius: rs(12), overflow: 'hidden', paddingBottom: rs(4) },
+  calWeek: { flexDirection: 'row' },
+  calCell: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: rs(3) },
+  calDow: { fontSize: rf(11), fontWeight: '700', color: C.muted, paddingVertical: rs(5) },
+  calCircle: { width: rs(30), height: rs(30), borderRadius: rs(15), alignItems: 'center', justifyContent: 'center' },
+  calDay: { fontSize: rf(12) },
+  legend: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: rs(16), marginTop: rs(10) },
+  legendDot: { width: rs(9), height: rs(9), borderRadius: rs(5), marginRight: rs(5) },
+  legendText: { fontSize: rf(11.5), color: C.text },
 
-  emptyCard: {
-    backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border, ...cardShadow,
+  // Details sheet
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: C.card, borderTopLeftRadius: rs(20), borderTopRightRadius: rs(20),
+    paddingHorizontal: rs(16), paddingTop: rs(8), paddingBottom: rs(28),
   },
-  empty: { fontSize: rf(13), color: C.muted, textAlign: 'center', paddingVertical: rs(20) },
+  sheetHandle: { alignSelf: 'center', width: rs(40), height: rs(4), borderRadius: 2, backgroundColor: '#DADADA', marginBottom: rs(12) },
+  sheetTitle: { fontSize: rf(17), fontWeight: '800', color: C.text },
+  sheetHint: { fontSize: rf(12), color: C.muted, marginTop: rs(8) },
+  detailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: rs(8), borderBottomWidth: 1, borderBottomColor: '#F2F2F2', gap: rs(10) },
+  detailIcon: { width: rs(30), height: rs(30), borderRadius: rs(15), alignItems: 'center', justifyContent: 'center' },
+  detailLabel: { fontSize: rf(13), color: C.muted, width: rs(100) },
+  detailValue: { flex: 1, fontSize: rf(13.5), fontWeight: '700', color: C.text, textAlign: 'right' },
 });

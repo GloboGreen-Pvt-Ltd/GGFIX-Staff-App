@@ -13,13 +13,14 @@
 // DELIVERED — the three intermediate billing/handover rows record the
 // invoice lifecycle and the in-progress customer handover.
 import React, { useEffect, useRef, useState } from 'react';
-import { Text, View, TouchableOpacity, Image, ScrollView } from 'react-native';
+import { View, TouchableOpacity, Image, ScrollView } from 'react-native';
+import { Text } from '../../components/Typography';
 import { Audio } from '../../utils/audio';
 import {
   Truck, Wrench, Play, Pause, Square,
   ClipboardCheck, Clock, RotateCcw, CheckCircle2,
 } from 'lucide-react-native';
-import { rf } from '../../utils/responsive';
+import { rf, rs } from '../../utils/responsive';
 
 // Phase keys group the flat status list into the two visual sections the
 // timeline renders: the doorstep-pickup sub-flow and the in-shop service
@@ -135,22 +136,22 @@ const LABEL_BY_KEY = Object.fromEntries(
   SHOP_BOOKING_STATUS_OPTIONS.map((o) => [o.value, o.label]),
 );
 
-const SUCCESS = '#09AD2A';      // green dot / line for completed steps
-const BRAND_GREEN_DARK = '#09AD2A';
-const DOT_BORDER = '#D4D4D4';   // gray ring around upcoming steps
-const LINE_PENDING = '#ECECEC'; // connector between unreached steps
-const DANGER = '#F84141';       // Return Device branch — dots, rail and header
+const SUCCESS = '#609138';      // green dot / line for completed steps
+const BRAND_GREEN_DARK = '#035C6C';
+const DOT_BORDER = '#E5E7EB';   // gray ring around upcoming steps
+const LINE_PENDING = '#E5E7EB'; // connector between unreached steps
+const DANGER = '#F32C26';       // Return Device branch — dots, rail and header
 const DANGER_TINT = '#FEECEC';
 
 // Per-stage chrome for the five SERVICE groups. `layout` drives the renderer:
 // 'full' stacks down the page at full width; the two 'branch' stages are laid
 // out side by side in one row, left then right.
 const SERVICE_GROUP_META = {
-  [G_ACCEPTED]:  { title: 'Service Accepted', icon: ClipboardCheck, accent: BRAND_GREEN_DARK, tint: '#E6F7EA', done: SUCCESS, layout: 'full' },
-  [G_PROCESS]:   { title: 'In Process',       icon: Wrench,         accent: '#09AD2A',        tint: '#E6F7EA', done: SUCCESS, layout: 'full' },
+  [G_ACCEPTED]:  { title: 'Service Accepted', icon: ClipboardCheck, accent: BRAND_GREEN_DARK, tint: '#E5F3F5', done: SUCCESS, layout: 'full' },
+  [G_PROCESS]:   { title: 'In Process',       icon: Wrench,         accent: '#609138',        tint: '#E5F3F5', done: SUCCESS, layout: 'full' },
   [G_PENDING]:   { title: 'Working Pending',  icon: Clock,          accent: '#8A6700',        tint: '#FDF6E0', done: SUCCESS, layout: 'branch' },
   [G_RETURN]:    { title: 'Return Device',    icon: RotateCcw,      accent: DANGER,           tint: DANGER_TINT, done: DANGER, layout: 'branch' },
-  [G_COMPLETED]: { title: 'Completed',        icon: CheckCircle2,   accent: BRAND_GREEN_DARK, tint: '#E6F7EA', done: SUCCESS, layout: 'full' },
+  [G_COMPLETED]: { title: 'Completed',        icon: CheckCircle2,   accent: BRAND_GREEN_DARK, tint: '#E5F3F5', done: SUCCESS, layout: 'full' },
 };
 
 const PHASE_META = {
@@ -158,14 +159,14 @@ const PHASE_META = {
     title: 'Pickup Service',
     subtitle: 'Doorstep pickup by our pickup person',
     icon: Truck,
-    tint: '#E6F7EA',
-    accent: '#09AD2A',
+    tint: '#E5F3F5',
+    accent: '#035C6C',
   },
   SERVICE: {
     title: 'Shop Service',
     subtitle: 'Booking + repair lifecycle at the shop',
     icon: Wrench,
-    tint: '#E6F7EA',
+    tint: '#E5F3F5',
     accent: BRAND_GREEN_DARK,
   },
 };
@@ -177,19 +178,19 @@ function PhaseHeader({ phaseKey, anyDone }) {
   return (
     <View
       className="flex-row items-center mb-2.5 rounded-xl px-2.5 py-2"
-      style={{ backgroundColor: '#F3FBF4', borderWidth: 1, borderColor: '#E1F3E5' }}
+      style={{ backgroundColor: '#E5F3F5', borderWidth: 1, borderColor: '#E5F3F5' }}
     >
       <View
         className="w-8 h-8 rounded-full items-center justify-center mr-2"
         style={{ backgroundColor: meta.tint }}
       >
-        <Icon size={16} color={meta.accent} />
+        <Icon size={rs(18)} color="#035C6C" />
       </View>
       <View className="flex-1">
-        <Text className="font-extrabold" style={{ fontSize: rf(12.5), color: meta.accent }}>
+        <Text style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>
           {meta.title}
         </Text>
-        <Text className="text-gray-500 mt-0.5" style={{ fontSize: rf(10.5) }}>
+        <Text className="mt-0.5" style={{ fontSize: rf(12), color: '#6B7280' }}>
           {meta.subtitle}
         </Text>
       </View>
@@ -290,7 +291,7 @@ function StepRow({ opt, ev, completed, isCurrent, isLast, lineCompleted, doneCol
             <View
               className="rounded-full ml-1"
               style={{
-                backgroundColor: danger ? DANGER_TINT : '#E6F7EA',
+                backgroundColor: danger ? DANGER_TINT : '#E5F3F5',
                 paddingHorizontal: 7, paddingVertical: 1.5,
               }}
             >
@@ -343,7 +344,7 @@ function BranchFork({ merge }) {
   );
 }
 
-const PLAYER_GREEN = '#09AD2A';
+const PLAYER_GREEN = '#035C6C';
 const fmtClock = (ms) => {
   const s = Math.max(0, Math.floor((ms || 0) / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -444,7 +445,7 @@ function EventMedia({ audioUrl, imageUrls }) {
       {hasAudio ? (
         <View
           className="rounded-xl px-2.5 py-2 flex-row items-center"
-          style={{ borderWidth: 1, borderColor: '#ECECEC', backgroundColor: '#F8F8F8' }}
+          style={{ borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#F3F4F6' }}
         >
           <TouchableOpacity
             onPress={togglePlay}
@@ -456,12 +457,12 @@ function EventMedia({ audioUrl, imageUrls }) {
           <TouchableOpacity
             onPress={stop}
             className="w-8 h-8 rounded-full items-center justify-center mr-2"
-            style={{ borderWidth: 1, borderColor: '#D4D4D4', backgroundColor: '#FFFFFF' }}
+            style={{ borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF' }}
           >
-            <Square size={11} color="#6E6E6E" fill="#6E6E6E" />
+            <Square size={11} color="#6B7280" fill="#6B7280" />
           </TouchableOpacity>
           <View className="flex-1">
-            <View style={{ height: 4, borderRadius: 2, backgroundColor: '#ECECEC' }}>
+            <View style={{ height: 4, borderRadius: 2, backgroundColor: '#E5E7EB' }}>
               <View style={{ height: 4, borderRadius: 2, width: `${pct * 100}%`, backgroundColor: PLAYER_GREEN }} />
             </View>
             <Text className="text-gray-500 mt-1" style={{ fontSize: rf(10) }}>
@@ -471,7 +472,7 @@ function EventMedia({ audioUrl, imageUrls }) {
           <TouchableOpacity
             onPress={cycleRate}
             className="ml-2 px-2.5 py-1.5 rounded-full"
-            style={{ backgroundColor: '#F3FBF4', borderWidth: 1, borderColor: '#E1F3E5' }}
+            style={{ backgroundColor: '#E5F3F5', borderWidth: 1, borderColor: '#E5F3F5' }}
           >
             <Text className="font-extrabold" style={{ fontSize: rf(11), color: BRAND_GREEN_DARK }}>{rate}x</Text>
           </TouchableOpacity>
@@ -666,7 +667,7 @@ export function ServiceHistoryTimeline({ events, status, phaseFilter }) {
           className="mb-2"
           style={
             showPickup
-              ? { paddingTop: 14, marginTop: 6, borderTopWidth: 1, borderTopColor: '#F3F3F3' }
+              ? { paddingTop: 14, marginTop: 6, borderTopWidth: 1, borderTopColor: '#F3F4F6' }
               : null
           }
         >

@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TextInput, Pressable, Image } from 'react-native';
+import { View, ScrollView, Pressable, Image } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Checkbox, FormField, Select } from '../components/rnr';
 import { normalizeDeviceImageUrl } from '../utils/images';
 import { notify } from '../components/confirm';
+import { useImeiApplies } from '../utils/imeiPolicy';
+import { rf } from '../utils/responsive';
 
 const DURATIONS = [1, 2, 3, 4, 5, 6, 8, 12, 24, 48].map((h) => ({ value: h, label: `${h} - Hr` }));
 
@@ -70,6 +73,8 @@ export default function PickupServicePriceEstimateScreen({ navigation, route }) 
 
   const [now] = useState(() => new Date());
   const [imei, setImei] = useState(params.prefillImei || '');
+  // IMEI is mobile-only; an unknown category keeps the field (old behaviour).
+  const showImei = useImeiApplies(params);
   const [complaint, setComplaint] = useState(params.prefillComplaint || booking?.issueSummary || '');
   // Derive the initial duration from the previously-saved schedule when the
   // pickup person re-enters the wizard from Edit Repair Estimate. Pick the
@@ -112,7 +117,7 @@ export default function PickupServicePriceEstimateScreen({ navigation, route }) 
     const submittedDelivery = new Date(submittedAt.getTime() + duration * 60 * 60 * 1000);
     navigation.navigate('PickupDeviceInformation', {
       ...params,
-      imei: imei.trim(),
+      imei: showImei ? imei.trim() : '',
       complaint: complaint.trim(),
       estimatedAt: `${formatDate(submittedAt)} ${formatTime(submittedAt)}, ${duration}Hr`,
       estimatedDelivery: `${formatDate(submittedDelivery)} - ${formatTime(submittedDelivery)}`,
@@ -131,7 +136,7 @@ export default function PickupServicePriceEstimateScreen({ navigation, route }) 
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={{ width: 56, height: 64 }} resizeMode="cover" />
             ) : (
-              <Ionicons name="phone-portrait-outline" size={24} color="#64748B" />
+              <Ionicons name="phone-portrait-outline" size={24} color="#6B7280" />
             )}
           </View>
           <View className="ml-3 flex-1">
@@ -146,7 +151,7 @@ export default function PickupServicePriceEstimateScreen({ navigation, route }) 
         </Card>
 
         <Card className="mb-4">
-          <Text className="font-bold text-text mb-3 pb-2 border-b border-border">Price Summary</Text>
+          <Text className="font-extrabold text-text mb-3 pb-2 border-b border-border" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Price Summary</Text>
           {services.map((s, i) => (
             <View key={i} className="flex-row items-center mb-2">
               <View className="w-6 h-6 bg-background rounded items-center justify-center mr-2">
@@ -162,20 +167,22 @@ export default function PickupServicePriceEstimateScreen({ navigation, route }) 
           </View>
         </Card>
 
-        <FormField label="IMEI Number">
-          <View className="flex-row items-center bg-card border border-border rounded-xl px-3">
-            <TextInput
-              className="flex-1 py-3 text-text"
-              placeholder="Enter IMEI Number or Scan"
-              placeholderTextColor="#94A3B8"
-              value={imei}
-              onChangeText={setImei}
-            />
-            <Pressable className="p-2"><Ionicons name="barcode-outline" size={22} color="#0F172A" /></Pressable>
-          </View>
-        </FormField>
+        {showImei ? (
+          <FormField label="IMEI Number">
+            <View className="flex-row items-center bg-card border border-border rounded-xl px-3">
+              <TextInput
+                className="flex-1 py-3 text-text"
+                placeholder="Enter IMEI Number or Scan"
+                placeholderTextColor="#94A3B8"
+                value={imei}
+                onChangeText={setImei}
+              />
+              <Pressable className="p-2"><Ionicons name="barcode-outline" size={22} color="#111111" /></Pressable>
+            </View>
+          </FormField>
+        ) : null}
 
-        <Text className="text-text font-bold mb-2">Complaint Notes</Text>
+        <Text className="text-text font-extrabold mb-2" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Complaint Notes</Text>
         <TextInput
           className="bg-card border border-primary rounded-xl px-4 py-3 text-text mb-4"
           placeholder="Enter you issue"
@@ -189,7 +196,7 @@ export default function PickupServicePriceEstimateScreen({ navigation, route }) 
         />
 
         <Card>
-          <Text className="font-bold text-text mb-2">Estimated Approximate Time</Text>
+          <Text className="font-extrabold text-text mb-2" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Estimated Approximate Time</Text>
           <View className="flex-row">
             <View className="flex-1 mr-2">
               <Text className="text-xs text-text-muted mb-1">Date</Text>
@@ -208,7 +215,7 @@ export default function PickupServicePriceEstimateScreen({ navigation, route }) 
               <Select value={duration} options={DURATIONS} onChange={(v) => setDuration(v)} className="py-2" />
             </View>
           </View>
-          <Text className="font-bold text-text mt-3 mb-1">Estimated Delivery Time</Text>
+          <Text className="font-extrabold text-text mt-3 mb-1" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Estimated Delivery Time</Text>
           <View className="bg-card border border-border rounded-xl px-3 py-2">
             <Text className="text-text text-xs">{deliveryLabel}</Text>
           </View>

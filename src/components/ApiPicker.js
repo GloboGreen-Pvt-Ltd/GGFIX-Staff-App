@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, FlatList, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Modal, FlatList, ActivityIndicator } from 'react-native';
+import { Text } from './Typography';
 import { rf } from '../utils/responsive';
 
 export function ApiPicker({ label, items = [], loading, error, value, onSelect, placeholder = 'Select...', keyExtractor = (item) => item?.id, labelExtractor = (item) => item?.name ?? item?.label ?? String(item?.id) }) {
@@ -51,11 +52,11 @@ const styles = StyleSheet.create({
   wrap: { marginBottom: 12 },
   label: { fontSize: rf(14), marginBottom: 4, color: '#9AA0A6' },
   trigger: { borderWidth: 1, borderColor: '#3C4043', borderRadius: 8, padding: 12, minHeight: 48, justifyContent: 'center' },
-  triggerText: { fontSize: rf(16), color: '#F8FAFC' },
+  triggerText: { fontSize: rf(16), color: '#F3F4F6' },
   placeholder: { color: '#80868B' },
-  error: { fontSize: rf(12), color: '#DC2626', marginTop: 4 },
+  error: { fontSize: rf(12), color: '#F32C26', marginTop: 4 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modal: { backgroundColor: '#282A2D', borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: 400 },
   option: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#3C4043' },
-  optionText: { fontSize: rf(16), color: '#F8FAFC' },
+  optionText: { fontSize: rf(16), color: '#F3F4F6' },
 });

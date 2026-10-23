@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Image } from 'react-native';
+import { View, ScrollView, Image } from 'react-native';
+import { Text } from '../components/Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card } from '../components/rnr';
@@ -7,6 +8,7 @@ import { notify } from '../components/confirm';
 import { submitPickupRepairEstimate } from '../api/pickups';
 import { normalizeDeviceImageUrl } from '../utils/images';
 import { rf } from '../utils/responsive';
+import { useImeiApplies } from '../utils/imeiPolicy';
 
 function trackingId(booking, params) {
   return params?.trackingId
@@ -67,6 +69,8 @@ export default function PickupServiceBookingDevicesListScreen({ navigation, rout
   const imageUri = deviceImageUri(booking, params);
   const colorText = params.color || booking?.color || null;
   const [submitting, setSubmitting] = useState(false);
+  // IMEI is mobile-only; an unknown category keeps the old behaviour.
+  const showImei = useImeiApplies(params);
 
   const submit = async () => {
     if (!bookingId) { notify('Missing', 'Booking is required'); return; }
@@ -122,7 +126,7 @@ export default function PickupServiceBookingDevicesListScreen({ navigation, rout
         // Repair-services list — backend DELETE-then-INSERTs repair_booking_services
         // from this array (see PickupBookingController.submitRepairEstimate).
         services,
-        imei: params.imei || null,
+        imei: showImei ? (params.imei || null) : null,
         // Schedule + device-condition fields — match the names backend reads.
         estimatedReadyAt: params.estimatedReadyIso || null,
         estimatedDeliveryAt: params.estimatedDeliveryIso || null,
@@ -155,7 +159,7 @@ export default function PickupServiceBookingDevicesListScreen({ navigation, rout
               {imageUri ? (
                 <Image source={{ uri: imageUri }} style={{ width: 44, height: 48 }} resizeMode="cover" />
               ) : (
-                <Ionicons name="phone-portrait-outline" size={20} color="#64748B" />
+                <Ionicons name="phone-portrait-outline" size={20} color="#6B7280" />
               )}
             </View>
             <View className="ml-2.5 flex-1">
@@ -170,10 +174,10 @@ export default function PickupServiceBookingDevicesListScreen({ navigation, rout
                 <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(10) }}>Customer : <Text className="font-bold text-text" style={{ fontSize: rf(12) }}>{booking.customerName}</Text></Text>
               ) : null}
             </View>
-            <Ionicons name="chevron-forward" size={16} color="#64748B" />
+            <Ionicons name="chevron-forward" size={16} color="#6B7280" />
           </View>
           <View className="px-2.5 pb-2">
-            <Text className="text-text-muted mb-0.5" style={{ fontSize: rf(10) }}>Repair Services</Text>
+            <Text className="font-extrabold text-text mb-1" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Repair Services</Text>
             {services.map((s, i) => (
               <View key={i} className="flex-row items-center my-0.5">
                 <View className="w-5 h-5 bg-background rounded items-center justify-center mr-2">
@@ -190,23 +194,23 @@ export default function PickupServiceBookingDevicesListScreen({ navigation, rout
           </View>
         </Card>
 
-        {params.imei ? (
+        {showImei && params.imei ? (
           <Card className="mb-2.5">
-            <Text className="text-text-muted" style={{ fontSize: rf(10) }}>IMEI</Text>
+            <Text className="font-extrabold text-text" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>IMEI</Text>
             <Text className="font-bold text-text mt-0.5" style={{ fontSize: rf(12) }}>{params.imei}</Text>
           </Card>
         ) : null}
 
         {params.lock?.type && params.lock.type !== 'NONE' ? (
           <Card className="mb-2.5">
-            <Text className="text-text-muted" style={{ fontSize: rf(10) }}>Device Security</Text>
+            <Text className="font-extrabold text-text" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Device Security</Text>
             <Text className="font-bold text-text mt-0.5" style={{ fontSize: rf(12) }}>{params.lock.type}</Text>
           </Card>
         ) : null}
 
         {Array.isArray(params.missingParts) && params.missingParts.length > 0 ? (
           <Card className="mb-2.5">
-            <Text className="text-text-muted mb-1" style={{ fontSize: rf(10) }}>Missing / Damaged Parts</Text>
+            <Text className="font-extrabold text-text mb-1" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Missing / Damaged Parts</Text>
             {params.missingParts.map((p, i) => (
               <Text key={i} className="text-text" style={{ fontSize: rf(12) }}>
                 • {p.partName} {p.missing ? '(missing)' : ''}{p.missing && p.damage ? ', ' : ''}{p.damage ? '(damaged)' : ''}

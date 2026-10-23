@@ -1,15 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  Linking,
-  useWindowDimensions,
-} from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, Linking, useWindowDimensions } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ArrowLeftRight, ClipboardList, Clock3, Package, PackageOpen, Send, ShoppingBag } from 'lucide-react-native';
@@ -22,19 +13,14 @@ import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../componen
 import { MINT, MonthCard, MetricCard, SectionCard, EmptyState } from '../components/MintKit';
 
 const MAX_CONTENT_WIDTH = 720;
-const ORANGE = '#F97316';
+const ORANGE = '#FAA700';
 
 // Presentation only: summary-tile tints.
 const TINTS = {
-  assign:   { bg: '#F4FBF8', border: '#D9EEE4', tile: MINT.deep, icon: '#FFFFFF', wave: '#D6F1E5' },
+  assign:   { bg: '#F4FBF8', border: '#E5F3F5', tile: MINT.deep, icon: '#FFFFFF', wave: '#E5F3F5' },
   reassign: { bg: '#FFF7EE', border: '#FCE3C8', tile: ORANGE,    icon: '#FFFFFF', wave: '#FDE3C6' },
-  total:    { bg: '#F4FBF8', border: '#D9EEE4', tile: MINT.primary, icon: '#FFFFFF', wave: '#D6F1E5' },
+  total:    { bg: '#F4FBF8', border: '#E5F3F5', tile: MINT.primary, icon: '#FFFFFF', wave: '#E5F3F5' },
 };
-
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 // Active = still in the pickup person's hands. REACHED_SHOP stays active so
 // the pickup person can tap "Received at Shop" on the same card to complete
@@ -309,13 +295,9 @@ export default function PickupAssignScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={{ width: contentW }}>
-          <Text style={styles.pageEyebrow}>Assigned Pickups</Text>
-
           <MonthCard
             subtitle="View your pickup assignment summary"
-            monthLabel={`${MONTHS[month - 1]} ${year}`}
-            onPrev={() => stepMonth(-1)}
-            onNext={() => stepMonth(1)}
+            month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }}
             inline={contentW >= 420}
           />
 
@@ -446,21 +428,21 @@ function PickupCard({ booking, variant, busy, onAdvance, onHistory }) {
         <View style={styles.taskActions}>
           <ActionButton
             label="Call"
-            bg="#004C40"
+            bg="#609138"
             icon="call"
             onPress={callCustomer}
             disabled={!phone}
           />
           <ActionButton
             label="Directions"
-            bg="#2563EB"
+            bg="#035C6C"
             icon="navigate"
             onPress={openInMaps}
             disabled={!booking.pickupAddressText}
           />
           <ActionButton
             label="History"
-            bg="#111827"
+            bg="#111111"
             icon="time"
             onPress={onHistory}
           />
@@ -486,9 +468,7 @@ function ActionButton({ label, bg, onPress, icon, disabled }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: MINT.bg },
-  content: { alignItems: 'center', paddingTop: 0, paddingBottom: rs(24) },
-
-  pageEyebrow: { fontSize: rf(13), color: MINT.muted, marginTop: -rs(4), marginBottom: rs(6), fontWeight: '500' },
+  content: { alignItems: 'center', paddingTop: rs(4), paddingBottom: rs(24) },
 
   statRow: { flexDirection: 'row', marginTop: rs(8) },
 

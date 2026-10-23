@@ -9,7 +9,7 @@ import { cn } from './cn';
  */
 export function ScreenBackground({ children, className, variant = 'default' }) {
   const colors = variant === 'cool'
-    ? ['#F8FAFC', '#EFF6FF', '#F5F3FF']
+    ? ['#F3F4F6', '#EFF6FF', '#F5F3FF']
     : ['#FCE7F3', '#F5F3FF', '#DBEAFE'];
   return (
     <View className={cn('flex-1', className)}>

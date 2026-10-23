@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, AppState, Easing, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Animated, AppState, Easing, Platform, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Text } from './Typography';
 import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -11,6 +12,7 @@ import { getMyTechnicianProfile } from '../api/technician';
 import { mergeTechnicianProfile } from '../store/authSlice';
 import { readCurrentLocation, haversineMeters, GEOFENCE_RADIUS_METERS } from '../utils/geo';
 import { rf, rs } from '../utils/responsive';
+import { notifyNow } from '../utils/checkoutAlarm';
 
 // Full-screen attendance geofence. Rendered right after login (wraps the whole
 // authenticated app): the employee can only use the app while physically within
@@ -23,6 +25,7 @@ import { rf, rs } from '../utils/responsive';
 // lock screen never lets an out-of-range punch through.
 
 const RECHECK_MS = 12_000; // auto re-check cadence while locked
+const INSIDE_RECHECK_MS = 60_000; // re-check cadence while the app is in use
 
 export default function GeofenceGate({ onLogout, children }) {
   const dispatch = useDispatch();
@@ -69,12 +72,13 @@ export default function GeofenceGate({ onLogout, children }) {
         pos = await readCurrentLocation();
       } catch (e) {
         if (!mountedRef.current) return;
-        // GPS permission-denied or a transient read error → fail OPEN (render the
-        // app) instead of trapping an on-site employee behind a full-screen lock.
-        // This matches this gate's documented intent, and the server still
-        // geofences the actual check-in / check-out punch, so an out-of-range
-        // punch can never slip through even while the app is usable.
-        setStatus('inside');
+        // Web (desktop browser) has no reliable GPS — don't lock it out.
+        if (Platform.OS === 'web') { setStatus('inside'); return; }
+        // GPS off / permission denied → LOCK. Failing open here would let anyone
+        // bypass the radius rule just by switching location off.
+        setDistance(null);
+        setStatus('denied');
+        setMessage('Turn on location (GPS) and allow Near G Fix to access it to use the app.');
         return;
       }
       const meters = haversineMeters(
@@ -112,12 +116,28 @@ export default function GeofenceGate({ onLogout, children }) {
     return () => sub.remove();
   }, [runCheck]);
 
-  // While locked, poll so arriving at the shop auto-unlocks without a tap.
+  // Poll while locked (auto-unlock on arrival) and while in use (lock as soon
+  // as they walk out of range).
   useEffect(() => {
-    if (status === 'inside' || status === 'checking') return undefined;
-    const id = setInterval(runCheck, RECHECK_MS);
+    if (status === 'checking') return undefined;
+    const id = setInterval(runCheck, status === 'inside' ? INSIDE_RECHECK_MS : RECHECK_MS);
     return () => clearInterval(id);
   }, [status, runCheck]);
+
+  // Notify once each time the employee becomes locked out.
+  const lockedRef = useRef(false);
+  useEffect(() => {
+    const locked = status === 'outside' || status === 'denied';
+    if (locked && !lockedRef.current) {
+      notifyNow(
+        '📍 Outside shop area',
+        status === 'denied'
+          ? 'Location is off. Near G Fix works only within ' + GEOFENCE_RADIUS_METERS + 'm of the shop.'
+          : `You are ${distance ?? '?'}m from the shop. Near G Fix works only within ${GEOFENCE_RADIUS_METERS}m.`,
+      );
+    }
+    if (status !== 'checking') lockedRef.current = locked;
+  }, [status, distance]);
 
   if (status === 'inside') return children;
 
@@ -135,20 +155,20 @@ export default function GeofenceGate({ onLogout, children }) {
 
 /* ----------------------------------------------------------------- visuals */
 
-const GREEN = '#09AD2A';
-const INK = '#1E1E1E';
-const MUTED = '#6E6E6E';
-const RED = '#F84141';
+const GREEN = '#035C6C';
+const INK = '#111111';
+const MUTED = '#6B7280';
+const RED = '#F32C26';
 
 // Soft green shapes in the corners — decorative only.
 function GateBackdrop({ width, height }) {
   return (
     <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
-      <Circle cx={width * 1.02} cy={height * 0.03} r={width * 0.32} fill="#DDF4E2" />
-      <Circle cx={-width * 0.12} cy={height * 0.3} r={width * 0.26} fill="#EAF8EC" />
-      <Circle cx={-width * 0.05} cy={height * 1.0} r={width * 0.3} fill="#CDEFD3" />
-      <Circle cx={width * 1.05} cy={height * 0.98} r={width * 0.28} fill="#CDEFD3" />
-      <Circle cx={width * 0.9} cy={height * 0.25} r={6} fill="#BDEBC6" />
+      <Circle cx={width * 1.02} cy={height * 0.03} r={width * 0.32} fill="#E5F3F5" />
+      <Circle cx={-width * 0.12} cy={height * 0.3} r={width * 0.26} fill="#E5F3F5" />
+      <Circle cx={-width * 0.05} cy={height * 1.0} r={width * 0.3} fill="#E5F3F5" />
+      <Circle cx={width * 1.05} cy={height * 0.98} r={width * 0.28} fill="#E5F3F5" />
+      <Circle cx={width * 0.9} cy={height * 0.25} r={6} fill="#E5F3F5" />
     </Svg>
   );
 }
@@ -200,7 +220,7 @@ function LocationArt({ size, locked, pulse }) {
         <Circle cx={12} cy={11.5} r={5} fill="#FFFFFF" />
       </Svg>
       {/* orbit badges */}
-      <Badge x={cx - W * 0.3} y={cy - H * 0.3} bg="#E6F7EA"><Store size={badge * 0.45} color={GREEN} strokeWidth={2.2} /></Badge>
+      <Badge x={cx - W * 0.3} y={cy - H * 0.3} bg="#E5F3F5"><Store size={badge * 0.45} color={GREEN} strokeWidth={2.2} /></Badge>
       <Badge x={cx + W * 0.27} y={cy - H * 0.34} bg="#FDF6E0"><Smartphone size={badge * 0.45} color="#C99500" strokeWidth={2.2} /></Badge>
       <Badge x={cx - W * 0.36} y={cy + H * 0.12} bg="#FEECEC"><Wrench size={badge * 0.45} color={RED} strokeWidth={2.2} /></Badge>
       <Badge x={cx + W * 0.34} y={cy + H * 0.2} bg={INK}><ShoppingCart size={badge * 0.45} color="#FFFFFF" strokeWidth={2.2} /></Badge>
@@ -216,7 +236,7 @@ function LocationArt({ size, locked, pulse }) {
 function TrustCard({ icon: Icon, title, sub }) {
   return (
     <View style={{ flex: 1, alignItems: 'center', paddingVertical: rs(10), paddingHorizontal: rs(4) }}>
-      <View style={{ width: rs(40), height: rs(40), borderRadius: rs(20), backgroundColor: '#E6F7EA', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: rs(40), height: rs(40), borderRadius: rs(20), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center' }}>
         <Icon size={rs(19)} color={GREEN} strokeWidth={2.2} />
       </View>
       <Text style={{ fontSize: rf(12.5), fontWeight: '800', color: INK, marginTop: rs(6) }} numberOfLines={1}>{title}</Text>
@@ -247,7 +267,7 @@ function GateView({ checking, message, distance, onRetry, onLogout }) {
   const fillW = bar.interpolate({ inputRange: [0, 1], outputRange: ['15%', '85%'] });
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#F8F8F8' }}>
+    <View style={{ flex: 1, backgroundColor: '#F3F4F6' }}>
       <GateBackdrop width={width} height={height} />
       <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
         <ScrollView contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: rs(12) }} showsVerticalScrollIndicator={false}>
@@ -269,6 +289,7 @@ function GateView({ checking, message, distance, onRetry, onLogout }) {
                   <Animated.View style={[styles.knob, { left: fillW }]} />
                 </View>
                 <Text style={styles.hint}>Please wait, this may take a few seconds.</Text>
+                <Text style={[styles.hint, { marginTop: rs(10), fontWeight: '700' }]}>Powered by <Text style={{ color: GREEN }}>Globo Green</Text></Text>
               </>
             ) : (
               <>

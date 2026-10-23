@@ -4,7 +4,8 @@
  * NativeWind primitives in `./rnr/` instead.
  */
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput as RNInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput as RNInput } from './Typography';
 import colors from '../theme/colors';
 import { rf } from '../utils/responsive';
 

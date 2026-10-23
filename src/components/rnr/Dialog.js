@@ -1,5 +1,6 @@
 import React from 'react';
-import { Modal, Pressable, View, Text } from 'react-native';
+import { Modal, Pressable, View } from 'react-native';
+import { Text } from '../Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { cn } from './cn';
 
@@ -21,7 +22,7 @@ export function DialogHeader({ title, onClose }) {
       {title ? <Text className="text-lg font-bold text-text flex-1">{title}</Text> : <View className="flex-1" />}
       {onClose ? (
         <Pressable onPress={onClose} className="p-1">
-          <Ionicons name="close" size={22} color="#0F172A" />
+          <Ionicons name="close" size={22} color="#111111" />
         </Pressable>
       ) : null}
     </View>

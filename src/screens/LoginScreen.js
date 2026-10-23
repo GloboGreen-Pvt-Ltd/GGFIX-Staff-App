@@ -1,18 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -48,20 +36,18 @@ const RESEND_SECONDS = 30;
 const MOBILE_DIGITS = 10;
 
 // Brand palette: green, red, yellow, ink + light neutrals (same as Home).
-const GREEN = '#09AD2A';
-const GREEN_DARK = '#078F22';
-const RED = '#F84141';
-const YELLOW = '#F3BF23';
-const INK = '#1E1E1E';
-const BG = '#F8F8F8';
-const SURFACE = '#F3F3F3';
-const GREEN_TINT = '#E6F7EA';
+const GREEN = '#035C6C';
+const GREEN_DARK = '#024A57';
+const RED = '#F32C26';
+const YELLOW = '#FAA700';
+const INK = '#111111';
+const BG = '#F3F4F6';
+const GREEN_TINT = '#E5F3F5';
 const RED_TINT = '#FEECEC';
 const YELLOW_TINT = '#FDF6E0';
 const TEXT = INK;
-const MUTED = '#6E6E6E';
-const BORDER = '#E6E6E6';
-const DANGER = RED;
+const MUTED = '#6B7280';
+const BORDER = '#E5E7EB';
 const MAX_WIDTH = 480;
 
 export default function LoginScreen({ onLogin }) {
@@ -199,9 +185,13 @@ export default function LoginScreen({ onLogin }) {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
+          // OTP step is pinned to the top so the keyboard opening/resizing the
+          // window doesn't re-centre (and jolt) the frame while typing.
+          step === 'OTP' && styles.scrollTop,
           { paddingTop: insets.top + rs(16), paddingBottom: insets.bottom + rs(20) },
         ]}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={false}
         showsVerticalScrollIndicator={false}
       >
         <View style={{ width: contentW }}>
@@ -243,10 +233,10 @@ function Backdrop() {
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       <View style={[styles.blob, { top: -rs(80), right: -rs(90), width: rs(300), height: rs(300), backgroundColor: '#EAF7EC' }]} />
       <View style={[styles.blob, { top: rs(40), left: -rs(120), width: rs(220), height: rs(220), backgroundColor: '#F1F8F2' }]} />
-      <View style={[styles.blob, { bottom: -rs(110), left: -rs(80), width: rs(220), height: rs(220), backgroundColor: '#CDEFD3' }]} />
-      <View style={[styles.blob, { bottom: -rs(60), left: -rs(30), width: rs(130), height: rs(130), backgroundColor: '#9FDFAB', opacity: 0.55 }]} />
-      <View style={[styles.blob, { bottom: -rs(110), right: -rs(80), width: rs(220), height: rs(220), backgroundColor: '#CDEFD3' }]} />
-      <View style={[styles.blob, { bottom: -rs(60), right: -rs(30), width: rs(130), height: rs(130), backgroundColor: '#9FDFAB', opacity: 0.55 }]} />
+      <View style={[styles.blob, { bottom: -rs(110), left: -rs(80), width: rs(220), height: rs(220), backgroundColor: '#E5F3F5' }]} />
+      <View style={[styles.blob, { bottom: -rs(60), left: -rs(30), width: rs(130), height: rs(130), backgroundColor: '#E5F3F5', opacity: 0.55 }]} />
+      <View style={[styles.blob, { bottom: -rs(110), right: -rs(80), width: rs(220), height: rs(220), backgroundColor: '#E5F3F5' }]} />
+      <View style={[styles.blob, { bottom: -rs(60), right: -rs(30), width: rs(130), height: rs(130), backgroundColor: '#E5F3F5', opacity: 0.55 }]} />
     </View>
   );
 }
@@ -269,7 +259,7 @@ function HeroArt({ size }) {
         borderRadius: phoneW * 0.2, backgroundColor: INK, padding: phoneW * 0.06, transform: [{ rotate: '10deg' }],
         shadowColor: INK, shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 4, height: 8 }, elevation: 6,
       }}>
-        <LinearGradient colors={['#F3FBF4', '#DFF4E3']} style={{ flex: 1, borderRadius: phoneW * 0.15, alignItems: 'center', justifyContent: 'center' }}>
+        <LinearGradient colors={['#E5F3F5', '#E5F3F5']} style={{ flex: 1, borderRadius: phoneW * 0.15, alignItems: 'center', justifyContent: 'center' }}>
           <Image source={require('../../assets/logo.png')} style={{ width: phoneW * 0.6, height: phoneW * 0.6 }} resizeMode="contain" />
         </LinearGradient>
       </View>
@@ -303,7 +293,7 @@ function MobileStep({ mobile, setMobile, loading, error, onSubmit, wide }) {
           Login with{'\n'}
           <Text style={{ color: GREEN }}>mobile number</Text>
         </Text>
-        <Text style={styles.sub}>Welcome to GGFIX Employee App</Text>
+        <Text style={styles.sub}>Welcome to Near G Fix Employee App</Text>
       </View>
 
       {/* Login card */}
@@ -399,7 +389,8 @@ function OtpStep({
         {/* The visible boxes are display-only; one transparent input sits on top
             of the whole row so backspace, paste and SMS autofill all behave like
             a normal single field instead of six that fight over focus. */}
-        <Pressable onPress={() => otpRef.current?.focus()} style={styles.otpRow}>
+        <Pressable onPress={() => otpRef.current?.focus()} style={styles.otpWrap}>
+          <View style={styles.otpRow} pointerEvents="none">
           {boxes.map((_, i) => {
             const char = otp[i] || '';
             const active = otp.length === i;
@@ -409,6 +400,9 @@ function OtpStep({
               </View>
             );
           })}
+          </View>
+          {/* Outside the box row and absolutely positioned, so typed digits can
+              never give it width and squeeze/shift the boxes. */}
           <TextInput
             ref={otpRef}
             value={otp}
@@ -417,6 +411,8 @@ function OtpStep({
             maxLength={OTP_LENGTH}
             autoFocus
             caretHidden
+            contextMenuHidden
+            scrollEnabled={false}
             textContentType="oneTimeCode"
             autoComplete="sms-otp"
             style={styles.otpHiddenInput}
@@ -463,7 +459,7 @@ function PrimaryButton({ label, loading, onPress }) {
       activeOpacity={0.9}
       style={[styles.cta, loading && { opacity: 0.75 }]}
     >
-      <LinearGradient colors={['#12BE36', GREEN, GREEN_DARK]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.ctaInner}>
+      <LinearGradient colors={['#035C6C', GREEN, GREEN_DARK]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.ctaInner}>
         {loading ? (
           <ActivityIndicator color="#FFFFFF" />
         ) : (
@@ -493,6 +489,7 @@ const cardShadow = {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: BG },
   scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
+  scrollTop: { justifyContent: 'flex-start' },
   blob: { position: 'absolute', borderRadius: 9999 },
   badge: {
     position: 'absolute', alignItems: 'center', justifyContent: 'center',
@@ -538,23 +535,30 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', marginBottom: rs(12), ...cardShadow,
   },
 
+  otpWrap: { position: 'relative' },
   otpRow: { flexDirection: 'row', justifyContent: 'space-between' },
   otpBox: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 0,
+    flexBasis: 0,
     height: rs(56),
     marginHorizontal: rs(4),
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: rs(14),
-    borderWidth: 1,
-    borderColor: '#EDEDED',
+    // Fixed 2px border for every box so the active highlight never changes size.
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
     backgroundColor: '#F7F7F7',
     shadowColor: INK, shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
-  otpBoxActive: { borderColor: GREEN, borderWidth: 2, backgroundColor: '#FFFFFF' },
+  otpBoxActive: { borderColor: GREEN, backgroundColor: '#FFFFFF' },
   otpChar: { fontSize: rf(20), fontWeight: '800', color: TEXT },
   otpCharEmpty: { fontSize: rf(20), fontWeight: '700', color: '#CFCFCF' },
-  otpHiddenInput: { ...StyleSheet.absoluteFillObject, opacity: 0, color: 'transparent' },
+  otpHiddenInput: {
+    position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+    opacity: 0, color: 'transparent', padding: 0, fontSize: 1,
+  },
 
   note: { fontSize: rf(12.5), color: GREEN_DARK, fontWeight: '600', marginTop: rs(12), textAlign: 'center' },
 

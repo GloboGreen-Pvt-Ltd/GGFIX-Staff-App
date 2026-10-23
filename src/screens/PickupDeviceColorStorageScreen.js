@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import {
   Check,
   ChevronRight,
@@ -12,7 +13,7 @@ import { Button, Card } from '../components/rnr';
 import { notify } from '../components/confirm';
 import { listColors, listRamOptions, listStorageOptions } from '../api/master';
 import { normalizeDeviceImageUrl } from '../utils/images';
-import { rf } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
 
 function trackingId(booking) {
   return booking?.bookingNumber
@@ -53,11 +54,11 @@ function SectionCard({ icon: Icon, title, hint, children }) {
     <Card className="mb-3">
       <View className="flex-row items-center mb-3">
         <View className="w-8 h-8 rounded-lg bg-primary/10 items-center justify-center mr-2">
-          <Icon size={16} color="#00008B" />
+          <Icon size={rs(18)} color="#035C6C" />
         </View>
         <View className="flex-1">
-          <Text className="text-text font-extrabold" style={{ fontSize: rf(13) }}>{title}</Text>
-          {hint ? <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(10) }}>{hint}</Text> : null}
+          <Text className="text-text font-extrabold" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>{title}</Text>
+          {hint ? <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(12), color: '#6B7280' }}>{hint}</Text> : null}
         </View>
       </View>
       {children}
@@ -151,7 +152,7 @@ export default function PickupDeviceColorStorageScreen({ navigation, route }) {
   if (loading) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator color="#00008B" />
+        <ActivityIndicator color="#035C6C" />
       </View>
     );
   }
@@ -168,17 +169,17 @@ export default function PickupDeviceColorStorageScreen({ navigation, route }) {
             {imageUri ? (
               <Image source={{ uri: imageUri }} style={{ width: 48, height: 48 }} resizeMode="contain" />
             ) : (
-              <Smartphone size={24} color="#00008B" />
+              <Smartphone size={24} color="#035C6C" />
             )}
           </View>
           <View className="flex-1">
             <Text className="text-text-muted uppercase tracking-widest font-bold" style={{ fontSize: rf(10) }}>
               Selected Device
             </Text>
-            <Text className="font-extrabold text-text mt-0.5" style={{ fontSize: rf(13) }} numberOfLines={1}>
+            <Text className="font-extrabold text-text mt-0.5" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }} numberOfLines={1}>
               {brandName} {modelName}
             </Text>
-            <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(10) }} numberOfLines={1}>
+            <Text className="text-text-muted mt-0.5" style={{ fontSize: rf(12), color: '#6B7280' }} numberOfLines={1}>
               Tracking: {trackingId(booking)}
             </Text>
           </View>
@@ -245,7 +246,7 @@ export default function PickupDeviceColorStorageScreen({ navigation, route }) {
                     onPress={() => setRamOptionId(r.id)}
                     className={`flex-row items-center px-3 py-2 m-1 rounded-xl border ${active ? 'bg-primary border-primary' : 'bg-card border-border'}`}
                   >
-                    <MemoryStick size={14} color={active ? '#fff' : '#0F172A'} />
+                    <MemoryStick size={14} color={active ? '#fff' : '#111111'} />
                     <Text style={{ fontSize: rf(12) }} className={`ml-1.5 font-bold ${active ? 'text-white' : 'text-text'}`}>
                       {ramLabelFor(r)}
                     </Text>
@@ -279,7 +280,7 @@ export default function PickupDeviceColorStorageScreen({ navigation, route }) {
                     onPress={() => setStorageOptionId(s.id)}
                     className={`flex-row items-center px-3 py-2 m-1 rounded-xl border ${active ? 'bg-primary border-primary' : 'bg-card border-border'}`}
                   >
-                    <HardDrive size={14} color={active ? '#fff' : '#0F172A'} />
+                    <HardDrive size={14} color={active ? '#fff' : '#111111'} />
                     <Text style={{ fontSize: rf(12) }} className={`ml-1.5 font-bold ${active ? 'text-white' : 'text-text'}`}>
                       {storageLabelFor(s)}
                     </Text>

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,18 +9,17 @@ import { rf, rlh } from '../utils/responsive';
 // Brand green — matches the tab bar / My Account / My Profile.
 // Teal ramp, not three copies of one colour: these feed a 3-stop LinearGradient
 // and identical stops render as a flat block. Solid fills elsewhere in the file
-// still use the brand #09AD2A via GREEN_DARK.
-const GREEN = '#089E26';
-const GREEN_DARK = '#09AD2A';
-const GREEN_LIGHT = '#0BBF30';
-const GREEN_SOFT = '#E6F7EA';
-const TEXT = '#1E1E1E';
-const MUTED = '#6E6E6E';
-const SUBTLE = '#A3A3A3';
-const BORDER = '#ECECEC';
+// still use the brand #035C6C via GREEN_DARK.
+const GREEN = '#035C6C';
+const GREEN_DARK = '#035C6C';
+const GREEN_LIGHT = '#035C6C';
+const GREEN_SOFT = '#E5F3F5';
+const TEXT = '#111111';
+const MUTED = '#6B7280';
+const BORDER = '#E5E7EB';
 
 const DOCS = [
-  { key: 'aadhar', icon: 'id-card-outline', title: 'Aadhar Card', desc: 'Front & back — identity proof', color: '#09AD2A', soft: '#E6F7EA' },
+  { key: 'aadhar', icon: 'id-card-outline', title: 'Aadhar Card', desc: 'Front & back — identity proof', color: '#035C6C', soft: '#E5F3F5' },
   { key: 'pan',    icon: 'card-outline',    title: 'PAN Card',    desc: 'For tax verification',       color: '#8A6700', soft: '#FDF6E0' },
 ];
 
@@ -115,7 +115,7 @@ export default function TechnicianKycIntroScreen({ navigation }) {
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() => navigation.navigate('TechnicianKycUpload')}
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('TechnicianKycUpload'))}
           activeOpacity={0.9}
         >
           <Text style={styles.buttonText}>Get Started</Text>
@@ -127,7 +127,7 @@ export default function TechnicianKycIntroScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F8F8' },
+  safe: { flex: 1, backgroundColor: '#F3F4F6' },
   scroll: { flex: 1 },
   content: { padding: 12, paddingBottom: 28 },
 
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.20)',
     alignItems: 'center', justifyContent: 'center', marginBottom: 14,
   },
-  heroTitle: { fontSize: rf(17), fontWeight: '800', color: '#FFFFFF' },
+  heroTitle: { fontSize: rf(16), fontWeight: '800', color: '#FFFFFF' },
   heroSubtitle: { fontSize: rf(12.5), color: 'rgba(255,255,255,0.92)', marginTop: 5, lineHeight: rlh(18) },
   heroChip: {
     flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 14,
@@ -162,14 +162,14 @@ const styles = StyleSheet.create({
   // Section header
   sectionRow: { flexDirection: 'row', alignItems: 'center', marginTop: 22, marginBottom: 10 },
   sectionAccent: { width: 3, height: 15, borderRadius: 2, backgroundColor: GREEN, marginRight: 8 },
-  sectionLabel: { fontSize: rf(14), fontWeight: '800', color: TEXT, letterSpacing: 0.2 },
+  sectionLabel: { fontSize: rf(16), fontWeight: '800', color: '#1C3053' },
 
   // Document rows
   docRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: BORDER,
     padding: 12, marginBottom: 10,
-    shadowColor: '#1E1E1E', shadowOpacity: 0.03, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+    shadowColor: '#111111', shadowOpacity: 0.03, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
   docIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   docTitle: { fontSize: rf(14), fontWeight: '800', color: TEXT },
@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
   // How-it-works stepper
   card: {
     backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: BORDER, padding: 12,
-    shadowColor: '#1E1E1E', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 1,
+    shadowColor: '#111111', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 1,
   },
   stepRow: { flexDirection: 'row' },
   stepColLeft: { width: 30, alignItems: 'center' },

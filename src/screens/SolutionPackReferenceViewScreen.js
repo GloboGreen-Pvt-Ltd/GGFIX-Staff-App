@@ -1,14 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  ActivityIndicator,
-  Pressable,
-  Modal,
-} from 'react-native';
+import { View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Pressable, Modal } from 'react-native';
+import { Text } from '../components/Typography';
 import {
   ChevronDown, X, Mic, Video as VideoIcon, Image as ImageIcon, Play, FileText,
 } from 'lucide-react-native';
@@ -103,7 +95,7 @@ export default function SolutionPackReferenceViewScreen({ route, navigation }) {
           </View>
         </View>
 
-        <Text className="font-bold text-text mb-2" style={{ fontSize: rf(12) }}>Select Issue Main Category</Text>
+        <Text className="mb-2" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Select Issue Main Category</Text>
         <View className="flex-row flex-wrap -mx-1 mb-3">
           {mainCats.map((c) => {
             const selected = mainCat?.id === c.id;
@@ -117,11 +109,11 @@ export default function SolutionPackReferenceViewScreen({ route, navigation }) {
                     style={{
                       width: 16, height: 16, borderRadius: 8,
                       borderWidth: 2,
-                      borderColor: selected ? '#1E3A8A' : '#94A3B8',
+                      borderColor: selected ? '#1C3053' : '#94A3B8',
                       alignItems: 'center', justifyContent: 'center',
                     }}
                   >
-                    {selected ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#1E3A8A' }} /> : null}
+                    {selected ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#1C3053' }} /> : null}
                   </View>
                   <Text className="ml-2 text-text" style={{ fontSize: rf(12) }}>{c.name}</Text>
                 </Pressable>
@@ -130,7 +122,7 @@ export default function SolutionPackReferenceViewScreen({ route, navigation }) {
           })}
         </View>
 
-        <Text className="font-bold text-text mb-2" style={{ fontSize: rf(12) }}>Select Issue Sub Category</Text>
+        <Text className="mb-2" style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Select Issue Sub Category</Text>
         <DropdownTrigger
           label={subCat?.name || (subCats.length ? 'Any sub-category' : 'Pick a main category first')}
           onPress={() => subCats.length ? setSubPickerOpen(true) : null}
@@ -138,8 +130,8 @@ export default function SolutionPackReferenceViewScreen({ route, navigation }) {
         />
 
         <View className="flex-row items-center justify-between mt-5 mb-2">
-          <Text className="font-bold text-text" style={{ fontSize: rf(13) }}>Solution Document's</Text>
-          {loading ? <ActivityIndicator size="small" color="#3B82F6" /> : null}
+          <Text style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>Solution Document's</Text>
+          {loading ? <ActivityIndicator size="small" color="#0788C9" /> : null}
         </View>
 
         {packs.length === 0 && !loading ? (
@@ -209,7 +201,7 @@ function PackCard({ pack }) {
   return (
     <View
       className="bg-card rounded-xl p-3 mb-3"
-      style={{ borderWidth: 1, borderColor: '#E2E8F0' }}
+      style={{ borderWidth: 1, borderColor: '#E5E7EB' }}
     >
       <Text className="font-bold text-text" style={{ fontSize: rf(13) }} numberOfLines={2}>
         {pack.title || 'Solution pack'}
@@ -232,7 +224,7 @@ function PackCard({ pack }) {
       {images.length > 0 ? (
         <View className="mt-2">
           <View className="flex-row items-center mb-1">
-            <ImageIcon size={14} color="#0F172A" />
+            <ImageIcon size={14} color="#111111" />
             <Text className="font-bold text-text ml-2" style={{ fontSize: rf(12) }}>Images</Text>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -271,16 +263,16 @@ function MediaLinkRow({ icon, label, name, url }) {
     <TouchableOpacity
       onPress={() => openExternalUrl(url)}
       className="flex-row items-center mt-2 rounded-md px-2 py-2"
-      style={{ backgroundColor: '#F1F5F9' }}
+      style={{ backgroundColor: '#F3F4F6' }}
     >
-      <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#3B82F6', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: '#0788C9', alignItems: 'center', justifyContent: 'center' }}>
         {icon}
       </View>
       <View className="ml-3 flex-1">
         <Text className="text-text-muted" style={{ fontSize: rf(11) }}>{label}</Text>
         <Text className="text-text" style={{ fontSize: rf(12) }} numberOfLines={1}>{name || 'Tap to play'}</Text>
       </View>
-      <Play size={14} color="#3B82F6" />
+      <Play size={14} color="#0788C9" />
     </TouchableOpacity>
   );
 }
@@ -291,10 +283,10 @@ function DropdownTrigger({ label, onPress, disabled }) {
       onPress={onPress}
       disabled={disabled}
       className="flex-row items-center justify-between rounded-md bg-card px-3 py-2"
-      style={{ borderWidth: 1, borderColor: '#CBD5E1', opacity: disabled ? 0.5 : 1 }}
+      style={{ borderWidth: 1, borderColor: '#E5E7EB', opacity: disabled ? 0.5 : 1 }}
     >
       <Text className="text-text flex-1" style={{ fontSize: rf(12) }} numberOfLines={1}>{label}</Text>
-      <ChevronDown size={14} color="#0F172A" />
+      <ChevronDown size={14} color="#111111" />
     </TouchableOpacity>
   );
 }
@@ -305,9 +297,9 @@ function PickerModal({ visible, title, options, onPick, onClose }) {
       <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
         <View className="bg-card rounded-t-2xl p-4" style={{ maxHeight: '70%' }}>
           <View className="flex-row items-center justify-between mb-3">
-            <Text className="font-extrabold text-text" style={{ fontSize: rf(15) }}>{title}</Text>
+            <Text style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>{title}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={8}>
-              <X size={18} color="#0F172A" />
+              <X size={18} color="#111111" />
             </TouchableOpacity>
           </View>
           {options.length === 0 ? (
@@ -319,7 +311,7 @@ function PickerModal({ visible, title, options, onPick, onClose }) {
                   key={String(opt.key)}
                   onPress={() => onPick(opt)}
                   className="px-3 py-3"
-                  style={{ borderBottomWidth: 1, borderBottomColor: '#F1F5F9' }}
+                  style={{ borderBottomWidth: 1, borderBottomColor: '#F3F4F6' }}
                 >
                   <Text className="text-text" style={{ fontSize: rf(13) }}>{opt.label}</Text>
                 </TouchableOpacity>

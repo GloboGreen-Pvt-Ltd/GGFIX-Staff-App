@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet } from 'react-native';
+import { Text } from './Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { rf } from '../utils/responsive';
 
@@ -19,7 +20,7 @@ export default function ErrorState({ message, onRetry }) {
   return (
     <View style={styles.card}>
       <View style={styles.iconWrap}>
-        <Ionicons name="cloud-offline-outline" size={rf(22)} color="#DC2626" />
+        <Ionicons name="cloud-offline-outline" size={rf(22)} color="#F32C26" />
       </View>
       <Text style={styles.title}>Couldn't load data</Text>
       <Text style={styles.message} numberOfLines={3}>
@@ -49,11 +50,11 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: 22, backgroundColor: '#FEE2E2',
     alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
-  title: { fontSize: rf(14), fontWeight: '800', color: '#111827' },
+  title: { fontSize: rf(14), fontWeight: '800', color: '#111111' },
   message: { fontSize: rf(12), color: '#6B7280', textAlign: 'center', marginTop: 4, lineHeight: rf(17) },
   retryBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14,
-    backgroundColor: '#DC2626', borderRadius: 999, paddingHorizontal: 18, paddingVertical: 9,
+    backgroundColor: '#F32C26', borderRadius: 999, paddingHorizontal: 18, paddingVertical: 9,
   },
   retryText: { color: '#FFFFFF', fontSize: rf(13), fontWeight: '800' },
 });

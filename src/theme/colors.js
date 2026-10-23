@@ -5,32 +5,32 @@
  * The other named exports are kept for screens that still use StyleSheet.
  */
 const tokens = {
-  primary: '#00008B',
-  secondary: '#2563EB',
+  primary: '#035C6C',
+  secondary: '#035C6C',
   background: '#FFFFFF',
   card: '#FFFFFF',
-  text: '#0F172A',
-  textMuted: '#64748B',
-  border: '#E2E8F0',
-  success: '#004C40',
-  warning: '#F59E0B',
-  danger: '#EF4444',
-  error: '#EF4444',
+  text: '#111111',
+  textMuted: '#6B7280',
+  border: '#E5E7EB',
+  success: '#609138',
+  warning: '#FAA700',
+  danger: '#F32C26',
+  error: '#F32C26',
 };
 
 export default {
   ...tokens,
 
-  primaryLight: '#1E1EAC',
+  primaryLight: '#035C6C',
   backgroundCard: tokens.card,
-  inputBg: '#F1F5F9',
+  inputBg: '#F3F4F6',
   textSecondary: tokens.textMuted,
   headerBg: '#FFFFFF',
   headerText: tokens.text,
   tabBarBg: tokens.card,
   tabBarActive: tokens.primary,
   tabBarInactive: tokens.textMuted,
-  backButtonBg: '#F1F5F9',
+  backButtonBg: '#F3F4F6',
   backButtonIcon: tokens.text,
 };
 

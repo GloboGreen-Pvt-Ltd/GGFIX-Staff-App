@@ -1,35 +1,28 @@
 import React, { useCallback, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  StatusBar,
-  Text,
-  TouchableOpacity,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StatusBar, View, useWindowDimensions } from 'react-native';
+import { Text } from '../components/Typography';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  ChevronLeft, History, Radio, RotateCw,
+  History, Radio, RotateCw,
 } from 'lucide-react-native';
+import MintScreenHeader from '../components/MintScreenHeader';
 import { getTicket, listTicketEvents } from '../api/tickets';
 import {
   ServiceHistoryTimeline,
   getCurrentPhaseLabel,
 } from './common/serviceHistoryPhases';
-import { rf } from '../utils/responsive';
+import { rf, rs } from '../utils/responsive';
 
-// Screen palette — GGFIX green / red on light neutrals, the same set the
+// Screen palette — Near G Fix green / red on light neutrals, the same set the
 // restyled Home and Ticket Detail screens use.
-const GREEN = '#09AD2A';
-const GREEN_TINT = '#E6F7EA';
-const RED = '#F84141';
-const INK = '#1E1E1E';
-const MUTED = '#6E6E6E';
-const BG = '#F8F8F8';
-const BORDER = '#ECECEC';
+const GREEN = '#035C6C';
+const GREEN_TINT = '#E5F3F5';
+const RED = '#F32C26';
+const INK = '#111111';
+const MUTED = '#6B7280';
+const BG = '#F3F4F6';
+const BORDER = '#E5E7EB';
 
 const cardShadow = {
   borderWidth: 1,
@@ -59,14 +52,11 @@ function SectionHeader({ icon: Icon, label }) {
     <View className="flex-row items-center" style={{ marginBottom: 10 }}>
       <View
         className="rounded-full items-center justify-center mr-2"
-        style={{ width: 26, height: 26, backgroundColor: GREEN_TINT }}
+        style={{ width: rs(32), height: rs(32), backgroundColor: GREEN_TINT }}
       >
-        <Icon size={13} color={GREEN} />
+        <Icon size={rs(18)} color={GREEN} />
       </View>
-      <Text
-        className="font-extrabold tracking-widest"
-        style={{ fontSize: rf(10.5), letterSpacing: 1.2, color: INK }}
-      >
+      <Text style={{ fontSize: rf(16), fontWeight: '800', color: INK }}>
         {label}
       </Text>
     </View>
@@ -131,39 +121,26 @@ export default function TechnicianBookingTimelineScreen({ route }) {
       <View
         style={{
           backgroundColor: '#FFFFFF',
-          paddingTop: insets.top + 6,
-          paddingBottom: 10,
-          paddingHorizontal: 14,
+          paddingTop: insets.top,
           borderBottomWidth: 1,
           borderBottomColor: BORDER,
         }}
       >
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.7}
-            className="rounded-full items-center justify-center mr-3"
-            style={{ width: 38, height: 38, backgroundColor: '#F3FBF4', borderWidth: 1, borderColor: '#E1F3E5' }}
-          >
-            <ChevronLeft size={21} color={INK} strokeWidth={2.4} />
-          </TouchableOpacity>
-          <Text
-            className="flex-1 font-extrabold"
-            style={{ fontSize: rf(16), color: INK }}
-            numberOfLines={1}
-          >
-            Service History
-          </Text>
-          <View
-            className="px-2.5 py-1 rounded-full"
-            style={{ maxWidth: 180, backgroundColor: GREEN_TINT }}
-          >
-            <Text className="font-extrabold" style={{ fontSize: rf(10.5) }} numberOfLines={1}>
-              <Text style={{ color: INK }}>#{tid.prefix}</Text>
-              <Text style={{ color: GREEN }}>{tid.digits}</Text>
-            </Text>
-          </View>
-        </View>
+        <MintScreenHeader
+          title="Service History"
+          navigation={navigation}
+          right={(
+            <View
+              className="px-2.5 py-1 rounded-full"
+              style={{ maxWidth: 180, backgroundColor: GREEN_TINT }}
+            >
+              <Text className="font-extrabold" style={{ fontSize: rf(10.5) }} numberOfLines={1}>
+                <Text style={{ color: INK }}>#{tid.prefix}</Text>
+                <Text style={{ color: GREEN }}>{tid.digits}</Text>
+              </Text>
+            </View>
+          )}
+        />
       </View>
 
       <ScrollView
@@ -212,7 +189,7 @@ export default function TechnicianBookingTimelineScreen({ route }) {
               </View>
               <View
                 className="flex-row items-center"
-                style={{ marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F3F3' }}
+                style={{ marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F3F4F6' }}
               >
                 <RotateCw size={11} color="#A3A3A3" />
                 <Text className="ml-1.5" style={{ fontSize: rf(10), color: MUTED }}>
@@ -238,7 +215,7 @@ export default function TechnicianBookingTimelineScreen({ route }) {
           {/* Timeline */}
           <View style={{ paddingHorizontal: 12, marginTop: 10 }}>
             <View className="bg-white" style={[{ borderRadius: 14, padding: 12 }, cardShadow]}>
-              <SectionHeader icon={History} label="SERVICE TIMELINE" />
+              <SectionHeader icon={History} label="Service Timeline" />
               <ServiceHistoryTimeline
                 events={events}
                 status={ticket?.status}

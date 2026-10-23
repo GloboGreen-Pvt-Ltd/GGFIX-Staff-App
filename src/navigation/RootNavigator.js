@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text } from 'react-native';
 import { useDispatch } from 'react-redux';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { getSession, getToken, clearSession, setAuthExpiredHandler } from '../auth/session';
 import { logout } from '../api/auth';
+import { isJwtExpired } from '../api/client';
 import { setSession, clearSession as clearAuth } from '../store/authSlice';
 import LoginScreen from '../screens/LoginScreen';
 import TechnicianNavigator from './TechnicianNavigator';
@@ -37,6 +37,12 @@ export default function RootNavigator() {
       const [profile, token] = await Promise.all([
         getSession(), getToken(), new Promise((r) => setTimeout(r, MIN_SPLASH_MS)),
       ]);
+      // An expired stored token gets 403 from every service — start at Login instead.
+      if (token && isJwtExpired(token)) {
+        await clearSession();
+        setLoading(false);
+        return;
+      }
       const s = token ? { ...(profile || {}), accessToken: token } : profile;
       setSessionState(s);
       dispatch(setSession(s));

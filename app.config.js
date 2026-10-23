@@ -5,7 +5,7 @@ const host = process.env.EXPO_PUBLIC_API_HOST || null;
 
 export default {
   expo: {
-    name: 'GGFIX Employee',
+    name: 'Near G Fix Employee',
     slug: 'ggfix-app',
     // EAS account/organization that owns the project (from your Expo dashboard).
     // Verify this matches expo.dev → your account. Change if different.
@@ -16,7 +16,7 @@ export default {
     userInterfaceStyle: 'automatic',
     jsEngine: 'hermes',
     icon: './assets/logo.png',
-    splash: { image: './assets/logo.png', resizeMode: 'contain', backgroundColor: '#F8F8F8' },
+    splash: { image: './assets/logo.png', resizeMode: 'contain', backgroundColor: '#F3F4F6' },
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.ggfix.employeeapp',
@@ -24,8 +24,15 @@ export default {
         NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
       },
     },
-    android: { package: 'com.ggfix.employeeapp', adaptiveIcon: { foregroundImage: './assets/logo.png', backgroundColor: '#202124' } },
+    android: {
+      package: 'com.ggfix.employeeapp',
+      adaptiveIcon: { foregroundImage: './assets/logo.png', backgroundColor: '#202124' },
+      // Checkout SOS alarm: exact timing at 6:30 PM + survive reboot.
+      permissions: ['SCHEDULE_EXACT_ALARM', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE', 'POST_NOTIFICATIONS'],
+    },
     plugins: [
+      // Checkout SOS alarm sound (src/utils/checkoutAlarm.js), bundled as a native resource.
+      ['expo-notifications', { sounds: ['./assets/sounds/sos_alarm.wav'], color: '#D32F2F' }],
       // Required config plugins for these modules as of Expo SDK 57.
       'expo-asset',
       'expo-sharing',
@@ -34,7 +41,7 @@ export default {
       ['expo-audio', { microphonePermission: 'We use the microphone to record voice notes on repair tickets.' }],
       // Keychain/Keystore-backed storage for the auth token (see src/auth/session.js).
       'expo-secure-store',
-      ['expo-local-authentication', { faceIDPermission: 'Use Face ID to unlock GGFIX.' }],
+      ['expo-local-authentication', { faceIDPermission: 'Use Face ID to unlock Near G Fix.' }],
       // Live camera for scanning ticket QR slips (Home header scan icon).
       ['expo-camera', { cameraPermission: 'We use your camera to scan ticket QR slips and open the job.' }],
       // The bare `android.usesCleartextTraffic` key is NOT read by Expo prebuild —

@@ -1,21 +1,23 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, TouchableOpacity, View } from 'react-native';
+import { Text } from '../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  Bell, Wrench, CalendarCheck2, CalendarX2, CalendarClock, CheckCircle2,
+  Bell, Wrench, CalendarCheck2, CalendarX2, CalendarClock, Timer,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { listMyTickets } from '../api/tickets';
 import { getMyTechnicianProfile, getMyLeaves } from '../api/technician';
 import { rf } from '../utils/responsive';
 
-const FILTERS = ['All', 'Tickets', 'Leave'];
+const FILTERS = ['All', 'Tickets', 'Leave', 'Permission'];
+const POLL_MS = 15000; // refresh while the screen is open so status changes show quickly
 
-// GGFIX palette, same as Home / Ticket Detail.
+// Near G Fix palette, same as Home / Ticket Detail.
 const C = {
-  green: '#09AD2A', greenTint: '#E6F7EA', greenSoft: '#F3FBF4', greenLine: '#CFEFD6',
-  red: '#F84141', redTint: '#FEECEC', yellowTint: '#FDF6E0', yellowInk: '#8A6700',
-  ink: '#1E1E1E', muted: '#6E6E6E', faint: '#A3A3A3', bg: '#F8F8F8', border: '#ECECEC',
+  green: '#035C6C', greenTint: '#E5F3F5', greenSoft: '#E5F3F5', greenLine: '#E5F3F5',
+  red: '#F32C26', redTint: '#FEECEC', yellowTint: '#FDF6E0', yellowInk: '#8A6700',
+  ink: '#111111', muted: '#6B7280', faint: '#A3A3A3', bg: '#F3F4F6', border: '#E5E7EB',
 };
 const READ_KEY = 'notifications.read.v1';
 
@@ -69,16 +71,19 @@ function leaveNotification(l) {
   const dateLabel = l.startDate
     ? new Date(l.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : '';
-  let title = 'Leave requested';
-  if (status === 'APPROVED') title = 'Leave approved';
-  else if (status === 'REJECTED') title = 'Leave rejected';
+  // Permission requests (leaveType PERMISSION) are their own notification kind.
+  const isPermission = String(l.leaveType || '').toUpperCase() === 'PERMISSION';
+  const noun = isPermission ? 'Permission' : 'Leave';
+  let title = `${noun} requested`;
+  if (status === 'APPROVED') title = `${noun} approved`;
+  else if (status === 'REJECTED') title = `${noun} rejected`;
   // Order/stamp a decided leave by its decision time (the DTO exposes
   // approvedAt / rejectedAt, not decidedAt/createdAt); pending falls back to
   // when it was requested.
   const decidedAt = status === 'APPROVED' ? l.approvedAt : status === 'REJECTED' ? l.rejectedAt : null;
   return {
     id: `leave:${l.id}:${status}`,
-    kind: 'leave',
+    kind: isPermission ? 'permission' : 'leave',
     leaveStatus: status,
     title,
     body: dateLabel ? `${dateLabel}${l.reason ? ` — ${l.reason}` : ''}` : (l.reason || 'Leave request'),
@@ -136,7 +141,10 @@ export default function NotificationsScreen({ navigation }) {
     const [{ items: feed, failed }, persistedRead] = await Promise.all([buildFeed(), loadReadIds()]);
     setItems(feed);
     setLoadFailed(failed);
+    // Show what was new on this visit (highlighted), but persist everything as
+    // read right away — opening the feed reads it; no manual action needed.
     setReadIds(persistedRead);
+    if (feed.length) saveReadIds(new Set([...persistedRead, ...feed.map((n) => n.id)].slice(-800)));
   }, []);
 
   // Always clear the spinner once a load settles — gating it on the focus
@@ -144,6 +152,8 @@ export default function NotificationsScreen({ navigation }) {
   // re-focused mid-load (the newer pass never reset it).
   useFocusEffect(useCallback(() => {
     load().finally(() => setLoading(false));
+    const t = setInterval(() => { load(); }, POLL_MS);
+    return () => clearInterval(t);
   }, [load]));
 
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
@@ -164,19 +174,14 @@ export default function NotificationsScreen({ navigation }) {
       navigation.navigate('TechnicianTicketDetail', { ticketId: n.ticketId });
     } else if (n.kind === 'leave') {
       navigation.navigate('LeaveReport');
+    } else if (n.kind === 'permission') {
+      navigation.navigate('LeaveReport', { type: 'PERMISSION' });
     }
-  };
-
-  const onMarkAll = () => {
-    // Keep only ids still in the feed so the stored set doesn't grow forever.
-    const next = new Set(items.map((n) => n.id));
-    setReadIds(next);
-    saveReadIds(next);
   };
 
   const visible = useMemo(() => {
     if (filter === 'All') return items;
-    const want = filter === 'Tickets' ? 'ticket' : 'leave';
+    const want = filter === 'Tickets' ? 'ticket' : filter === 'Permission' ? 'permission' : 'leave';
     return items.filter((n) => n.kind === want);
   }, [items, filter]);
 
@@ -223,10 +228,10 @@ export default function NotificationsScreen({ navigation }) {
           <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: loadFailed ? C.redTint : C.greenTint, alignItems: 'center', justifyContent: 'center' }}>
             <Bell size={26} color={loadFailed ? C.red : C.green} />
           </View>
-          <Text style={{ fontSize: rf(15), fontWeight: '800', color: C.ink, marginTop: 12 }}>
+          <Text style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053', marginTop: 12 }}>
             {loadFailed ? "Couldn't load notifications" : "You're all caught up"}
           </Text>
-          <Text style={{ fontSize: rf(12), color: C.muted, marginTop: 4, textAlign: 'center' }}>
+          <Text style={{ fontSize: rf(12), color: '#6B7280', marginTop: 4, textAlign: 'center' }}>
             {loadFailed ? 'Check your connection and try again.' : "We'll show ticket assignments and leave updates here."}
           </Text>
           {loadFailed ? (
@@ -243,14 +248,8 @@ export default function NotificationsScreen({ navigation }) {
           <View className="flex-row items-center justify-between" style={{ paddingHorizontal: 2, marginBottom: 8 }}>
             <Text style={{ fontSize: rf(11.5), color: C.muted }}>
               {visible.length} notification{visible.length === 1 ? '' : 's'}
-              {unreadCount > 0 ? ` · ${unreadCount} unread` : ''}
+              {unreadCount > 0 ? ` · ${unreadCount} new` : ''}
             </Text>
-            {unreadCount > 0 ? (
-              <TouchableOpacity onPress={onMarkAll} activeOpacity={0.7} className="flex-row items-center">
-                <CheckCircle2 size={14} color={C.green} />
-                <Text style={{ fontSize: rf(11.5), fontWeight: '700', color: C.green, marginLeft: 4 }}>Mark all read</Text>
-              </TouchableOpacity>
-            ) : null}
           </View>
           {visible.map((n) => {
             const read = readIds.has(n.id);
@@ -291,12 +290,35 @@ export default function NotificationsScreen({ navigation }) {
 }
 
 function iconFor(n) {
+  if (n.kind === 'permission') {
+    if (n.leaveStatus === 'APPROVED') return { Icon: Timer, color: C.green, bg: C.greenTint };
+    if (n.leaveStatus === 'REJECTED') return { Icon: Timer, color: C.red, bg: C.redTint };
+    return { Icon: Timer, color: C.yellowInk, bg: C.yellowTint };
+  }
   if (n.kind === 'leave') {
     if (n.leaveStatus === 'APPROVED') return { Icon: CalendarCheck2, color: C.green, bg: C.greenTint };
     if (n.leaveStatus === 'REJECTED') return { Icon: CalendarX2, color: C.red, bg: C.redTint };
     return { Icon: CalendarClock, color: C.yellowInk, bg: C.yellowTint };
   }
-  return { Icon: Wrench, color: C.ink, bg: '#F3F3F3' };
+  return { Icon: Wrench, color: C.ink, bg: '#F3F4F6' };
+}
+
+// Auto-read: screens that SHOW a ticket / leave call this with the records
+// they displayed, so the matching notification is marked read without the
+// user opening the Notifications screen. Ids mirror ticketNotification /
+// leaveNotification exactly.
+export async function markNotificationsSeen({ tickets = [], leaves = [] } = {}) {
+  const ids = [
+    ...tickets.filter((t) => t?.id).map((t) => ticketNotification(t).id),
+    ...leaves.filter((l) => l?.id).map((l) => leaveNotification(l).id),
+  ];
+  if (!ids.length) return;
+  const set = await loadReadIds();
+  let changed = false;
+  ids.forEach((id) => { if (!set.has(id)) { set.add(id); changed = true; } });
+  if (!changed) return;
+  // Cap the stored set so it can't grow forever (newest additions kept).
+  await saveReadIds(new Set([...set].slice(-800)));
 }
 
 // Lightweight helper exported so the HomeScreen bell badge can stay in sync

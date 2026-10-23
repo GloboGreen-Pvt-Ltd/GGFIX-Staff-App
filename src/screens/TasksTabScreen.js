@@ -1,14 +1,16 @@
 import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Pressable } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { rf } from '../utils/responsive';
+import MintScreenHeader from '../components/MintScreenHeader';
 
 export default function TasksTabScreen({ navigation }) {
   return (
     <SafeAreaView className="flex-1 bg-background" edges={['top']}>
+      <MintScreenHeader title="Tasks" navigation={navigation} />
       <View className="flex-1 items-center justify-center px-6">
-        <Text className="font-extrabold text-text" style={{ fontSize: rf(20) }}>Tasks</Text>
-        <Text className="text-text-muted mt-2 text-center" style={{ fontSize: rf(13) }}>
+        <Text className="text-text-muted text-center" style={{ fontSize: rf(13) }}>
           Jump straight into your assigned tickets.
         </Text>
         <Pressable

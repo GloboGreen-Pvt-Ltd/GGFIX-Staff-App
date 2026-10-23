@@ -1,15 +1,6 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-  Platform,
-  Image,
-  ActivityIndicator,
-} from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, Image, ActivityIndicator } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -32,6 +23,7 @@ const STEPS = [
 ];
 
 export default function TechnicianKycUploadScreen({ navigation, route }) {
+// Header ⓘ opens the KYC details page (documents needed + how it works).  useLayoutEffect(() => {    navigation.setOptions({      headerRight: () => (        <TouchableOpacity onPress={() => navigation.navigate('TechnicianKycIntro')} hitSlop={8} accessibilityLabel="KYC details"          style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center' }}>          <Ionicons name="information-circle-outline" size={22} color="#035C6C" />        </TouchableOpacity>      ),    });  }, [navigation]);
   // When entered from KYC View → Edit, route.params.existing is a map of
   // docType → existing server doc. Pre-populate `files` with placeholder
   // entries so the previews show, and skip re-uploading those URLs on submit.
@@ -219,7 +211,7 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
               <View key={doc.key} style={styles.cardOuter}>
                 <View style={styles.cardHeader}>
                   <View style={styles.cardHeaderIcon}>
-                    <Ionicons name="person-circle-outline" size={16} color="#4A4A4A" />
+                    <Ionicons name="person-circle-outline" size={16} color="#6B7280" />
                   </View>
                   <Text style={styles.cardHeaderTitle} numberOfLines={1}>
                     {doc.title}
@@ -285,7 +277,7 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8F8F8' },
+  safe: { flex: 1, backgroundColor: '#F3F4F6' },
   scroll: { flex: 1 },
   content: { padding: 12, paddingBottom: 28 },
 
@@ -304,18 +296,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
   },
-  stepDotIdle: { borderColor: '#09AD2A', backgroundColor: '#FFFFFF' },
+  stepDotIdle: { borderColor: '#035C6C', backgroundColor: '#FFFFFF' },
   stepDotInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFFFFF' },
-  stepDotDone: { borderColor: '#09AD2A', backgroundColor: '#09AD2A' },
-  stepLabel: { fontSize: rf(9), color: '#6E6E6E', fontWeight: '600', marginTop: 3 },
-  stepLabelDone: { color: '#09AD2A' },
+  stepDotDone: { borderColor: '#609138', backgroundColor: '#609138' },
+  stepLabel: { fontSize: rf(9), color: '#6B7280', fontWeight: '600', marginTop: 3 },
+  stepLabelDone: { color: '#609138' },
   stepLine: {
     flex: 1,
     height: 2,
-    backgroundColor: '#D4D4D4',
+    backgroundColor: '#E5E7EB',
     marginTop: -12,
   },
-  stepLineDone: { backgroundColor: '#09AD2A' },
+  stepLineDone: { backgroundColor: '#609138' },
 
   grid: {
     flexDirection: 'row',
@@ -334,15 +326,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#F3F3F3',
+    backgroundColor: '#F3F4F6',
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 6,
     marginBottom: 8,
   },
   cardHeaderIcon: { width: 18, alignItems: 'center' },
-  cardHeaderTitle: { flex: 1, fontSize: rf(11), fontWeight: '700', color: '#1E1E1E' },
-  requiredStar: { color: '#F84141', fontWeight: '800', fontSize: rf(12) },
+  cardHeaderTitle: { flex: 1, fontSize: rf(11), fontWeight: '700', color: '#111111' },
+  requiredStar: { color: '#F32C26', fontWeight: '800', fontSize: rf(12) },
 
   dropZone: {
     borderWidth: 1,
@@ -357,19 +349,19 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-  dropZoneUploaded: { borderColor: '#09AD2A', padding: 0, backgroundColor: '#FFFFFF' },
+  dropZoneUploaded: { borderColor: '#035C6C', padding: 0, backgroundColor: '#FFFFFF' },
 
   uploadIconCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#09AD2A',
+    backgroundColor: '#035C6C',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,
   },
-  dropZoneTitle: { fontSize: rf(10), color: '#4A4A4A', fontWeight: '700', textAlign: 'center' },
-  dropZoneSub: { fontSize: rf(9), color: '#6E6E6E', textAlign: 'center', marginTop: 1 },
+  dropZoneTitle: { fontSize: rf(10), color: '#6B7280', fontWeight: '700', textAlign: 'center' },
+  dropZoneSub: { fontSize: rf(9), color: '#6B7280', textAlign: 'center', marginTop: 1 },
 
   preview: { width: '100%', height: 92, resizeMode: 'cover', borderRadius: 6 },
   removeBadge: {
@@ -393,7 +385,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  actionBtnProceed: { backgroundColor: '#09AD2A' },
-  actionBtnSubmit: { backgroundColor: '#09AD2A' },
+  actionBtnProceed: { backgroundColor: '#035C6C' },
+  actionBtnSubmit: { backgroundColor: '#035C6C' },
   actionBtnText: { color: '#FFFFFF', fontSize: rf(14), fontWeight: '800', letterSpacing: 1 },
 });

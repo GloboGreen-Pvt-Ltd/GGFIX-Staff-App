@@ -1,19 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Pressable,
-  ScrollView,
-  ActivityIndicator,
-  useWindowDimensions,
-} from 'react-native';
+import { useSelector } from 'react-redux';
+import { selectSession } from '../store/authSlice';
+import { View, StyleSheet, TouchableOpacity, Pressable, ScrollView, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  BriefcaseMedical, CalendarDays, Check, ChevronRight, CircleAlert, CircleCheck,
-  CloudUpload, Coffee, Contrast, FileText, Leaf, Send,
+  BriefcaseMedical,
+  CalendarDays,
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  CloudUpload,
+  Coffee,
+  Contrast,
+  FileText,
+  Leaf,
+  Send,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { applyEmployeeLeave } from '../api/technician';
@@ -24,27 +26,27 @@ import DatePickerField from '../components/DatePickerField';
 import MintScreenHeader, { useHideNativeHeader } from '../components/MintScreenHeader';
 import { rf, rlh, rs } from '../utils/responsive';
 
-// Design tokens (GGFIX green + mint) — same system as Apply for Permission.
+// Design tokens (Near G Fix green + mint) — same system as Apply for Permission.
 const C = {
-  green: '#09AD2A',
-  red: '#F84141',
-  yellow: '#F3BF23',
-  ink: '#1E1E1E',
-  bg: '#F8F8F8',
-  surface: '#F3F3F3',
-  greenTint: '#E6F7EA',
-  greenSoft: '#F3FBF4',
+  green: '#035C6C',
+  red: '#F32C26',
+  yellow: '#FAA700',
+  ink: '#111111',
+  bg: '#F3F4F6',
+  surface: '#F3F4F6',
+  greenTint: '#E5F3F5',
+  greenSoft: '#E5F3F5',
   redTint: '#FEECEC',
   yellowTint: '#FDF6E0',
   // roles
-  deep: '#09AD2A',
-  primary: '#09AD2A',
-  mint: '#E6F7EA',
+  deep: '#035C6C',
+  primary: '#035C6C',
+  mint: '#E5F3F5',
 };
 const CARD = '#FFFFFF';
-const BORDER = '#E6E6E6';
-const TEXT = '#1E1E1E';
-const MUTED = '#6E6E6E';
+const BORDER = '#E5E7EB';
+const TEXT = '#111111';
+const MUTED = '#6B7280';
 const SUBTLE = '#A3A3A3';
 const MAX_CONTENT_WIDTH = 720;
 
@@ -62,10 +64,10 @@ const TYPE_LOOK = {
 // totalDays=0.5 server-side. PERMISSION lives on its own "Apply Permission"
 // screen. Each type carries an icon + accent colour for the selectable cards.
 const LEAVE_TYPES = [
-  { value: 'CASUAL_LEAVE',    label: 'Casual',    icon: 'cafe-outline',         color: '#2563EB', soft: '#EFF6FF' },
-  { value: 'SICK_LEAVE',      label: 'Sick',      icon: 'medkit-outline',       color: '#E11D48', soft: '#FFF1F2' },
-  { value: 'EMERGENCY_LEAVE', label: 'Emergency', icon: 'alert-circle-outline', color: '#EA580C', soft: '#FFF7ED' },
-  { value: 'HALF_DAY',        label: 'Half Day',  icon: 'contrast-outline',     color: '#7C3AED', soft: '#F5F3FF' },
+  { value: 'CASUAL_LEAVE',    label: 'Casual',    icon: 'cafe-outline',         color: '#035C6C', soft: '#EFF6FF' },
+  { value: 'SICK_LEAVE',      label: 'Sick',      icon: 'medkit-outline',       color: '#F32C26', soft: '#FFF1F2' },
+  { value: 'EMERGENCY_LEAVE', label: 'Emergency', icon: 'alert-circle-outline', color: '#FAA700', soft: '#FFF7ED' },
+  { value: 'HALF_DAY',        label: 'Half Day',  icon: 'contrast-outline',     color: '#1C3053', soft: '#F5F3FF' },
 ];
 
 function toISO(date) {
@@ -134,14 +136,30 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
   const [saving, setSaving] = useState(false);
 
   const isHalfDay = leaveType === 'HALF_DAY';
+  const session = useSelector(selectSession);
+
+  // Emergency leave on a single day with a From/To time counts as a fraction of
+  // the employee's shift (e.g. 3h of a 9h shift = 0.33 day).
+  const toMin = (t) => { const [h, m] = String(t || '').split(':').map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
+  const shiftMin = (() => {
+    const a = toMin(session?.defaultCheckIn); const b = toMin(session?.defaultCheckOut);
+    return a != null && b != null && b > a ? b - a : 9 * 60;
+  })();
+  const emergencyMin = leaveType === 'EMERGENCY_LEAVE' && startDate === endDate && startTime && endTime
+    ? Math.max(0, toMin(endTime) - toMin(startTime)) : null;
 
   const totalDays = useMemo(() => {
     if (isHalfDay) return 0.5;
+    if (emergencyMin) return Math.min(1, Math.round((emergencyMin / shiftMin) * 100) / 100);
     return daysBetween(startDate, endDate);
-  }, [isHalfDay, startDate, endDate]);
+  }, [isHalfDay, startDate, endDate, emergencyMin, shiftMin]);
 
   const pickLeaveType = (next) => {
     setLeaveType(next);
+    if (next !== 'EMERGENCY_LEAVE') {
+      setStartTime('');
+      setEndTime('');
+    }
     if (next === 'HALF_DAY') {
       // Half-day always spans a single day. Snap the end back to start so
       // totalDays stays consistent regardless of any earlier selection.
@@ -233,8 +251,9 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
     }
   };
 
+  const hoursLabel = emergencyMin ? ` (${Math.floor(emergencyMin / 60)}h${emergencyMin % 60 ? ` ${emergencyMin % 60}m` : ''})` : '';
   const durationLabel = totalDays > 0
-    ? `${totalDays % 1 === 0 ? totalDays : totalDays.toFixed(1)} day${totalDays === 1 ? '' : 's'}`
+    ? `${totalDays % 1 === 0 ? totalDays : totalDays.toFixed(2).replace(/0$/, '')} day${totalDays === 1 ? '' : 's'}${hoursLabel}`
     : 'Pick a valid date range';
   const durationValid = totalDays > 0;
 
@@ -255,14 +274,13 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
           {/* Info card */}
           <View style={styles.header}>
             <View pointerEvents="none" style={styles.headerLeaves}>
-              <Leaf size={rs(46)} color="#CFEFD6" fill="#E6F7EA" strokeWidth={1.2} style={{ transform: [{ rotate: '-20deg' }] }} />
-              <Leaf size={rs(34)} color="#CFEFD6" fill="#F3FBF4" strokeWidth={1.2} style={{ marginLeft: -rs(22), marginTop: rs(18), transform: [{ rotate: '25deg' }] }} />
+              <Leaf size={rs(46)} color="#E5F3F5" fill="#E5F3F5" strokeWidth={1.2} style={{ transform: [{ rotate: '-20deg' }] }} />
+              <Leaf size={rs(34)} color="#E5F3F5" fill="#E5F3F5" strokeWidth={1.2} style={{ marginLeft: -rs(22), marginTop: rs(18), transform: [{ rotate: '25deg' }] }} />
             </View>
             <View style={styles.headerIcon}>
               <CalendarDays size={rs(22)} color={C.green} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.title}>Apply for Leave</Text>
               <Text style={styles.subtitle}>Request time off — your manager will review and approve it.</Text>
             </View>
           </View>
@@ -278,7 +296,7 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
                 <Pressable
                   key={t.value}
                   onPress={() => pickLeaveType(t.value)}
-                  style={[styles.typeChip, { width: typeW }, active && styles.typeChipActive]}
+                  style={[styles.typeChip, active && styles.typeChipActive]}
                   android_ripple={{ color: C.greenTint }}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: active }}
@@ -287,13 +305,6 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
                     <Icon size={rs(17)} color={active ? look.onStrong : look.fg} strokeWidth={2.2} />
                   </View>
                   <Text style={styles.typeLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t.label}</Text>
-                  {active ? (
-                    <View style={styles.radioOn}>
-                      <Check size={rs(13)} color="#FFFFFF" strokeWidth={3} />
-                    </View>
-                  ) : (
-                    <View style={styles.radioOff} />
-                  )}
                 </Pressable>
               );
             })}
@@ -323,19 +334,24 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
               </View>
             </View>
 
-            <View style={styles.divider} />
-
-            <Field label="Time window" hint="Optional">
-              <View style={styles.timeRow}>
-                <View style={{ flex: 1 }}>
-                  <TimePickerField value={startTime} placeholder="From time" onChange={setStartTime} fieldStyle={styles.pickerField} accent={C.green} />
-                </View>
-                <Text style={styles.timeSep}>to</Text>
-                <View style={{ flex: 1 }}>
-                  <TimePickerField value={endTime} placeholder="To time" onChange={setEndTime} fieldStyle={styles.pickerField} accent={C.green} />
-                </View>
-              </View>
-            </Field>
+            {/* Time window only for Emergency leave (casual / sick / half day are whole-day). */}
+            {leaveType === 'EMERGENCY_LEAVE' ? (
+              <>
+                <View style={styles.divider} />
+    
+                <Field label="Time window" hint="Optional">
+                  <View style={styles.timeRow}>
+                    <View style={{ flex: 1 }}>
+                      <TimePickerField value={startTime} placeholder="From time" onChange={setStartTime} fieldStyle={styles.pickerField} accent={C.green} />
+                    </View>
+                    <Text style={styles.timeSep}>to</Text>
+                    <View style={{ flex: 1 }}>
+                      <TimePickerField value={endTime} placeholder="To time" onChange={setEndTime} fieldStyle={styles.pickerField} accent={C.green} />
+                    </View>
+                  </View>
+                </Field>
+              </>
+            ) : null}
 
             {/* Live duration summary */}
             <View style={[styles.durationPill, !durationValid && styles.durationPillMuted]}>
@@ -443,30 +459,29 @@ const styles = StyleSheet.create({
     width: rs(42), height: rs(42), borderRadius: rs(12), backgroundColor: C.greenTint,
     alignItems: 'center', justifyContent: 'center',
   },
-  title: { fontSize: rf(16.5), fontWeight: '800', color: TEXT },
-  subtitle: { fontSize: rf(12), color: MUTED, marginTop: 1, lineHeight: rlh(16) },
+  subtitle: { fontSize: rf(12), color: '#6B7280', lineHeight: rlh(16) },
 
   // Section header
   sectionRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(10), marginBottom: rs(6) },
   sectionRowInCard: { marginTop: 0, marginBottom: rs(6) },
   sectionAccent: { width: rs(4), height: rs(16), borderRadius: 2, backgroundColor: C.green, marginRight: rs(8) },
-  sectionLabel: { fontSize: rf(15), fontWeight: '800', color: TEXT },
+  sectionLabel: { fontSize: rf(16), fontWeight: '800', color: '#1C3053' },
   sectionHint: {
     marginLeft: rs(8), fontSize: rf(11), fontWeight: '600', color: MUTED,
     backgroundColor: C.surface, paddingHorizontal: rs(8), paddingVertical: rs(2), borderRadius: 999, overflow: 'hidden',
   },
 
   // Leave type cards
-  typeGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  typeGrid: { flexDirection: 'row' },
   typeChip: {
-    minHeight: rs(48), flexDirection: 'row', alignItems: 'center', gap: rs(8),
+    flex: 1, minHeight: rs(72), flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: rs(6),
     backgroundColor: CARD, borderWidth: 1.5, borderColor: BORDER, borderRadius: rs(14),
-    paddingVertical: rs(6), paddingHorizontal: rs(8), ...cardShadow,
+    paddingVertical: rs(6), paddingHorizontal: rs(4), ...cardShadow,
   },
   typeChipActive: { borderColor: C.green, backgroundColor: C.greenSoft },
-  typeIcon: { width: rs(32), height: rs(32), borderRadius: rs(10), alignItems: 'center', justifyContent: 'center' },
-  typeLabel: { flex: 1, fontSize: rf(13.5), fontWeight: '700', color: TEXT },
-  radioOff: { width: rs(20), height: rs(20), borderRadius: rs(10), borderWidth: 2, borderColor: '#D4D4D4' },
+  typeIcon: { width: rs(36), height: rs(36), borderRadius: rs(18), alignItems: 'center', justifyContent: 'center' },
+  typeLabel: { fontSize: rf(12), fontWeight: '700', color: TEXT, textAlign: 'center' },
+  radioOff: { width: rs(20), height: rs(20), borderRadius: rs(10), borderWidth: 2, borderColor: '#E5E7EB' },
   radioOn: {
     width: rs(22), height: rs(22), borderRadius: rs(11), backgroundColor: C.green,
     alignItems: 'center', justifyContent: 'center',
@@ -515,7 +530,7 @@ const styles = StyleSheet.create({
   // Attachment
   upload: {
     flexDirection: 'row', alignItems: 'center', gap: rs(10), minHeight: rs(56),
-    backgroundColor: CARD, borderWidth: 1.5, borderColor: '#D4D4D4', borderStyle: 'dashed',
+    backgroundColor: CARD, borderWidth: 1.5, borderColor: '#E5E7EB', borderStyle: 'dashed',
     borderRadius: rs(14), paddingVertical: rs(8), paddingHorizontal: rs(10),
   },
   uploadDone: { borderStyle: 'solid', borderColor: C.green, backgroundColor: C.greenSoft },

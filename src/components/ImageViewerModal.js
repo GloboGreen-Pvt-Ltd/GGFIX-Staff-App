@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Image, Modal, Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Image, Modal, Pressable, View, useWindowDimensions } from 'react-native';
+import { Text } from './Typography';
 import {
   GestureHandlerRootView,
   PanGestureHandler,

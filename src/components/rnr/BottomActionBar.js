@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, View, Text } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from '../Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight } from 'lucide-react-native';
 import { Button } from './Button';
@@ -44,7 +45,7 @@ export function BottomActionBar({
   return (
     <View
       className={cn('absolute left-0 right-0 bottom-0 bg-card border-t border-border px-4 pt-3', className)}
-      style={{ paddingBottom: resolvedBottom, shadowColor: '#0F172A', shadowOpacity: 0.10, shadowRadius: 16, shadowOffset: { width: 0, height: -6 }, elevation: 14 }}
+      style={{ paddingBottom: resolvedBottom, shadowColor: '#111111', shadowOpacity: 0.10, shadowRadius: 16, shadowOffset: { width: 0, height: -6 }, elevation: 14 }}
     >
       <View className="flex-row items-center">
         {hasPrice ? (
@@ -75,7 +76,7 @@ export function BottomActionBar({
             className="ml-3 h-12 w-12 rounded-full bg-card border border-border items-center justify-center active:opacity-80"
             style={{ shadowColor: '#000', shadowOpacity: 0.10, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 2 }}
           >
-            <ChevronRight size={18} color="#0F172A" />
+            <ChevronRight size={18} color="#111111" />
           </Pressable>
         ) : null}
       </View>

@@ -1,12 +1,13 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from '../Typography';
 import { Star, MapPin, Phone, Navigation, Clock } from 'lucide-react-native';
 import { cn } from './cn';
 import { Badge } from './Badge';
 import { rf } from '../../utils/responsive';
 
 const cardShadow = {
-  shadowColor: '#0F172A',
+  shadowColor: '#111111',
   shadowOpacity: 0.06,
   shadowRadius: 12,
   shadowOffset: { width: 0, height: 4 },
@@ -56,14 +57,14 @@ export function ShopCard({
           </View>
           {address ? (
             <View className="flex-row items-center mt-0.5">
-              <MapPin size={12} color="#64748B" />
+              <MapPin size={12} color="#6B7280" />
               <Text className="text-text-muted ml-1 flex-1" style={{ fontSize: rf(12) }} numberOfLines={1}>{address}</Text>
             </View>
           ) : null}
           <View className="flex-row items-center mt-2">
             {rating ? (
               <View className="flex-row items-center bg-success/10 rounded-full px-2 py-0.5 mr-2">
-                <Star size={11} color="#004C40" fill="#004C40" />
+                <Star size={11} color="#609138" fill="#609138" />
                 <Text className="font-bold text-success ml-1" style={{ fontSize: rf(11) }}>
                   {Number(rating).toFixed(1)}
                 </Text>
@@ -75,7 +76,7 @@ export function ShopCard({
             ) : null}
             {!travelTimes?.length && (etaText || eta) ? (
               <View className="flex-row items-center">
-                <Clock size={11} color="#64748B" />
+                <Clock size={11} color="#6B7280" />
                 <Text className="text-text-muted ml-1" style={{ fontSize: rf(11) }}>{etaText || `${eta} min`}</Text>
               </View>
             ) : null}
@@ -88,7 +89,7 @@ export function ShopCard({
                 const TIcon = t.Icon;
                 return (
                   <View key={t.key} className="flex-row items-center mr-4">
-                    {TIcon ? <TIcon size={13} color="#64748B" /> : null}
+                    {TIcon ? <TIcon size={13} color="#6B7280" /> : null}
                     <Text className="font-bold text-text ml-1" style={{ fontSize: rf(11) }}>{t.text}</Text>
                   </View>
                 );
@@ -101,13 +102,13 @@ export function ShopCard({
         <View className="flex-row mt-3 border-t border-border pt-2 -mx-1">
           {onCall ? (
             <Pressable onPress={onCall} className="flex-1 flex-row items-center justify-center py-2 active:opacity-70">
-              <Phone size={15} color="#004C40" />
+              <Phone size={15} color="#609138" />
               <Text className="ml-2 font-bold text-success" style={{ fontSize: rf(13) }}>Call</Text>
             </Pressable>
           ) : null}
           {onDirections ? (
             <Pressable onPress={onDirections} className="flex-1 flex-row items-center justify-center py-2 active:opacity-70 border-l border-border">
-              <Navigation size={15} color="#2563EB" />
+              <Navigation size={15} color="#035C6C" />
               <Text className="ml-2 font-bold text-secondary" style={{ fontSize: rf(13) }}>Directions</Text>
             </Pressable>
           ) : null}

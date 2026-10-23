@@ -41,7 +41,7 @@ export async function setAppLockEnabled(on) {
 export async function authenticate() {
   try {
     const res = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Unlock GGFIX',
+      promptMessage: 'Unlock Near G Fix',
       cancelLabel: 'Cancel',
       disableDeviceFallback: false,
     });

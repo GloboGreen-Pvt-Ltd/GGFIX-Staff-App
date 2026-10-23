@@ -1,34 +1,26 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  RefreshControl,
-  useWindowDimensions,
-} from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, useWindowDimensions } from 'react-native';
+import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Banknote, Calendar, CalendarDays, ChevronRight, CircleCheck, IndianRupee, Sparkle, TrendingUp, Wallet,
+  Banknote,
+  Calendar,
+  CalendarDays,
+  ChevronRight,
+  CircleCheck,
+  TrendingUp,
+  Wallet,
 } from 'lucide-react-native';
 import { ticketApi } from '../api/client';
 import { useTechnicianId } from '../auth/useTechnicianId';
 import { rf, rs } from '../utils/responsive';
 import { payslipNetPayable, payslipPaid } from '../utils/payslip';
 import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
-import { MINT, mintShadow, HeroCard, CenterStepper } from '../components/MintKit';
+import { MINT, mintShadow, StatIconCard } from '../components/MintKit';
+import { CalendarModal } from '../components/DatePickerField';
 
 const MAX_CONTENT_WIDTH = 720;
 const MONTHS_SHORT = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-
-// Presentation only: KPI tile tints.
-const KPI_TINTS = {
-  present: { bg: '#F1FAF6', border: '#D9EEE4', dot: '#D6F1E5', icon: '#00A86B', text: '#006B57' },
-  earned:  { bg: '#F3EEFF', border: '#E6DCFB', dot: '#E4D8FD', icon: '#7C3AED', text: '#6D28D9' },
-  average: { bg: '#FFF7E8', border: '#FBE8C5', dot: '#FDEBC8', icon: '#F59E0B', text: '#B45309' },
-};
 
 const MONTHS_FULL = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -47,6 +39,7 @@ export default function SalaryReportScreen({ navigation }) {
   const technicianId = useTechnicianId();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
+  const [yearOpen, setYearOpen] = useState(false);
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -120,20 +113,21 @@ export default function SalaryReportScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
       >
         <View style={{ width: contentW }}>
-          <HeroCard
-            icon={Wallet}
-            title="Salary Overview"
-            subtitle="View your attendance, earnings and payout status for the selected year."
-            art={contentW >= 360 ? <HeroArt /> : null}
-          />
-
-          <CenterStepper
-            label={fyLabel}
-            onPrev={() => setYear((y) => y - 1)}
-            onNext={() => setYear((y) => y + 1)}
-            prevLabel="Previous year"
-            nextLabel="Next year"
-          />
+          {/* Banner: icon · title · year button (tap to pick a year) */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: rs(16), borderWidth: 1, borderColor: '#E5E7EB', padding: rs(10), ...mintShadow }}>
+            <View style={{ width: rs(40), height: rs(40), borderRadius: rs(12), backgroundColor: '#035C6C', alignItems: 'center', justifyContent: 'center' }}>
+              <Wallet size={rs(20)} color="#FFFFFF" strokeWidth={2.2} />
+            </View>
+            <Text style={{ flex: 1, textAlign: 'center', fontSize: rf(17), fontWeight: '800', color: '#1C3053' }} numberOfLines={1}>Salary Overview</Text>
+            <TouchableOpacity onPress={() => setYearOpen(true)} activeOpacity={0.85} accessibilityLabel={`Select year, ${fyLabel}`}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: rs(5), backgroundColor: '#035C6C', borderRadius: 999, paddingVertical: rs(6), paddingHorizontal: rs(12) }}>
+              <CalendarDays size={rs(13)} color="#FFFFFF" strokeWidth={2.2} />
+              <Text style={{ fontSize: rf(13), fontWeight: '700', color: '#FFFFFF' }}>{fyLabel}</Text>
+            </TouchableOpacity>
+          </View>
+          <CalendarModal visible={yearOpen} yearOnly title="Select year" initial={`${year}-01-01`}
+            onCancel={() => setYearOpen(false)}
+            onSave={(iso) => { setYearOpen(false); if (iso) setYear(Number(iso.slice(0, 4))); }} />
 
           <View style={[styles.summaryRow, { gap: kpiGap }]}>
             <SummaryTile
@@ -142,7 +136,7 @@ export default function SalaryReportScreen({ navigation }) {
               value={`${totals.totalPresent}`}
               sub="Days"
               icon={CalendarDays}
-              tint={KPI_TINTS.present}
+              color="#609138"
             />
             <SummaryTile
               width={kpiW}
@@ -150,7 +144,7 @@ export default function SalaryReportScreen({ navigation }) {
               value={formatRupee(totals.totalNet)}
               sub={`${totals.monthsPaid} mo paid`}
               icon={Banknote}
-              tint={KPI_TINTS.earned}
+              color="#035C6C"
             />
             <SummaryTile
               width={kpiW}
@@ -158,7 +152,7 @@ export default function SalaryReportScreen({ navigation }) {
               value={formatRupee(totals.monthsWithPay > 0 ? Math.round(totals.totalNet / totals.monthsWithPay) : 0)}
               sub="Avg payout"
               icon={TrendingUp}
-              tint={KPI_TINTS.average}
+              color="#FAA700"
             />
           </View>
 
@@ -185,40 +179,8 @@ export default function SalaryReportScreen({ navigation }) {
   );
 }
 
-// Decorative wallet + rupee coins for the hero card (icons only, no image assets).
-function HeroArt() {
-  const disc = rs(70);
-  const coin = rs(28);
-  return (
-    <View style={{ width: disc + rs(14), height: disc, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={{ width: disc, height: disc, borderRadius: rs(20), backgroundColor: MINT.bright, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-8deg' }] }}>
-        <Wallet size={rs(34)} color="#FFFFFF" strokeWidth={1.8} />
-      </View>
-      <View style={[styles.coin, { width: coin, height: coin, borderRadius: coin / 2, top: -rs(6), right: 0 }]}>
-        <IndianRupee size={rs(15)} color="#FFFFFF" strokeWidth={2.6} />
-      </View>
-      <View style={[styles.coin, { width: coin * 0.8, height: coin * 0.8, borderRadius: coin * 0.4, bottom: -rs(4), left: rs(2) }]}>
-        <IndianRupee size={rs(12)} color="#FFFFFF" strokeWidth={2.6} />
-      </View>
-      <View style={{ position: 'absolute', left: -rs(4), top: rs(4) }}>
-        <Sparkle size={rs(12)} color={MINT.bright} fill={MINT.bright} />
-      </View>
-    </View>
-  );
-}
-
-function SummaryTile({ width, label, value, sub, icon: Icon, tint }) {
-  const dot = rs(34);
-  return (
-    <View style={[styles.summaryTile, { width, backgroundColor: tint.bg, borderColor: tint.border }]}>
-      <View style={{ width: dot, height: dot, borderRadius: dot / 2, backgroundColor: tint.dot, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon size={rs(18)} color={tint.icon} strokeWidth={2.2} />
-      </View>
-      <Text style={styles.summaryValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>{value}</Text>
-      <Text style={[styles.summaryLabel, { color: tint.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{label}</Text>
-      <Text style={styles.summarySub} numberOfLines={1}>{sub}</Text>
-    </View>
-  );
+function SummaryTile({ width, label, value, icon, color }) {
+  return <View style={{ width }}><StatIconCard icon={icon} color={color} label={label} value={value} /></View>;
 }
 
 function MonthCard({ row, index, onPress }) {
@@ -258,15 +220,15 @@ function MonthCard({ row, index, onPress }) {
         </View>
       ) : isPaid ? (
         <View style={[styles.statusPill, styles.statusPillPaid]}>
-          <CircleCheck size={rs(12)} color="#16A34A" strokeWidth={2.6} />
-          <Text style={[styles.statusPillText, { color: '#16A34A' }]}>Paid</Text>
+          <CircleCheck size={rs(12)} color="#609138" strokeWidth={2.6} />
+          <Text style={[styles.statusPillText, { color: '#609138' }]}>Paid</Text>
         </View>
       ) : (
         <View style={[styles.statusPill, styles.statusPillUnpaid]}>
-          <Text style={[styles.statusPillText, { color: '#EA580C' }]}>Unpaid</Text>
+          <Text style={[styles.statusPillText, { color: '#FAA700' }]}>Unpaid</Text>
         </View>
       )}
-      <ChevronRight size={rs(18)} color="#98A2B3" style={{ marginLeft: rs(4) }} />
+      <ChevronRight size={rs(16)} color="#98A2B3" style={{ marginLeft: rs(4) }} />
     </TouchableOpacity>
   );
 }
@@ -281,44 +243,44 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  summaryRow: { flexDirection: 'row', marginTop: rs(14) },
-  summaryTile: { borderRadius: rs(20), borderWidth: 1, padding: rs(12), ...mintShadow },
-  summaryValue: { fontSize: rf(20), fontWeight: '800', color: MINT.text, marginTop: rs(10) },
-  summaryLabel: { fontSize: rf(12.5), fontWeight: '600', marginTop: 2 },
+  summaryRow: { flexDirection: 'row', marginTop: rs(10) },
+  summaryTile: { borderRadius: rs(12), borderWidth: 1, padding: rs(7), ...mintShadow },
+  summaryValue: { fontSize: rf(15), fontWeight: '800', color: MINT.text, marginTop: rs(3) },
+  summaryLabel: { fontSize: rf(12), fontWeight: '600', marginTop: 2 },
   summarySub: { fontSize: rf(11.5), color: MINT.muted, marginTop: 1 },
 
-  sectionRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(18), marginBottom: rs(10) },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(14), marginBottom: rs(8) },
   sectionAccent: { width: rs(4), height: rs(20), borderRadius: 2, backgroundColor: MINT.primary, marginRight: rs(10) },
-  sectionHeader: { fontSize: rf(18), fontWeight: '800', color: MINT.text },
+  sectionHeader: { fontSize: rf(16), fontWeight: '800', color: MINT.text },
 
   monthCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: MINT.card, borderRadius: rs(18),
-    borderWidth: 1, borderColor: MINT.border, paddingHorizontal: rs(12), paddingVertical: rs(10),
-    minHeight: rs(68), marginBottom: rs(8), gap: rs(10), ...mintShadow,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: MINT.card, borderRadius: rs(14),
+    borderWidth: 1, borderColor: MINT.border, paddingHorizontal: rs(9), paddingVertical: rs(5),
+    minHeight: rs(46), marginBottom: rs(5), gap: rs(7), ...mintShadow,
   },
   monthCardEmpty: { backgroundColor: '#FCFDFC' },
 
   monthIndexBubble: {
-    width: rs(46), height: rs(46), borderRadius: rs(23), backgroundColor: MINT.mint,
+    width: rs(30), height: rs(30), borderRadius: rs(15), backgroundColor: MINT.mint,
     alignItems: 'center', justifyContent: 'center',
   },
-  monthIndexText: { fontSize: rf(12.5), fontWeight: '800', color: MINT.deep },
+  monthIndexText: { fontSize: rf(11.5), fontWeight: '800', color: MINT.deep },
 
   monthMain: { flex: 1, minWidth: 0 },
   monthHeaderRow: { flexDirection: 'row', alignItems: 'baseline', gap: rs(6) },
-  monthName: { fontSize: rf(15), fontWeight: '700', color: MINT.text, flexShrink: 1 },
+  monthName: { fontSize: rf(14), fontWeight: '700', color: MINT.text, flexShrink: 1 },
   monthYear: { fontSize: rf(13), color: MINT.muted, fontWeight: '500' },
-  monthMeta: { flexDirection: 'row', alignItems: 'center', gap: rs(5), marginTop: rs(4) },
+  monthMeta: { flexDirection: 'row', alignItems: 'center', gap: rs(5), marginTop: rs(2) },
   monthMetaText: { fontSize: rf(12.5), color: MINT.muted, fontWeight: '500' },
 
   monthDivider: { width: 1, alignSelf: 'stretch', marginVertical: rs(6), backgroundColor: '#EAF0ED' },
   monthEarnings: { minWidth: rs(58), maxWidth: rs(96) },
-  monthSalary: { fontSize: rf(14.5), fontWeight: '800' },
+  monthSalary: { fontSize: rf(13.5), fontWeight: '800' },
   monthSalaryPaid: { color: MINT.deep },
   monthSalaryEmpty: { color: MINT.text },
   monthEarningsLabel: { fontSize: rf(11.5), color: MINT.muted, marginTop: 2 },
 
-  statusPill: { flexDirection: 'row', alignItems: 'center', gap: rs(4), paddingHorizontal: rs(10), paddingVertical: rs(5), borderRadius: 999 },
+  statusPill: { flexDirection: 'row', alignItems: 'center', gap: rs(4), paddingHorizontal: rs(8), paddingVertical: rs(3), borderRadius: 999 },
   statusPillPaid: { backgroundColor: '#DCFCE7' },
   statusPillUnpaid: { backgroundColor: '#FFEDE3' },
   statusPillEmpty: { backgroundColor: '#F2F4F7' },

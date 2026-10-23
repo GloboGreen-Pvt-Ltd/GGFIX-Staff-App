@@ -1,10 +1,11 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View } from 'react-native';
+import { Text } from '../Typography';
 import { cn } from './cn';
 import { rf } from '../../utils/responsive';
 
 const shadow = {
-  shadowColor: '#0F172A',
+  shadowColor: '#111111',
   shadowOpacity: 0.05,
   shadowRadius: 10,
   shadowOffset: { width: 0, height: 3 },

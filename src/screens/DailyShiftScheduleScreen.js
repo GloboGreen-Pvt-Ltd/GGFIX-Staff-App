@@ -34,6 +34,7 @@ import { listModelsForBrand } from '../api/master';
 import { useTechnicianIdState } from '../auth/useTechnicianId';
 import TechIdPending from '../components/TechIdPending';
 import MintScreenHeader from '../components/MintScreenHeader';
+import { GradientFill, toneOf, LeftVerticalSidebar, SidebarLayout, useSidebarWidth } from '../components/JobCardKit';
 import TimePickerField, { to12h } from '../components/TimePickerField';
 import DatePickerField from '../components/DatePickerField';
 import { notify } from '../components/confirm';
@@ -53,7 +54,7 @@ const C = {
   softRed: '#FEECEC',
   redBorder: '#FBD0D0',
   blue: '#0788C9',
-  softBlue: '#EAF1FE',
+  softBlue: '#E6F3FA',
   yellow: '#FAA700',
   softYellow: '#FDF6E0',
   ink: '#111111',
@@ -156,6 +157,7 @@ const STATUS_META = {
 
 export default function DailyShiftScheduleScreen({ navigation }) {
   const { width: winW } = useWindowDimensions();
+  const sidebarW = useSidebarWidth();
   const { id: technicianId, failed: techIdFailed, retry: retryTechId } = useTechnicianIdState();
   const session = useSelector(selectSession);
   const dutyCheckIn = session?.defaultCheckIn || DEFAULT_DUTY_CHECK_IN;
@@ -286,7 +288,8 @@ export default function DailyShiftScheduleScreen({ navigation }) {
     [tickets, selectedDate, isTodaySelected],
   );
 
-  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(24);
+  // The shift sidebar takes the left edge; the page uses the rest.
+  const contentW = Math.min(winW - sidebarW, MAX_CONTENT_WIDTH) - rs(20);
 
   const header = <MintScreenHeader title="Daily Shift Schedule" navigation={navigation} />;
 
@@ -298,6 +301,15 @@ export default function DailyShiftScheduleScreen({ navigation }) {
       </SafeAreaView>
     );
   }
+
+  const breakMins = brk.breakMinutes();
+  const sidebarItems = [
+    { key: 'today', label: 'Today', icon: CalendarDays, color: '#1C3053', onPress: () => setSelectedDate(todayIso) },
+    { key: 'start', label: 'Duty Start', icon: LogIn, color: C.green, sub: shiftStart?.label || '—', static: true },
+    { key: 'break', label: 'Break', icon: Coffee, color: C.yellow, sub: brk.onBreak ? 'On break' : breakMins ? formatMinutes(breakMins) : '—', static: true },
+    { key: 'end', label: 'Duty End', icon: LogOut, color: C.red, sub: shiftEnd?.label || '—', static: true },
+    { key: 'change', label: 'Change', icon: ArrowLeftRight, color: C.blue, sub: 'Shift', onPress: () => setRequestOpen(true) },
+  ];
 
   // Timeline pills: Scheduled, or the real punch with Done / Late / Early.
   const startPill = checkIn
@@ -318,6 +330,7 @@ export default function DailyShiftScheduleScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {header}
+      <SidebarLayout sidebar={<LeftVerticalSidebar items={sidebarItems} active={isTodaySelected ? 'today' : null} />}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
@@ -333,10 +346,10 @@ export default function DailyShiftScheduleScreen({ navigation }) {
                 <Text style={styles.monthYear} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{monthYear}</Text>
               </View>
               <TouchableOpacity style={styles.weekArrow} onPress={() => shiftWeek(-1)} activeOpacity={0.8} hitSlop={6}>
-                <ChevronLeft size={rs(14)} color={C.muted} strokeWidth={2.4} />
+                <ChevronLeft size={rs(14)} color={C.white} strokeWidth={2.6} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.weekArrow} onPress={() => shiftWeek(1)} activeOpacity={0.8} hitSlop={6}>
-                <ChevronRight size={rs(14)} color={C.muted} strokeWidth={2.4} />
+                <ChevronRight size={rs(14)} color={C.white} strokeWidth={2.6} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.todayBtn, isTodaySelected && styles.todayBtnActive]}
@@ -446,6 +459,7 @@ export default function DailyShiftScheduleScreen({ navigation }) {
           </View>
         </View>
       </ScrollView>
+      </SidebarLayout>
 
       <ShiftChangeModal
         visible={requestOpen}
@@ -479,9 +493,11 @@ function TimelineRow({ time, dot, connector, Icon, iconFg, iconBg, title, sub, v
             : <DashedLine style={{ top: 0, bottom: '50%' }} />}
         <View style={[styles.tlDot, { backgroundColor: dot }]} />
       </View>
-      <View style={styles.tlCard}>
-        <View style={[styles.tlIcon, { backgroundColor: iconBg }]}>
-          <Icon size={rs(15)} color={iconFg} strokeWidth={2.4} />
+      {/* My Jobs tile look: soft gradient in the row colour, thin border, solid icon circle. */}
+      <View style={[styles.tlCard, { borderColor: iconFg }]}>
+        <GradientFill tone={toneOf(iconFg)} radius={rs(11)} />
+        <View style={[styles.tlIcon, { backgroundColor: iconFg }]}>
+          <Icon size={rs(13)} color="#FFFFFF" strokeWidth={2.4} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={styles.tlTitle} numberOfLines={1}>{title}</Text>
@@ -607,7 +623,7 @@ const styles = StyleSheet.create({
   scroll: { alignItems: 'center', paddingTop: rs(2), paddingBottom: rs(20) },
 
   card: {
-    backgroundColor: C.card, borderRadius: rs(15), borderWidth: 1, borderColor: C.border,
+    backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border,
     padding: rs(10), marginBottom: rs(10), ...cardShadow,
   },
   cardHeadRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: rs(8) },
@@ -619,12 +635,12 @@ const styles = StyleSheet.create({
   dayLong: { fontSize: rf(16), fontWeight: '800', color: C.ink },
   monthYear: { fontSize: rf(12.5), color: C.muted, marginTop: 1 },
   weekArrow: {
-    width: rs(24), height: rs(24), borderRadius: rs(12), backgroundColor: C.grey,
+    width: rs(24), height: rs(24), borderRadius: rs(12), backgroundColor: C.green,
     alignItems: 'center', justifyContent: 'center', marginRight: rs(5),
   },
   todayBtn: {
     borderWidth: 1.5, borderColor: C.green, backgroundColor: C.white,
-    paddingHorizontal: rs(12), paddingVertical: rs(5), borderRadius: rs(10), marginLeft: rs(1),
+    paddingHorizontal: rs(12), paddingVertical: rs(4), borderRadius: 999, marginLeft: rs(1),
   },
   todayBtnActive: { backgroundColor: C.mint },
   todayBtnText: { color: C.ink, fontSize: rf(13), fontWeight: '700' },
@@ -679,10 +695,10 @@ const styles = StyleSheet.create({
   dash: { width: 1.5, height: rs(3), backgroundColor: '#C9C9C9' },
   tlCard: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(7), marginLeft: rs(4),
-    borderWidth: 1, borderColor: C.border, borderRadius: rs(12), paddingHorizontal: rs(8), paddingVertical: rs(8),
+    borderWidth: 1, borderColor: C.border, borderRadius: rs(12), paddingHorizontal: rs(8), paddingVertical: rs(6),
     backgroundColor: C.white,
   },
-  tlIcon: { width: rs(30), height: rs(30), borderRadius: rs(9), alignItems: 'center', justifyContent: 'center' },
+  tlIcon: { width: rs(26), height: rs(26), borderRadius: rs(13), alignItems: 'center', justifyContent: 'center' },
   tlTitle: { fontSize: rf(13), fontWeight: '800', color: C.ink },
   tlSub: { fontSize: rf(10.5), color: C.muted, marginTop: 1 },
   tlRight: { alignItems: 'flex-end', maxWidth: rs(96), gap: rs(3) },

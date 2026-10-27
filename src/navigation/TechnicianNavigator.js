@@ -138,6 +138,7 @@ import TechnicianKycUploadScreen from '../screens/TechnicianKycUploadScreen';
 import TechnicianKycViewScreen from '../screens/TechnicianKycViewScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import ScanTicketQrScreen from '../screens/ScanTicketQrScreen';
+import TabletFrame from '../components/TabletFrame';
 
 const Stack = createNativeStackNavigator();
 
@@ -165,23 +166,27 @@ export default function TechnicianNavigator({ session, onLogout }) {
         // screen), so it stays fixed while screens slide in above it — same as
         // the partner app's tab bar. It follows the focused route, which keeps
         // the four bottom-tab buttons reachable from anywhere in the stack.
+        // On tablets the whole stack + bar sits in one centred column
+        // (TabletFrame); phones render edge to edge.
         layout={({ state, navigation, children }) => {
           const route = state.routes[state.index];
           const hideBar = HIDE_BOTTOM_TAB_ROUTES.has(route.name);
           return (
-            <View style={{ flex: 1 }}>
-              {/* Content gets its own flex:1 region so it always sits ABOVE the
-                  tab bar — the bar is a normal flex child, not an absolute
-                  overlay, so nothing can hide behind it in any nav mode. */}
-              <View style={{ flex: 1 }}>{children}</View>
-              {hideBar ? null : (
-                <BottomTabBar
-                  active={TAB_FOR_ROUTE[route.name] || 'Home'}
-                  navigation={navigation}
-                  routeName={route.name}
-                />
-              )}
-            </View>
+            <TabletFrame>
+              <View style={{ flex: 1 }}>
+                {/* Content gets its own flex:1 region so it always sits ABOVE the
+                    tab bar — the bar is a normal flex child, not an absolute
+                    overlay, so nothing can hide behind it in any nav mode. */}
+                <View style={{ flex: 1 }}>{children}</View>
+                {hideBar ? null : (
+                  <BottomTabBar
+                    active={TAB_FOR_ROUTE[route.name] || 'Home'}
+                    navigation={navigation}
+                    routeName={route.name}
+                  />
+                )}
+              </View>
+            </TabletFrame>
           );
         }}
       >

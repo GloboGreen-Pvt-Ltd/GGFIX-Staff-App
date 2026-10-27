@@ -403,7 +403,7 @@ export default function PayslipScreen({ route }) {
                 <Text style={styles.attendanceLabel}>Present Days</Text>
               </View>
               <View style={[styles.attendanceTile, { backgroundColor: '#FDF6E0', borderColor: '#F6E7B4' }]}>
-                <Ionicons name="briefcase" size={14} color="#8A6700" />
+                <Ionicons name="briefcase" size={14} color="#FAA700" />
                 <Text style={styles.attendanceValue}>{data?.dailyWageDays ?? 0}</Text>
                 <Text style={styles.attendanceLabel}>Daily Wage Days</Text>
               </View>
@@ -423,7 +423,7 @@ export default function PayslipScreen({ route }) {
               <BreakdownRow
                 icon="time-outline"
                 iconBg="#FDF6E0"
-                iconColor="#8A6700"
+                iconColor="#FAA700"
                 label="Regular Wage"
                 sub="Daily-rate earnings"
                 value={formatRupee(data?.regularWage)}

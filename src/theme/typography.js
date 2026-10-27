@@ -30,18 +30,21 @@ export const type = {
   pageHeader: { fontFamily: font.bold, fontSize: 20, lineHeight: 26 },
   sectionHeading: { fontFamily: font.semibold, fontSize: 16, lineHeight: 22 },
   subheading: { fontFamily: font.medium, fontSize: 14, lineHeight: 20 },
-  body: { fontFamily: font.regular, fontSize: 13, lineHeight: 19 },
-  label: { fontFamily: font.medium, fontSize: 12, lineHeight: 16 },
+  body: { fontFamily: font.regular, fontSize: 14, lineHeight: 20 },
+  label: { fontFamily: font.medium, fontSize: 11, lineHeight: 15 },
   caption: { fontFamily: font.regular, fontSize: 11, lineHeight: 15 },
 };
 
 // Snap any size in the text range onto the scale. Display numerals (> 24,
 // e.g. stat counts) keep their size so layouts don't shift.
-export function snapFontSize(size) {
+//
+// Everyday text is two sizes app-wide — the Account list row's pair: 14 for a
+// title / value / body line, 11 for the subtitle / caption under it. Section
+// headings stay 16 and page titles 20. Text typed into an input (`input`)
+// never drops below 14, so what the user types stays readable.
+export function snapFontSize(size, { input = false } = {}) {
   if (typeof size !== 'number' || size > 24) return size;
-  if (size < 11.5) return 11;
-  if (size < 12.5) return 12;
-  if (size < 13.5) return 13;
+  if (size < 12.5) return input ? 14 : 11;
   if (size < 15) return 14;
   if (size < 18) return 16;
   return 20;

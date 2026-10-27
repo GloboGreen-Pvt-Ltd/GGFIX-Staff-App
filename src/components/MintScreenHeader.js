@@ -1,7 +1,7 @@
 import React, { useLayoutEffect } from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import { Text } from './Typography';
-import { ChevronLeft } from 'lucide-react-native';
+import { ArrowLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { rf, rs } from '../utils/responsive';
 
@@ -42,7 +42,8 @@ export function StackHeader({ navigation, route, options }) {
 }
 
 export default function MintScreenHeader({ title, navigation, right }) {
-  const size = rs(42);
+  // Partner Job Report header: light grey round back button, bold navy title.
+  const size = rs(36);
   const canGoBack = navigation?.canGoBack?.();
   return (
     <View className="flex-row items-center" style={{ paddingHorizontal: rs(16), paddingTop: rs(4), paddingBottom: rs(6) }}>
@@ -55,18 +56,17 @@ export default function MintScreenHeader({ title, navigation, right }) {
             accessibilityLabel="Back"
             activeOpacity={0.6}
             style={{
-              width: size, height: size, borderRadius: size / 2, backgroundColor: '#E5F3F5',
-              borderWidth: 1, borderColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#111111', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3,
+              width: size, height: size, borderRadius: size / 2, backgroundColor: '#F1F3F5',
+              alignItems: 'center', justifyContent: 'center',
             }}
           >
-            <ChevronLeft size={rs(22)} color="#111111" strokeWidth={2.4} />
+            <ArrowLeft size={rs(19)} color="#111111" strokeWidth={2.2} />
           </TouchableOpacity>
         ) : null}
       </View>
       <Text
         className="flex-1 text-center font-extrabold"
-        style={{ fontSize: rf(18), color: '#1C3053', marginHorizontal: rs(8) }}
+        style={{ fontSize: rf(17), color: '#1C3053', marginHorizontal: rs(8) }}
         numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.8}

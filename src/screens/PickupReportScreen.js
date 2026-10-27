@@ -10,16 +10,18 @@ import { useFocusEffect } from '@react-navigation/native';
 import { listMyAssignedPickups } from '../api/pickups';
 import { rf, rs } from '../utils/responsive';
 import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
-import { MINT, mintShadow, HeroCard, SectionCard, EmptyState, MonthCard } from '../components/MintKit';
+import { MINT, mintShadow, HeroCard, SectionCard, EmptyState, MonthCard, TILE_TONES } from '../components/MintKit';
 
 const MAX_CONTENT_WIDTH = 720;
 
 // Presentation only: summary-tile tints.
+// The app-wide TILE_TONES (Partner dashboard set), each with its own tint.
+const tileTint = (c) => ({ bg: `${c}12`, border: `${c}33`, dot: c, text: c });
 const TILE_TINTS = {
-  inProcess: { bg: '#EFF6FF', border: '#DCE8FB', dot: '#035C6C', text: '#035C6C' },
-  pending:   { bg: '#FFF7E8', border: '#FBE8C5', dot: '#FAA700', text: '#667085' },
-  completed: { bg: '#F1FAF6', border: '#E5F3F5', dot: '#609138', text: '#609138' },
-  total:     { bg: '#F3EEFF', border: '#E6DCFB', dot: '#1C3053', text: '#667085' },
+  inProcess: tileTint(TILE_TONES.blue),
+  pending:   tileTint(TILE_TONES.orange),
+  completed: tileTint(TILE_TONES.green),
+  total:     tileTint(TILE_TONES.teal),
 };
 
 const FILTERS = ['All', 'Completed', 'In Process', 'Pending'];

@@ -73,8 +73,14 @@ export function rlh(size) {
  * gaps, card padding, icon boxes and any fixed dp size that should breathe a
  * little more on large phones and tighten on small ones.
  */
+// App-wide compact density: every rs() size (card padding, gaps, icon boxes,
+// tiles, bars) is 90% of its design value, so cards and icons read small and
+// compact on every screen while keeping their proportions. Text (rf) is not
+// affected.
+export const COMPACT_SCALE = 0.9;
+
 export function rs(size) {
-  return PixelRatio.roundToNearestPixel(size * fontScale);
+  return PixelRatio.roundToNearestPixel(size * fontScale * COMPACT_SCALE);
 }
 
 // Portrait short-side width, read once at module load (app is portrait-locked).
@@ -86,6 +92,16 @@ export const screenWidth = shortSide;
 export const isSmallDevice = shortSide < 360;
 export const isLargeDevice = shortSide >= 414;
 export const isTablet = shortSide >= 600;
+
+// Tablets / iPad / Android tablets in landscape: the whole app renders in one
+// centred column no wider than MAX_APP_WIDTH (components/TabletFrame), and
+// pop-up sheets / dialogs no wider than MAX_SHEET_WIDTH, so nothing stretches
+// across a 1000px+ display. Phones (≤ MAX_APP_WIDTH wide) are unaffected.
+export const MAX_APP_WIDTH = 840;
+export const MAX_SHEET_WIDTH = 560;
+// Spread into a sheet / dialog container: full width on phones, capped and
+// centred on wider screens.
+export const sheetWidth = { width: '100%', maxWidth: MAX_SHEET_WIDTH, alignSelf: 'center' };
 
 /**
  * Column count for a responsive grid. Adds a column on tablets and can shrink

@@ -221,7 +221,7 @@ function LocationArt({ size, locked, pulse }) {
       </Svg>
       {/* orbit badges */}
       <Badge x={cx - W * 0.3} y={cy - H * 0.3} bg="#E5F3F5"><Store size={badge * 0.45} color={GREEN} strokeWidth={2.2} /></Badge>
-      <Badge x={cx + W * 0.27} y={cy - H * 0.34} bg="#FDF6E0"><Smartphone size={badge * 0.45} color="#C99500" strokeWidth={2.2} /></Badge>
+      <Badge x={cx + W * 0.27} y={cy - H * 0.34} bg="#FDF6E0"><Smartphone size={badge * 0.45} color="#FAA700" strokeWidth={2.2} /></Badge>
       <Badge x={cx - W * 0.36} y={cy + H * 0.12} bg="#FEECEC"><Wrench size={badge * 0.45} color={RED} strokeWidth={2.2} /></Badge>
       <Badge x={cx + W * 0.34} y={cy + H * 0.2} bg={INK}><ShoppingCart size={badge * 0.45} color="#FFFFFF" strokeWidth={2.2} /></Badge>
       {locked ? (

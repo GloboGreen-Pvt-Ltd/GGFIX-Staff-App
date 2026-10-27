@@ -149,7 +149,7 @@ const DANGER_TINT = '#FEECEC';
 const SERVICE_GROUP_META = {
   [G_ACCEPTED]:  { title: 'Service Accepted', icon: ClipboardCheck, accent: BRAND_GREEN_DARK, tint: '#E5F3F5', done: SUCCESS, layout: 'full' },
   [G_PROCESS]:   { title: 'In Process',       icon: Wrench,         accent: '#609138',        tint: '#E5F3F5', done: SUCCESS, layout: 'full' },
-  [G_PENDING]:   { title: 'Working Pending',  icon: Clock,          accent: '#8A6700',        tint: '#FDF6E0', done: SUCCESS, layout: 'branch' },
+  [G_PENDING]:   { title: 'Working Pending',  icon: Clock,          accent: '#FAA700',        tint: '#FDF6E0', done: SUCCESS, layout: 'branch' },
   [G_RETURN]:    { title: 'Return Device',    icon: RotateCcw,      accent: DANGER,           tint: DANGER_TINT, done: DANGER, layout: 'branch' },
   [G_COMPLETED]: { title: 'Completed',        icon: CheckCircle2,   accent: BRAND_GREEN_DARK, tint: '#E5F3F5', done: SUCCESS, layout: 'full' },
 };

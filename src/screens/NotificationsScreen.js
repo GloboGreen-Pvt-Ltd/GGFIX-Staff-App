@@ -4,20 +4,23 @@ import { Text } from '../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   Bell, Wrench, CalendarCheck2, CalendarX2, CalendarClock, Timer,
+  ShieldCheck, BadgeCheck, CircleCheck, CircleX, RefreshCw, FileText,
 } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { listMyTickets } from '../api/tickets';
 import { getMyTechnicianProfile, getMyLeaves } from '../api/technician';
 import { rf } from '../utils/responsive';
 
-const FILTERS = ['All', 'Tickets', 'Leave', 'Permission'];
+const FILTERS = ['All', 'Jobs', 'Attendance'];
 const POLL_MS = 15000; // refresh while the screen is open so status changes show quickly
 
 // Near G Fix palette, same as Home / Ticket Detail.
 const C = {
   green: '#035C6C', greenTint: '#E5F3F5', greenSoft: '#E5F3F5', greenLine: '#E5F3F5',
-  red: '#F32C26', redTint: '#FEECEC', yellowTint: '#FDF6E0', yellowInk: '#8A6700',
+  red: '#F32C26', redTint: '#FEECEC', yellowTint: '#FDF6E0', yellowInk: '#FAA700',
   ink: '#111111', muted: '#6B7280', faint: '#A3A3A3', bg: '#F3F4F6', border: '#E5E7EB',
+  blue: '#0788C9', blueTint: '#E6F3FA', navy: '#1C3053', navyTint: '#E8EBF0',
+  lime: '#609138', limeTint: '#EEF4E9', line: '#F0F1F3',
 };
 const READ_KEY = 'notifications.read.v1';
 
@@ -27,16 +30,18 @@ const READ_KEY = 'notifications.read.v1';
 // a working feed without a backend change. When a proper endpoint lands,
 // swap `buildItems` for a fetch and keep the same render layer.
 
+// "2 minutes ago", "3 hours ago", "1 day ago"; a date after a week.
 const ago = (v) => {
   if (!v) return '';
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return '';
-  const s = (Date.now() - d.getTime()) / 1000;
+  const s = Math.max(0, (Date.now() - d.getTime()) / 1000);
+  const unit = (n, w) => `${n} ${w}${n === 1 ? '' : 's'} ago`;
   if (s < 60) return 'Just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  if (s < 172800) return 'Yesterday';
-  return d.toLocaleDateString();
+  if (s < 3600) return unit(Math.floor(s / 60), 'minute');
+  if (s < 86400) return unit(Math.floor(s / 3600), 'hour');
+  if (s < 604800) return unit(Math.floor(s / 86400), 'day');
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 const ticketRef = (t) => {
@@ -44,23 +49,35 @@ const ticketRef = (t) => {
   return `#${String(t.id || '').replace(/-/g, '').slice(0, 12).toUpperCase()}`;
 };
 
+// Ticket status → notification title and the detail after the ref.
+const TICKET_UPDATE = {
+  IN_DIAGNOSIS: { title: 'Job Status Updated', detail: 'In diagnosis', tone: 'blue' },
+  QUOTED: { title: 'Re-estimate Sent', detail: 'Awaiting customer approval', tone: 'orange' },
+  APPROVED: { title: 'Customer Approved', detail: 'Re-estimate approved', tone: 'green' },
+  IN_REPAIR: { title: 'Job Status Updated', detail: 'Repair in progress', tone: 'blue' },
+  READY: { title: 'Job Status Updated', detail: 'Moved to Ready for Delivery', tone: 'done' },
+  INVOICE_GENERATED: { title: 'Job Status Updated', detail: 'Invoice generated', tone: 'done' },
+  DELIVERED: { title: 'Job Status Updated', detail: 'Delivered to customer', tone: 'done' },
+  CANCELLED: { title: 'Job Cancelled', detail: 'Work cancelled', tone: 'red' },
+};
+
 function ticketNotification(t) {
   const status = String(t.status || '').toUpperCase();
-  const summary = t.repairServicesSummary
-    ? `${t.deviceDisplayName || 'Device'} — ${t.repairServicesSummary}`
-    : (t.deviceDisplayName || 'New ticket');
-  let title = `Ticket assigned ${ticketRef(t)}`;
-  let body = summary;
-  if (status === 'IN_DIAGNOSIS') title = `Diagnosis in progress ${ticketRef(t)}`;
-  else if (status === 'QUOTED') title = `Quotation pending ${ticketRef(t)}`;
-  else if (status === 'APPROVED') title = `Customer approved ${ticketRef(t)}`;
-  else if (status === 'IN_REPAIR') title = `Repair in progress ${ticketRef(t)}`;
-  else if (status === 'READY') title = `Repair complete ${ticketRef(t)}`;
+  const ref = ticketRef(t).replace(/^#/, '');
+  const device = String(t.deviceDisplayName || [t.brandName, t.modelName].filter(Boolean).join(' ') || '')
+    .split(/[·•|]/)[0].trim();
+  // Not yet accepted (and still open) → a fresh assignment.
+  const fresh = !t.technicianAcceptedAt && !['READY', 'DELIVERED', 'CANCELLED'].includes(status);
+  const upd = fresh ? null : TICKET_UPDATE[status];
+  const title = upd ? upd.title : 'New Job Assigned';
+  const detail = upd ? upd.detail : device;
   return {
+    // Id formula unchanged so markNotificationsSeen / saved read-state still match.
     id: `ticket:${t.id}:${t.updatedAt || t.createdAt || ''}`,
     kind: 'ticket',
+    tone: upd ? upd.tone : 'new',
     title,
-    body,
+    body: [ref, detail].filter(Boolean).join(' · '),
     createdAt: t.updatedAt || t.createdAt,
     ticketId: t.id,
   };
@@ -74,9 +91,9 @@ function leaveNotification(l) {
   // Permission requests (leaveType PERMISSION) are their own notification kind.
   const isPermission = String(l.leaveType || '').toUpperCase() === 'PERMISSION';
   const noun = isPermission ? 'Permission' : 'Leave';
-  let title = `${noun} requested`;
-  if (status === 'APPROVED') title = `${noun} approved`;
-  else if (status === 'REJECTED') title = `${noun} rejected`;
+  let title = `${noun} Requested`;
+  if (status === 'APPROVED') title = `${noun} Approved`;
+  else if (status === 'REJECTED') title = `${noun} Rejected`;
   // Order/stamp a decided leave by its decision time (the DTO exposes
   // approvedAt / rejectedAt, not decidedAt/createdAt); pending falls back to
   // when it was requested.
@@ -86,7 +103,7 @@ function leaveNotification(l) {
     kind: isPermission ? 'permission' : 'leave',
     leaveStatus: status,
     title,
-    body: dateLabel ? `${dateLabel}${l.reason ? ` — ${l.reason}` : ''}` : (l.reason || 'Leave request'),
+    body: dateLabel ? `${dateLabel}${l.reason ? ` · ${l.reason}` : ''}` : (l.reason || `${noun} request`),
     createdAt: decidedAt || l.requestedAt || l.createdAt || l.startDate,
   };
 }
@@ -181,14 +198,9 @@ export default function NotificationsScreen({ navigation }) {
 
   const visible = useMemo(() => {
     if (filter === 'All') return items;
-    const want = filter === 'Tickets' ? 'ticket' : filter === 'Permission' ? 'permission' : 'leave';
-    return items.filter((n) => n.kind === want);
+    // Jobs = ticket updates; Attendance = leave and permission requests.
+    return items.filter((n) => (filter === 'Jobs' ? n.kind === 'ticket' : n.kind !== 'ticket'));
   }, [items, filter]);
-
-  const unreadCount = useMemo(
-    () => items.reduce((sum, n) => sum + (readIds.has(n.id) ? 0 : 1), 0),
-    [items, readIds],
-  );
 
   if (loading) {
     return (
@@ -200,39 +212,40 @@ export default function NotificationsScreen({ navigation }) {
   }
 
   return (
-    <View className="flex-1" style={{ backgroundColor: C.bg }}>
-      {/* Filter chips */}
-      <View style={{ backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: C.border, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', gap: 6 }}>
-        {FILTERS.map((f) => {
-          const active = filter === f;
-          return (
-            <TouchableOpacity
-              key={f}
-              onPress={() => setFilter(f)}
-              activeOpacity={0.8}
-              style={{
-                paddingHorizontal: 14, paddingVertical: 5, borderRadius: 999, borderWidth: 1,
-                backgroundColor: active ? C.green : '#FFFFFF', borderColor: active ? C.green : C.border,
-              }}
-            >
-              <Text style={{ fontSize: rf(12), fontWeight: active ? '700' : '600', color: active ? '#FFFFFF' : C.muted }}>{f}</Text>
-            </TouchableOpacity>
-          );
-        })}
+    <View className="flex-1" style={{ backgroundColor: '#FFFFFF' }}>
+      {/* Filter chips: teal when selected, light grey otherwise; scrolls sideways if needed. */}
+      <View style={{ backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: C.line }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, paddingVertical: 10, gap: 8 }}>
+          {FILTERS.map((f) => {
+            const active = filter === f;
+            return (
+              <TouchableOpacity
+                key={f}
+                onPress={() => setFilter(f)}
+                activeOpacity={0.8}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                style={{ paddingHorizontal: 18, paddingVertical: 7, borderRadius: 999, backgroundColor: active ? C.green : C.bg }}
+              >
+                <Text style={{ fontSize: rf(13), fontWeight: active ? '700' : '600', color: active ? '#FFFFFF' : C.navy }}>{f}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
       {visible.length === 0 ? (
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.green} colors={[C.green]} />}
         >
-          <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: loadFailed ? C.redTint : C.greenTint, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: loadFailed ? C.redTint : C.greenTint, alignItems: 'center', justifyContent: 'center' }}>
             <Bell size={26} color={loadFailed ? C.red : C.green} />
           </View>
-          <Text style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053', marginTop: 12 }}>
+          <Text style={{ fontSize: rf(16), fontWeight: '800', color: C.navy, marginTop: 12 }}>
             {loadFailed ? "Couldn't load notifications" : "You're all caught up"}
           </Text>
-          <Text style={{ fontSize: rf(12), color: '#6B7280', marginTop: 4, textAlign: 'center' }}>
-            {loadFailed ? 'Check your connection and try again.' : "We'll show ticket assignments and leave updates here."}
+          <Text style={{ fontSize: rf(12), color: C.muted, marginTop: 4, textAlign: 'center' }}>
+            {loadFailed ? 'Check your connection and try again.' : "We'll show job updates and attendance requests here."}
           </Text>
           {loadFailed ? (
             <TouchableOpacity onPress={onRefresh} activeOpacity={0.85} style={{ marginTop: 14, backgroundColor: C.green, borderRadius: 999, paddingHorizontal: 22, paddingVertical: 8 }}>
@@ -242,15 +255,11 @@ export default function NotificationsScreen({ navigation }) {
         </ScrollView>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: 12, paddingBottom: 24 }}
+          contentContainerStyle={{ paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.green} colors={[C.green]} />}
         >
-          <View className="flex-row items-center justify-between" style={{ paddingHorizontal: 2, marginBottom: 8 }}>
-            <Text style={{ fontSize: rf(11.5), color: C.muted }}>
-              {visible.length} notification{visible.length === 1 ? '' : 's'}
-              {unreadCount > 0 ? ` · ${unreadCount} new` : ''}
-            </Text>
-          </View>
+          {/* One row per notification: tinted icon square · title, ref · detail,
+              time ago · blue dot while unread. */}
           {visible.map((n) => {
             const read = readIds.has(n.id);
             const { Icon, color, bg } = iconFor(n);
@@ -258,28 +267,22 @@ export default function NotificationsScreen({ navigation }) {
               <TouchableOpacity
                 key={n.id}
                 onPress={() => onOpen(n)}
-                activeOpacity={0.8}
+                activeOpacity={0.7}
+                accessibilityLabel={`${n.title}. ${n.body || ''}${read ? '' : '. New'}`}
                 style={{
-                  flexDirection: 'row', alignItems: 'flex-start', backgroundColor: read ? '#FFFFFF' : C.greenSoft,
-                  borderRadius: 12, borderWidth: 1, borderColor: read ? C.border : C.greenLine,
-                  padding: 10, marginBottom: 8,
+                  flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12,
+                  borderBottomWidth: 1, borderBottomColor: C.line,
                 }}
               >
-                <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: bg, alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                  <Icon size={16} color={color} />
+                <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: bg, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                  <Icon size={19} color={color} strokeWidth={2.3} />
                 </View>
                 <View className="flex-1">
-                  <View className="flex-row items-center">
-                    <Text style={{ flex: 1, fontSize: rf(12.5), fontWeight: '800', color: C.ink }} numberOfLines={1}>{n.title}</Text>
-                    {!read ? (
-                      <View style={{ backgroundColor: C.green, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2, marginLeft: 6 }}>
-                        <Text style={{ fontSize: rf(9), fontWeight: '800', color: '#FFFFFF' }}>NEW</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  {n.body ? <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: 2, lineHeight: rf(16) }}>{n.body}</Text> : null}
-                  <Text style={{ fontSize: rf(10), color: C.faint, marginTop: 4 }}>{ago(n.createdAt)}</Text>
+                  <Text style={{ fontSize: rf(14), fontWeight: '700', color: C.ink }} numberOfLines={1}>{n.title}</Text>
+                  {n.body ? <Text style={{ fontSize: rf(12), color: C.muted, marginTop: 2 }} numberOfLines={2}>{n.body}</Text> : null}
+                  <Text style={{ fontSize: rf(11), color: C.faint, marginTop: 2 }}>{ago(n.createdAt)}</Text>
                 </View>
+                {!read ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: C.blue, marginLeft: 10 }} /> : null}
               </TouchableOpacity>
             );
           })}
@@ -291,16 +294,23 @@ export default function NotificationsScreen({ navigation }) {
 
 function iconFor(n) {
   if (n.kind === 'permission') {
-    if (n.leaveStatus === 'APPROVED') return { Icon: Timer, color: C.green, bg: C.greenTint };
+    if (n.leaveStatus === 'APPROVED') return { Icon: Timer, color: C.lime, bg: C.limeTint };
     if (n.leaveStatus === 'REJECTED') return { Icon: Timer, color: C.red, bg: C.redTint };
     return { Icon: Timer, color: C.yellowInk, bg: C.yellowTint };
   }
   if (n.kind === 'leave') {
-    if (n.leaveStatus === 'APPROVED') return { Icon: CalendarCheck2, color: C.green, bg: C.greenTint };
+    if (n.leaveStatus === 'APPROVED') return { Icon: CalendarCheck2, color: C.lime, bg: C.limeTint };
     if (n.leaveStatus === 'REJECTED') return { Icon: CalendarX2, color: C.red, bg: C.redTint };
     return { Icon: CalendarClock, color: C.yellowInk, bg: C.yellowTint };
   }
-  return { Icon: Wrench, color: C.ink, bg: '#F3F4F6' };
+  // Job updates, by tone.
+  if (n.tone === 'new') return { Icon: ShieldCheck, color: C.blue, bg: C.blueTint };
+  if (n.tone === 'green') return { Icon: BadgeCheck, color: C.lime, bg: C.limeTint };
+  if (n.tone === 'done') return { Icon: CircleCheck, color: C.lime, bg: C.limeTint };
+  if (n.tone === 'orange') return { Icon: FileText, color: C.yellowInk, bg: C.yellowTint };
+  if (n.tone === 'red') return { Icon: CircleX, color: C.red, bg: C.redTint };
+  if (n.tone === 'blue') return { Icon: RefreshCw, color: C.blue, bg: C.blueTint };
+  return { Icon: Wrench, color: C.navy, bg: C.navyTint };
 }
 
 // Auto-read: screens that SHOW a ticket / leave call this with the records

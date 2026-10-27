@@ -10,7 +10,7 @@ const palettes = {
   emerald: ['#ECFDF5', '#E5F3F5'],
   amber: ['#FFFBEB', '#FEF3C7'],
   rose: ['#FFF1F2', '#FFE4E6'],
-  violet: ['#F5F3FF', '#E0E7FF'],
+  violet: ['#E6F3FA', '#E0E7FF'],
   sky: ['#F0F9FF', '#E0F2FE'],
 };
 

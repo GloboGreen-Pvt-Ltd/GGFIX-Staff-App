@@ -9,9 +9,9 @@ import { rf } from '../../utils/responsive';
 const palettes = {
   primary: ['#035C6C', '#035C6C'],
   emerald: ['#609138', '#035C6C'],   // teal now; key name kept so callers don't break
-  amber: ['#FAA700', '#FB923C'],
-  rose: ['#EC4899', '#F43F5E'],
-  violet: ['#035C6C', '#A855F7'],
+  amber: ['#FAA700', '#FAA700'],
+  rose: ['#F32C26', '#F32C26'],
+  violet: ['#035C6C', '#1C3053'],
 };
 
 export function OfferBanner({

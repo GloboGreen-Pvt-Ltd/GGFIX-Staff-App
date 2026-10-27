@@ -149,9 +149,9 @@ export default function AccountTabScreen({ navigation }) {
     {
       title: 'Help & Legal',
       items: [
-        { key: 'terms',   label: 'Terms & Conditions', icon: FileText,    tint: '#FFE4E6', fg: '#BE123C', onPress: () => comingSoon('Terms & Conditions') },
-        { key: 'privacy', label: 'Privacy Policy',     icon: ShieldCheck, tint: '#CFFAFE', fg: '#0E7490', onPress: () => comingSoon('Privacy Policy') },
-        { key: 'help',    label: 'Help Center',        icon: HelpCircle,  tint: '#FFEDD5', fg: '#C2410C', onPress: () => navigation.navigate('HelpSupport') },
+        { key: 'terms',   label: 'Terms & Conditions', icon: FileText,    tint: '#FFE4E6', fg: '#F32C26', onPress: () => comingSoon('Terms & Conditions') },
+        { key: 'privacy', label: 'Privacy Policy',     icon: ShieldCheck, tint: '#CFFAFE', fg: '#0788C9', onPress: () => comingSoon('Privacy Policy') },
+        { key: 'help',    label: 'Help Center',        icon: HelpCircle,  tint: '#FFEDD5', fg: '#FAA700', onPress: () => navigation.navigate('HelpSupport') },
       ],
     },
   ];

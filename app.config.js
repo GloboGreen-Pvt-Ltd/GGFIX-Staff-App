@@ -19,6 +19,10 @@ export default {
     splash: { image: './assets/logo.png', resizeMode: 'contain', backgroundColor: '#F3F4F6' },
     ios: {
       supportsTablet: true,
+      // iPad: the app is portrait-locked, and an iPad app that doesn't support
+      // every orientation must opt out of Split View / Slide Over
+      // (UIRequiresFullScreen) or App Store validation rejects the build.
+      requireFullScreen: true,
       bundleIdentifier: 'com.ggfix.employeeapp',
       infoPlist: {
         NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
@@ -33,8 +37,9 @@ export default {
     plugins: [
       // Checkout SOS alarm sound (src/utils/checkoutAlarm.js), bundled as a native resource.
       ['expo-notifications', { sounds: ['./assets/sounds/sos_alarm.wav'], color: '#D32F2F' }],
-      // Required config plugins for these modules as of Expo SDK 57.
+      // Required config plugins for these modules as of Expo SDK 58.
       'expo-asset',
+      'expo-font',
       'expo-sharing',
       'expo-status-bar',
       // Voice notes on the ticket detail screen (record + playback).

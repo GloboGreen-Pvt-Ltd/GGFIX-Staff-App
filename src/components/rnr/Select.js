@@ -3,6 +3,7 @@ import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { Text } from '../Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { cn } from './cn';
+import { sheetWidth } from '../../utils/responsive';
 
 export function Select({ value, options = [], placeholder = 'Select…', onChange, className, displayValue }) {
   const [open, setOpen] = useState(false);
@@ -30,7 +31,7 @@ export function Select({ value, options = [], placeholder = 'Select…', onChang
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable className="flex-1 bg-black/50 justify-center px-6" onPress={() => setOpen(false)}>
-          <Pressable className="bg-card rounded-2xl max-h-80 overflow-hidden" onPress={(e) => e.stopPropagation()}>
+          <Pressable className="bg-card rounded-2xl max-h-80 overflow-hidden" style={sheetWidth} onPress={(e) => e.stopPropagation()}>
             <ScrollView>
               {options.map((o) => (
                 <Pressable

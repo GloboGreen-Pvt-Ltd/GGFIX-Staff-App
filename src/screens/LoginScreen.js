@@ -334,7 +334,7 @@ function MobileStep({ mobile, setMobile, loading, error, onSubmit, wide }) {
       <View style={styles.features}>
         <Feature icon={CalendarCheck} bg={GREEN_TINT} fg={GREEN} label={'Mark\nattendance'} />
         <View style={styles.featureDivider} />
-        <Feature icon={Truck} bg={YELLOW_TINT} fg="#C99500" label={'Manage\npickups'} />
+        <Feature icon={Truck} bg={YELLOW_TINT} fg="#FAA700" label={'Manage\npickups'} />
         <View style={styles.featureDivider} />
         <Feature icon={ShieldCheck} bg={RED_TINT} fg={RED} label={'Trusted\n& secure'} />
       </View>
@@ -601,5 +601,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(12),
     paddingVertical: rs(9),
   },
-  errorText: { fontSize: rf(12.5), lineHeight: rlh(17), color: '#C62828' },
+  errorText: { fontSize: rf(12.5), lineHeight: rlh(17), color: '#F32C26' },
 });

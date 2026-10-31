@@ -9,6 +9,7 @@ import { notify } from '../components/confirm';
 import { uploadMedia } from '../api/media';
 import { normalizeDeviceImageUrl } from '../utils/images';
 import { rf } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
 const SLOTS = [
   { key: 'front', label: 'Front Side', isVideo: false },
@@ -107,10 +108,10 @@ export default function PickupDeviceInformationScreen({ navigation, route }) {
         slot: slot.key,
       });
       const url = res?.url || res?.secure_url;
-      if (!url) throw new Error('Upload returned no URL');
+      if (!url) throw new Error('Upload failed. Please try again.');
       setPhotos((m) => ({ ...m, [slot.key]: url }));
     } catch (e) {
-      notify('Upload failed', e?.message || 'Try again');
+      notify('Upload failed', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       setUploading(null);
     }

@@ -4,17 +4,19 @@ import { Text } from '../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   Bell, Wrench, CalendarCheck2, CalendarX2, CalendarClock, Timer,
-  ShieldCheck, BadgeCheck, CircleCheck, CircleX, RefreshCw, FileText,
+  ShieldCheck, BadgeCheck, CircleCheck, CircleX, RefreshCw, FileText, ListChecks, CalendarClock as TaskClock,
 } from 'lucide-react-native';
+import { listMyStaffTasks } from '../api/staffTasks';
+import { taskNotification, taskReminder, dayKey } from '../utils/staffTasks';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { listMyTickets } from '../api/tickets';
 import { getMyTechnicianProfile, getMyLeaves } from '../api/technician';
 import { rf } from '../utils/responsive';
 
-const FILTERS = ['All', 'Jobs', 'Attendance'];
+const FILTERS = ['All', 'Jobs', 'Tasks', 'Attendance'];
 const POLL_MS = 15000; // refresh while the screen is open so status changes show quickly
 
-// Near G Fix palette, same as Home / Ticket Detail.
+// NearGFix palette, same as Home / Ticket Detail.
 const C = {
   green: '#035C6C', greenTint: '#E5F3F5', greenSoft: '#E5F3F5', greenLine: '#E5F3F5',
   red: '#F32C26', redTint: '#FEECEC', yellowTint: '#FDF6E0', yellowInk: '#FAA700',
@@ -52,14 +54,29 @@ const ticketRef = (t) => {
 // Ticket status → notification title and the detail after the ref.
 const TICKET_UPDATE = {
   IN_DIAGNOSIS: { title: 'Job Status Updated', detail: 'In diagnosis', tone: 'blue' },
-  QUOTED: { title: 'Re-estimate Sent', detail: 'Awaiting customer approval', tone: 'orange' },
+  QUOTED: { title: 'Service Re-Estimated – Awaiting Customer Approval', detail: null, tone: 'orange' },
   APPROVED: { title: 'Customer Approved', detail: 'Re-estimate approved', tone: 'green' },
-  IN_REPAIR: { title: 'Job Status Updated', detail: 'Repair in progress', tone: 'blue' },
+  IN_REPAIR: { title: 'Job Status Updated', detail: 'Repair Work in Progress', tone: 'blue' },
   READY: { title: 'Job Status Updated', detail: 'Moved to Ready for Delivery', tone: 'done' },
   INVOICE_GENERATED: { title: 'Job Status Updated', detail: 'Invoice generated', tone: 'done' },
   DELIVERED: { title: 'Job Status Updated', detail: 'Delivered to customer', tone: 'done' },
   CANCELLED: { title: 'Job Cancelled', detail: 'Work cancelled', tone: 'red' },
 };
+
+// Re-estimate state, when the ticket carries it (GET /tickets/{id} sends
+// activeReEstimate / latestReEstimate): an open technician request, or the
+// customer's decision the technician hasn't acknowledged yet.
+function reEstimateUpdate(t) {
+  const active = String(t?.activeReEstimate?.status || '').toUpperCase();
+  if (active === 'REQUESTED') return { title: 'Technician Re-Estimate Requested', detail: 'Waiting for the shop', tone: 'orange' };
+  if (active === 'AWAITING_APPROVAL') return TICKET_UPDATE.QUOTED;
+  const latest = t?.latestReEstimate;
+  if (!latest || latest.technicianAcknowledgedAt) return null;
+  const s = String(latest.status || '').toUpperCase();
+  if (s === 'APPROVED') return { title: 'Re-Estimate Approved by Customer', detail: 'Repair Work in Progress (Resumed)', tone: 'green' };
+  if (s === 'REJECTED') return { title: 'Re-Estimate Rejected by Customer', detail: 'Continue with the original approved repair only', tone: 'red' };
+  return null;
+}
 
 function ticketNotification(t) {
   const status = String(t.status || '').toUpperCase();
@@ -68,7 +85,7 @@ function ticketNotification(t) {
     .split(/[·•|]/)[0].trim();
   // Not yet accepted (and still open) → a fresh assignment.
   const fresh = !t.technicianAcceptedAt && !['READY', 'DELIVERED', 'CANCELLED'].includes(status);
-  const upd = fresh ? null : TICKET_UPDATE[status];
+  const upd = fresh ? null : (reEstimateUpdate(t) || TICKET_UPDATE[status]);
   const title = upd ? upd.title : 'New Job Assigned';
   const detail = upd ? upd.detail : device;
   return {
@@ -122,9 +139,14 @@ async function loadReadIds() {
 // misleading "all caught up".
 async function buildFeed() {
   let failures = 0;
-  const [page, me] = await Promise.all([
+  const [page, me, staffTasks] = await Promise.all([
     listMyTickets({ page: 0, size: 20 }).catch(() => { failures += 1; return null; }),
     getMyTechnicianProfile().catch(() => null),
+    // Staff tasks are optional: a server without them simply adds nothing.
+    listMyStaffTasks({
+      from: dayKey(new Date(Date.now() - 14 * 86400000)),
+      to: dayKey(new Date(Date.now() + 30 * 86400000)),
+    }).catch(() => []),
   ]);
   const tickets = Array.isArray(page?.content) ? page.content : (Array.isArray(page) ? page : []);
   let leaves = [];
@@ -137,7 +159,9 @@ async function buildFeed() {
   const items = [
     ...tickets.map(ticketNotification),
     ...leaves.map(leaveNotification),
-  ].filter((n) => n.createdAt);
+    ...staffTasks.map(taskNotification),
+    ...staffTasks.map((t) => taskReminder(t)),
+  ].filter((n) => n && n.createdAt);
   items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   return { items, failed: failures >= 2 && items.length === 0 };
 }
@@ -193,13 +217,17 @@ export default function NotificationsScreen({ navigation }) {
       navigation.navigate('LeaveReport');
     } else if (n.kind === 'permission') {
       navigation.navigate('LeaveReport', { type: 'PERMISSION' });
+    } else if (n.kind === 'task' && n.taskId) {
+      navigation.navigate('TaskDetails', { taskId: n.taskId });
     }
   };
 
   const visible = useMemo(() => {
     if (filter === 'All') return items;
     // Jobs = ticket updates; Attendance = leave and permission requests.
-    return items.filter((n) => (filter === 'Jobs' ? n.kind === 'ticket' : n.kind !== 'ticket'));
+    if (filter === 'Jobs') return items.filter((n) => n.kind === 'ticket');
+    if (filter === 'Tasks') return items.filter((n) => n.kind === 'task');
+    return items.filter((n) => n.kind === 'leave' || n.kind === 'permission');
   }, [items, filter]);
 
   if (loading) {
@@ -293,6 +321,12 @@ export default function NotificationsScreen({ navigation }) {
 }
 
 function iconFor(n) {
+  if (n.kind === 'task') {
+    if (n.taskEvent === 'CANCELLED') return { Icon: CircleX, color: C.red, bg: C.redTint };
+    if (n.taskEvent === 'COMPLETED') return { Icon: CircleCheck, color: C.lime, bg: C.limeTint };
+    if (n.taskEvent === 'REMINDER' || n.taskEvent === 'RESCHEDULED') return { Icon: TaskClock, color: C.yellowInk, bg: C.yellowTint };
+    return { Icon: ListChecks, color: C.blue, bg: C.blueTint };
+  }
   if (n.kind === 'permission') {
     if (n.leaveStatus === 'APPROVED') return { Icon: Timer, color: C.lime, bg: C.limeTint };
     if (n.leaveStatus === 'REJECTED') return { Icon: Timer, color: C.red, bg: C.redTint };

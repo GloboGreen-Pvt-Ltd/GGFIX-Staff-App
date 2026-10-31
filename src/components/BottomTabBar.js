@@ -5,7 +5,7 @@ import { Text } from './Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import { CommonActions } from '@react-navigation/native';
-import { House, Calendar, Laptop, Truck, User } from 'lucide-react-native';
+import { House, Calendar, Laptop, User } from 'lucide-react-native';
 import { selectSession } from '../store/authSlice';
 import { resolveRoleKey } from '../config/categories';
 import { rf, rs, isTablet } from '../utils/responsive';
@@ -31,7 +31,7 @@ const RIM_W = 3;                                 // its width — the circle's p
 const GLASS_OUTLINE = 'rgba(17, 17, 17, 0.08)';  // hairline outer outline
 const PAGE_BG = '#F3F4F6';                       // strip behind the pill = screens' page grey
 // Screens drawn on white get a white strip, so the pill floats on the page colour.
-const WHITE_PAGE_ROUTES = new Set(['TaskReport', 'TaskAssign']);
+const WHITE_PAGE_ROUTES = new Set(['TaskReport', 'TaskAssign', 'MyTasks']);
 
 const BAR_H = rs(TAB_BAR_HEIGHT);
 const SIDE_MARGIN = rs(isTablet ? 20 : 14);
@@ -44,10 +44,10 @@ const CIRC_ICON = rs(isTablet ? 26 : 24);
 const CIRC_TOP = -Math.round(CIRC * 0.38);       // circle rises ~38% above the bar
 const LABEL_SIZE = rf(isTablet ? 12 : 11);
 
-// Role-aware tab set. The Tasks/Pickup tile ONLY exists for the two roles that
-// actually have that workflow:
-//   TECHNICIAN    → "My Jobs" (Laptop) opening TaskReport (Job Report)
-//   PICKUP_PERSON → "Pickup" (Truck)  opening PickupAssign
+// Role-aware tab set: Home / Attendance / My Jobs / Account. The My Jobs tile
+// ONLY exists for the two roles that actually have a job workflow:
+//   TECHNICIAN    → opens TaskReport (Job Report)
+//   PICKUP_PERSON → opens PickupAssign (their jobs are pickups)
 // STAFF has no task/pickup workflow, so they get a clean three-tab bar
 // (Home / Attendance / Account) with nothing dangling.
 function tabsFor(roleKey) {
@@ -56,7 +56,7 @@ function tabsFor(roleKey) {
     { key: 'Attendance', label: 'Attendance', icon: Calendar, route: 'DailyAttendance' },
   ];
   if (roleKey === 'PICKUP_PERSON') {
-    tabs.push({ key: 'Tasks', label: 'Pickup', icon: Truck, route: 'PickupAssign' });
+    tabs.push({ key: 'Tasks', label: 'My Jobs', icon: Laptop, route: 'PickupAssign' });
   } else if (roleKey === 'TECHNICIAN') {
     tabs.push({ key: 'Tasks', label: 'My Jobs', icon: Laptop, route: 'TaskReport' });
   }

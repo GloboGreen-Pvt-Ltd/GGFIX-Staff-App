@@ -302,7 +302,7 @@ export default function ScanTicketQrScreen({ navigation }) {
                 <>
                   <Text className="text-gray-900 font-extrabold text-center" style={{ fontSize: rf(15) }}>No ticket found</Text>
                   <Text className="text-gray-500 text-center mt-1.5 leading-5" style={{ fontSize: rf(12) }}>
-                    Couldn't match <Text className="font-extrabold text-gray-700">{notFound}</Text> to a ticket in this shop. Make sure it's a Near G Fix QR slip.
+                    Couldn't match <Text className="font-extrabold text-gray-700">{notFound}</Text> to a ticket in this shop. Make sure it's a NearGFix QR slip.
                   </Text>
                 </>
               )}

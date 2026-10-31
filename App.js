@@ -8,6 +8,7 @@ import { GluestackUIProvider } from '@gluestack-ui/themed';
 import { config } from '@gluestack-ui/config';
 import { store } from './src/store';
 import RootNavigator from './src/navigation/RootNavigator';
+import { ToastHost } from './src/components/Toast';
 import colors from './src/theme/colors';
 import { useFonts } from 'expo-font';
 import { fontAssets } from './src/theme/typography';
@@ -38,6 +39,8 @@ export default function App() {
           <NavigationContainer theme={navTheme}>
             <RootNavigator />
           </NavigationContainer>
+          {/* App-wide toasts (notify / showToast), above every screen. */}
+          <ToastHost />
         </SafeAreaProvider>
       </GluestackUIProvider>
     </Provider>

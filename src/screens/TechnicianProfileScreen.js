@@ -31,6 +31,7 @@ import { applyProfileToSession } from '../auth/refreshProfile';
 import { selectSession } from '../store/authSlice';
 import { employeeIdFromSession } from '../utils/employeeId';
 import MintScreenHeader from '../components/MintScreenHeader';
+import { userMessage } from '../utils/userMessages';
 
 function formatTime(val) {
   if (val == null) return '—';
@@ -165,13 +166,14 @@ export default function TechnicianProfileScreen() {
         folder: `technicians/${techId}/avatar`,
       });
       const url = res?.url || res?.secure_url || null;
-      if (!url) throw new Error('Upload returned no URL');
+      if (!url) throw new Error('Upload failed. Please try again.');
       const updated = await ticketApi.patch('/technicians/me', { body: { photoUrl: url } });
       setProfile(updated);
       applyProfileToSession(dispatch, updated);
       setForm((p) => ({ ...p, photoUrl: url }));
+      notify('Profile photo updated', '', { type: 'success' });
     } catch (e) {
-      notify('Upload failed', e?.message ?? 'Could not update photo', { preset: 'error', haptic: 'error' });
+      notify('Could not update photo', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setUploadingPhoto(false);
     }
@@ -179,7 +181,7 @@ export default function TechnicianProfileScreen() {
 
   const handleSave = async () => {
     if (!form.name?.trim()) {
-      notify('Name required', 'Please enter your name before saving.', { preset: 'error' });
+      notify('Name required', 'Please enter your name before saving.', { type: 'warning' });
       return;
     }
     setSaving(true);
@@ -196,9 +198,9 @@ export default function TechnicianProfileScreen() {
       setProfile(updated);
       applyProfileToSession(dispatch, updated);
       setEditing(false);
-      notify('Profile updated', 'Your changes have been saved.', { preset: 'done' });
+      notify('Profile updated', '', { type: 'success' });
     } catch (e) {
-      notify('Error', e?.message ?? 'Failed to save', { preset: 'error', haptic: 'error' });
+      notify('Could not update profile', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setSaving(false);
     }
@@ -444,17 +446,17 @@ function InfoRow({ Icon, label, value, onPress, last }) {
   );
 }
 
-// Explains why the profile couldn't load, using the server's status/message.
+// Explains why the profile couldn't load, from the server's status (no raw server text).
 function ProfileLoadError({ error, onRetry }) {
   const status = error?.status;
   let title = "Couldn't load your profile";
   let body = 'Something went wrong while loading your details. Please try again.';
   if (status === 404 && error?.owner) {
     title = "This is the shop owner's login";
-    body = "Owner accounts don't have an employee profile, so there is nothing to show here. Sign in with the employee's own mobile number — or, to use the Staff App yourself, add yourself as an employee in the Near G Fix Partner app with your mobile number.";
+    body = "Owner accounts don't have an employee profile, so there is nothing to show here. Sign in with the employee's own mobile number — or, to use the Staff App yourself, add yourself as an employee in the NearGFix Partner app with your mobile number.";
   } else if (status === 404) {
     title = 'No employee profile yet';
-    body = 'Your login works, but no employee profile is linked to it. Ask your shop owner to add you as staff in the Near G Fix owner app using this same mobile number. Your details will then appear here and you can edit your name and photo.';
+    body = 'Your login works, but no employee profile is linked to it. Ask your shop owner to add you as staff in the NearGFix owner app using this same mobile number. Your details will then appear here and you can edit your name and photo.';
   } else if (status === 401 || status === 403) {
     title = 'Profile not available for this login';
     body = 'This account is not set up as a staff / technician profile for the shop, or the session has expired. Log out and log in again. If it still shows, ask your shop owner to add you as staff with this mobile number.';
@@ -470,11 +472,6 @@ function ProfileLoadError({ error, onRetry }) {
         </View>
         <Text style={{ fontSize: rf(16), fontWeight: '800', color: COLORS.text, marginTop: 12, textAlign: 'center' }}>{title}</Text>
         <Text style={{ fontSize: rf(13), lineHeight: rlh(19), color: COLORS.textMuted, marginTop: 8, textAlign: 'center' }}>{body}</Text>
-        {error?.message ? (
-          <Text style={{ fontSize: rf(11), color: '#A3A3A3', marginTop: 10, textAlign: 'center' }} numberOfLines={3}>
-            Server: {String(error.message).slice(0, 160)}{status ? ` (HTTP ${status})` : ''}
-          </Text>
-        ) : null}
         <TouchableOpacity
           onPress={onRetry}
           activeOpacity={0.85}

@@ -45,6 +45,7 @@ import { useBreak, formatMinutes } from '../utils/breakTracker';
 
 const fmtClock = (ms) => { if (!ms) return '—'; const d = new Date(ms); const h = d.getHours(); return `${String(h % 12 || 12).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
 import { resolveDeviceImageSource } from '../utils/images';
+import { userMessage } from '../utils/userMessages';
 
 const C = {
   green: '#035C6C',
@@ -537,14 +538,14 @@ function ShiftChangeModal({ visible, onClose, initialDate, minDate, currentStart
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async () => {
-    if (!date) { notify('Check the form', 'Please pick a date.'); return; }
-    if (!from || !to) { notify('Check the form', 'Pick your preferred start and end time.'); return; }
-    if (to <= from) { notify('Check the form', 'End time must be after start time.'); return; }
+    if (!date) { notify('Check the form', 'Please pick a date.', { type: 'warning' }); return; }
+    if (!from || !to) { notify('Check the form', 'Pick your preferred start and end time.', { type: 'warning' }); return; }
+    if (to <= from) { notify('Check the form', 'End time must be after start time.', { type: 'warning' }); return; }
     if (currentStart && currentEnd && from === currentStart.hhmm && to === currentEnd.hhmm) {
-      notify('No change', 'The requested timing is the same as your current shift.');
+      notify('No change', 'The requested timing is the same as your current shift.', { type: 'info' });
       return;
     }
-    if (!reason.trim()) { notify('Check the form', 'Please enter a reason.'); return; }
+    if (!reason.trim()) { notify('Check the form', 'Please enter a reason.', { type: 'warning' }); return; }
     setSaving(true);
     try {
       const current = currentStart && currentEnd ? ` (current ${currentStart.label} – ${currentEnd.label})` : '';
@@ -556,10 +557,10 @@ function ShiftChangeModal({ visible, onClose, initialDate, minDate, currentStart
         reason: `Shift change request: ${to12h(from)} – ${to12h(to)}${current}: ${reason.trim()}`,
         attachmentUrl: null,
       });
-      notify('Request sent', 'Your shift change request was sent to the owner for approval.', { preset: 'done' });
+      notify('Shift change requested', 'Sent to the owner for approval.', { type: 'success' });
       onClose();
     } catch (e) {
-      notify('Could not submit', e?.message ?? 'Failed to send shift change request', { preset: 'error', haptic: 'error' });
+      notify('Could not request shift change', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setSaving(false);
     }

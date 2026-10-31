@@ -3,6 +3,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { File, Paths, UploadType } from 'expo-file-system';
 import { MASTER_BASE, MEDIA_UPLOAD_PATH } from './config';
 import { getToken } from '../auth/session';
+import { friendlyApiMessage, transportMessage, logDiagnostic } from '../utils/userMessages';
 
 // Phone camera photos are 2–5 MB (and HEIC on iPhones), which the upload
 // endpoint rejects — its multipart limit is well below that. Images are
@@ -135,10 +136,12 @@ export async function uploadMedia({ uri, name, type, folder, slot } = {}) {
       text = res.body;
     }
   } catch (e) {
-    const err = new Error(e?.name === 'AbortError'
-      ? 'Upload timed out. Check your connection and try again.'
-      : `Could not reach the upload server. ${e?.message || ''}`.trim());
+    const timedOut = e?.name === 'AbortError';
+    const err = new Error(transportMessage(timedOut));
     err.status = 0;
+    err.timeout = timedOut;
+    err.diagnostic = `UPLOAD media: ${e?.message || 'network error'}`;
+    logDiagnostic(err);
     throw err;
   } finally {
     clearTimeout(timer);
@@ -147,15 +150,18 @@ export async function uploadMedia({ uri, name, type, folder, slot } = {}) {
   let json;
   try { json = text ? JSON.parse(text) : null; } catch { json = null; }
   if (status < 200 || status >= 300) {
-    // Keep the status visible: a bare "Forbidden"/"Internal Server Error"
-    // from the gateway says nothing about which request failed.
+    // Friendly text for users; the status and gateway reason go to err.diagnostic.
     const reason = (json && (json.message || json.error)) || (text && text.length < 200 ? text : '') || 'Upload rejected';
-    const err = new Error(`${reason} (HTTP ${status})`);
+    const err = new Error(friendlyApiMessage({ status, serverMessage: reason, method: 'POST', hadToken: !!token }));
     err.status = status;
+    err.serverMessage = reason;
+    err.diagnostic = `UPLOAD media → ${status}: ${reason}`;
+    logDiagnostic(err);
     throw err;
   }
   if (!json?.url && !json?.secure_url) {
-    const err = new Error('Upload finished but the server returned no file URL.');
+    const err = new Error('Upload failed. Please try again.');
+    err.diagnostic = 'UPLOAD media: response had no file URL';
     err.status = status;
     throw err;
   }

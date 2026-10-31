@@ -27,7 +27,7 @@ export default function TechIdPending({ failed, onRetry }) {
       </Text>
       <Text style={{ fontSize: rf(13), color: '#6B7280', marginTop: rs(6), textAlign: 'center' }}>
         {owner
-          ? "Owner accounts don't have attendance. Sign in with the employee's mobile number, or add yourself as an employee in the Near G Fix Partner app."
+          ? "Owner accounts don't have attendance. Sign in with the employee's mobile number, or add yourself as an employee in the NearGFix Partner app."
           : 'Check your connection and try again. If it keeps happening, ask your shop admin to check your employee profile.'}
       </Text>
       <TouchableOpacity

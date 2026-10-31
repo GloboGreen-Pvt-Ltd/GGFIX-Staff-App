@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { getPickupRepairEstimate } from '../api/pickups';
 import { normalizeDeviceImageUrl } from '../utils/images';
 import { rf, rs } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
 // Pickup-side Estimate Details. Visual language mirrors the shop-owner
 // "Booking Details" screen (cards stacked vertically: device hero with a
@@ -146,7 +147,7 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
       const fresh = await getPickupRepairEstimate(bookingId);
       setData((prev) => ({ ...(prev || {}), ...(fresh || {}) }));
     } catch (e) {
-      setError(e?.message || 'Could not load estimate');
+      setError(userMessage(e, 'Could not load estimate'));
     } finally {
       setLoading(false);
     }

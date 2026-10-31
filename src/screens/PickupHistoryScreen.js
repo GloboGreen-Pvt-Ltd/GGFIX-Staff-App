@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { listMyAssignedPickups } from '../api/pickups';
 import { Ionicons } from '@expo/vector-icons';
 import { rf, rs } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
 function trackingId(booking) {
   return booking?.bookingNumber
@@ -62,7 +63,7 @@ export default function PickupHistoryScreen({ route }) {
       if (fresh) setBooking((prev) => ({ ...prev, ...fresh }));
       setError(null);
     } catch (e) {
-      setError(e?.message || 'Could not refresh history');
+      setError(userMessage(e, 'Could not refresh history'));
     } finally {
       setLoading(false);
     }

@@ -33,6 +33,7 @@ import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../componen
 import { MonthPill, TILE_TONES, solidGlyph } from '../components/MintKit';
 import { LeftVerticalSidebar, SidebarLayout, useSidebarWidth } from '../components/JobCardKit';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { userMessage } from '../utils/userMessages';
 
 // Screen palette.
 const C = {
@@ -213,7 +214,7 @@ export default function DailyAttendanceScreen({ navigation }) {
     } catch (e) {
       if (id !== reqId.current) return;
       if (!isRefresh) setData(null);
-      setError(e?.message || 'Could not load attendance.');
+      setError(userMessage(e, 'Could not load attendance.'));
     } finally {
       if (id === reqId.current) {
         setLoading(false);

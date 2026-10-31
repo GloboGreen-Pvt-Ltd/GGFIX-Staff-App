@@ -58,6 +58,12 @@ const TAB_FOR_ROUTE = {
 
   // Reachable from the Home header bell; stay highlighted under Home.
   Notifications: 'Home',
+  // Staff Tasks (general shop tasks) — entered from Home → My Tasks.
+  MyTasks: 'Home',
+  TaskDetails: 'Home',
+  TaskUpdate: 'Home',
+  TaskCalendar: 'Home',
+  TaskHistory: 'Home',
   // Reachable from the Home header scan icon; opens the scanned ticket.
   ScanTicketQr: 'Home',
 };
@@ -137,6 +143,11 @@ import TechnicianKycIntroScreen from '../screens/TechnicianKycIntroScreen';
 import TechnicianKycUploadScreen from '../screens/TechnicianKycUploadScreen';
 import TechnicianKycViewScreen from '../screens/TechnicianKycViewScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import MyTasksScreen from '../screens/MyTasksScreen';
+import TaskDetailsScreen from '../screens/TaskDetailsScreen';
+import TaskUpdateScreen from '../screens/TaskUpdateScreen';
+import TaskCalendarScreen from '../screens/TaskCalendarScreen';
+import TaskHistoryScreen from '../screens/TaskHistoryScreen';
 import ScanTicketQrScreen from '../screens/ScanTicketQrScreen';
 import TabletFrame from '../components/TabletFrame';
 
@@ -236,6 +247,11 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="TechnicianKycUpload" component={TechnicianKycUploadScreen} options={{ title: 'Upload Documents' }} />
         <Stack.Screen name="TechnicianKycView" component={TechnicianKycViewScreen} options={{ title: 'KYC Documents' }} />
         <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+        <Stack.Screen name="MyTasks" component={MyTasksScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TaskDetails" component={TaskDetailsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TaskUpdate" component={TaskUpdateScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TaskCalendar" component={TaskCalendarScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TaskHistory" component={TaskHistoryScreen} options={{ headerShown: false }} />
         <Stack.Screen name="ScanTicketQr" component={ScanTicketQrScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </LogoutContext.Provider>

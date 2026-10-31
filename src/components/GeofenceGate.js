@@ -78,7 +78,7 @@ export default function GeofenceGate({ onLogout, children }) {
         // bypass the radius rule just by switching location off.
         setDistance(null);
         setStatus('denied');
-        setMessage('Turn on location (GPS) and allow Near G Fix to access it to use the app.');
+        setMessage('Turn on location (GPS) and allow NearGFix to access it to use the app.');
         return;
       }
       const meters = haversineMeters(
@@ -132,8 +132,8 @@ export default function GeofenceGate({ onLogout, children }) {
       notifyNow(
         '📍 Outside shop area',
         status === 'denied'
-          ? 'Location is off. Near G Fix works only within ' + GEOFENCE_RADIUS_METERS + 'm of the shop.'
-          : `You are ${distance ?? '?'}m from the shop. Near G Fix works only within ${GEOFENCE_RADIUS_METERS}m.`,
+          ? 'Location is off. NearGFix works only within ' + GEOFENCE_RADIUS_METERS + 'm of the shop.'
+          : `You are ${distance ?? '?'}m from the shop. NearGFix works only within ${GEOFENCE_RADIUS_METERS}m.`,
       );
     }
     if (status !== 'checking') lockedRef.current = locked;

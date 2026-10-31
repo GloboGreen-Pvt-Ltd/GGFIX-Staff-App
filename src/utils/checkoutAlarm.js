@@ -51,7 +51,7 @@ function load() {
 
 export const CHECKOUT_ALARM_TIME = { hour: 18, minute: 30 };
 export const CHECKOUT_REMINDER_TITLE = 'Check-out reminder';
-export const CHECKOUT_REMINDER_BODY = 'It is 6:30 PM. Please check out in Near G Fix before you leave.';
+export const CHECKOUT_REMINDER_BODY = 'It is 6:30 PM. Please check out in NearGFix before you leave.';
 // New channel id: Android fixes a channel's sound when it's created, so the
 // silent reminder can't reuse the earlier channels — those are deleted on sync:
 // the SOS alarm's (siren, alarm audio, DND bypass) and the first reminder's

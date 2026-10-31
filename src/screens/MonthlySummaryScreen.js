@@ -21,7 +21,7 @@ import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../componen
 import { MonthPill, TILE_TONES } from '../components/MintKit';
 import { LeftVerticalSidebar, SidebarLayout, useSidebarWidth } from '../components/JobCardKit';
 
-// Screen palette (Near G Fix green + mint).
+// Screen palette (NearGFix green + mint).
 const C = {
   deep: '#035C6C',
   primary: '#035C6C',

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Pressable, TouchableOpacity, ScrollView, Image, Alert, Platform, RefreshControl, useWindowDimensions } from 'react-native';
+import { View, Pressable, TouchableOpacity, ScrollView, Image, RefreshControl, useWindowDimensions } from 'react-native';
 import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
@@ -26,12 +26,13 @@ import { selectSession } from '../store/authSlice';
 import { useLogout } from '../auth/LogoutContext';
 import { getRoleDisplayLabel } from '../config/categories';
 import { employeeIdFromSession } from '../utils/employeeId';
-import { confirm, notify } from '../components/confirm';
+import { notify } from '../components/confirm';
 import { listMyKycDocuments } from '../api/technicianKyc';
 import { refreshMyProfile } from '../auth/refreshProfile';
 import { loadUnreadNotificationCount } from './NotificationsScreen';
 import { rf, rs } from '../utils/responsive';
 import MintScreenHeader from '../components/MintScreenHeader';
+import LogoutSheet from '../components/LogoutSheet';
 
 // Brand palette (same as Home): green, red, yellow, ink + light neutrals.
 const C = {
@@ -115,20 +116,11 @@ export default function AccountTabScreen({ navigation }) {
   const openKyc = () =>
     navigation.navigate(hasKycDocs ? 'TechnicianKycView' : 'TechnicianKycUpload');
 
-  const handleLogout = async () => {
-    const ok = await confirm({
-      title: 'Log out?',
-      message: 'You will need to sign in again to access your account.',
-      confirmText: 'Log out',
-      destructive: true,
-    });
-    if (ok) onLogout?.();
-  };
+  // Logout confirmation bottom sheet (components/LogoutSheet).
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const handleLogout = () => setLogoutOpen(true);
 
-  // A dialog (not a brief toast) so the tap visibly does something on the phone.
-  const comingSoon = (label) => (Platform.OS === 'web'
-    ? notify(label, 'This section is coming soon.')
-    : Alert.alert(label, 'This section is coming soon.'));
+  const comingSoon = (label) => notify(label, 'This section is coming soon.', { type: 'info' });
 
   // Sections give the long list a visual rhythm — the user scans grouped
   // cards faster than a flat list of nine identical rows.
@@ -261,10 +253,11 @@ export default function AccountTabScreen({ navigation }) {
           </Pressable>
 
           <Text style={{ textAlign: 'center', marginTop: rs(8), fontSize: rf(11), fontWeight: '600', color: C.faint }}>
-            Near G Fix Employee · v{APP_VERSION}
+            NearGFix Employee · v{APP_VERSION}
           </Text>
         </View>
       </ScrollView>
+      <LogoutSheet visible={logoutOpen} onCancel={() => setLogoutOpen(false)} onConfirm={() => onLogout?.()} />
     </SafeAreaView>
   );
 }

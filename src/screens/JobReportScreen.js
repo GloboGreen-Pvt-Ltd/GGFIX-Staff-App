@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { markNotificationsSeen } from './NotificationsScreen';
-import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, AppState } from 'react-native';
 import { useSelector } from 'react-redux';
 import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -52,7 +52,7 @@ const STATUS_LABEL = {
   IN_DIAGNOSIS: 'In Diagnosis',
   QUOTED: 'Quotation Sent. Awaiting Approval',
   APPROVED: 'Customer Approved. Work Pending',
-  IN_REPAIR: 'Repair Work In Progress',
+  IN_REPAIR: 'Repair Work in Progress',
   READY: 'Ready for Delivery',
   DELIVERED: 'Delivered to Customer',
   CANCELLED: 'Work Cancelled',
@@ -73,6 +73,7 @@ const CANONICAL_EVENT_ORDER = [
   'BOOKING_CREATED_BY_SHOP',
   'SERVICE_ACCEPTED',
   'ASSIGNED_TO_TECHNICIAN',
+  'TECHNICIAN_ASSIGNED',
   'AWAITING_TECHNICIAN_ACCEPTANCE',
   'REASSIGNED_TO_TECHNICIAN',
   'TECHNICIAN_ACCEPTED_SERVICE',
@@ -80,9 +81,15 @@ const CANONICAL_EVENT_ORDER = [
   'TECHNICIAN_UPLOADED_DEVICE_IMAGES',
   'TECHNICIAN_COMPLIANCE_ISSUE_VERIFIED_UPDATED',
   'RE_ESTIMATED_CONFIRMED',
+  'WAITING_FOR_CUSTOMER_APPROVAL',
   'CUSTOMER_APPROVED',
   'CUSTOMER_REJECTED',
   'IN_REPAIR',
+  // A re-estimate raised during the repair (see REPAIR_CYCLE_STEP below).
+  'TECHNICIAN_REESTIMATE_REQUESTED',
+  'RE_ESTIMATE_APPROVED',
+  'RE_ESTIMATE_REJECTED',
+  'REPAIR_WORK_RESUMED',
   'PARTS_REQUIRED',
   'QUALITY_CHECK_COMPLETED',
   'REPAIR_COMPLETED',
@@ -91,6 +98,20 @@ const CANONICAL_EVENT_ORDER = [
   'CANCELLED',
 ];
 const EVENT_INDEX = Object.fromEntries(CANONICAL_EVENT_ORDER.map((k, i) => [k, i]));
+// Repair Work in Progress and a re-estimate raised during it share one rank,
+// so the newest of them is the current phase; equal times go to the later
+// step. A re-estimate awaiting approval joins only when it comes after
+// IN_REPAIR (an earlier one is the pre-repair quote and keeps its own rank).
+const AWAITING_KEYS = new Set(['RE_ESTIMATED_CONFIRMED', 'WAITING_FOR_CUSTOMER_APPROVAL']);
+const REPAIR_CYCLE_STEP = {
+  IN_REPAIR: 0,
+  TECHNICIAN_REESTIMATE_REQUESTED: 1,
+  RE_ESTIMATED_CONFIRMED: 2,
+  WAITING_FOR_CUSTOMER_APPROVAL: 2,
+  RE_ESTIMATE_APPROVED: 3,
+  RE_ESTIMATE_REJECTED: 3,
+  REPAIR_WORK_RESUMED: 4,
+};
 
 // Event-level labels (the same fine-grained phases the History screen renders).
 // The technician's last controllable phase is REPAIR_COMPLETED — anything after
@@ -99,17 +120,23 @@ const EVENT_INDEX = Object.fromEntries(CANONICAL_EVENT_ORDER.map((k, i) => [k, i
 const EVENT_LABEL = {
   BOOKING_CREATED_BY_SHOP: 'Booking Created by Shop',
   SERVICE_ACCEPTED: 'Service Accepted',
-  ASSIGNED_TO_TECHNICIAN: 'Assigned to Technician',
+  ASSIGNED_TO_TECHNICIAN: 'Technician Assigned',
+  TECHNICIAN_ASSIGNED: 'Technician Assigned',
   AWAITING_TECHNICIAN_ACCEPTANCE: 'Awaiting Technician Acceptance',
   REASSIGNED_TO_TECHNICIAN: 'Re-Assigned to Technician',
   TECHNICIAN_ACCEPTED_SERVICE: 'Technician Accepted Service',
   TECHNICIAN_WORK_STARTED: 'Technician Work Started',
   TECHNICIAN_UPLOADED_DEVICE_IMAGES: 'Technician Uploaded Device Images',
-  TECHNICIAN_COMPLIANCE_ISSUE_VERIFIED_UPDATED: 'Technician Compliance Issue Verified & Updated',
-  RE_ESTIMATED_CONFIRMED: 'Re-Estimated Confirmed',
+  TECHNICIAN_COMPLIANCE_ISSUE_VERIFIED_UPDATED: 'Technician Issue Verified & Updated',
+  TECHNICIAN_REESTIMATE_REQUESTED: 'Technician Re-Estimate Requested',
+  RE_ESTIMATED_CONFIRMED: 'Service Re-Estimated – Awaiting Customer Approval',
+  WAITING_FOR_CUSTOMER_APPROVAL: 'Service Re-Estimated – Awaiting Customer Approval',
+  RE_ESTIMATE_APPROVED: 'Re-Estimate Approved by Customer',
+  RE_ESTIMATE_REJECTED: 'Re-Estimate Rejected by Customer',
+  REPAIR_WORK_RESUMED: 'Repair Work in Progress (Resumed)',
   CUSTOMER_APPROVED: 'Customer Approved',
   CUSTOMER_REJECTED: 'Customer Rejected',
-  IN_REPAIR: 'Repair Work In Progress',
+  IN_REPAIR: 'Repair Work in Progress',
   PARTS_REQUIRED: 'Spare Parts Waiting',
   QUALITY_CHECK_COMPLETED: 'Quality Check Completed',
   REPAIR_COMPLETED: 'Repair Completed',
@@ -136,11 +163,18 @@ function pickLatestEventKey(events) {
   let bestKey = null;
   let bestIndex = -1;
   let bestTime = -Infinity;
+  let bestStep = 0;
+  const repairStartedAt = events
+    .filter((e) => (e?.status || '').toUpperCase() === 'IN_REPAIR')
+    .reduce((min, e) => Math.min(min, new Date(e.createdAt || 0).getTime() || Infinity), Infinity);
   for (const e of events) {
     const k = (e?.status || '').toUpperCase();
     if (!k) continue;
-    const idx = EVENT_INDEX[k];
     const t = e.createdAt ? new Date(e.createdAt).getTime() : 0;
+    const inCycle = REPAIR_CYCLE_STEP[k] != null
+      && (!AWAITING_KEYS.has(k) || t > repairStartedAt);
+    const idx = inCycle ? EVENT_INDEX.IN_REPAIR : EVENT_INDEX[k];
+    const step = inCycle ? REPAIR_CYCLE_STEP[k] : 0;
     if (idx == null) {
       // Unknown phase — only adopt it if we have nothing canonical yet, and
       // break ties by recency so a fresh unknown-status event still wins
@@ -151,10 +185,11 @@ function pickLatestEventKey(events) {
       }
       continue;
     }
-    if (idx > bestIndex || (idx === bestIndex && t > bestTime)) {
+    if (idx > bestIndex || (idx === bestIndex && (t > bestTime || (t === bestTime && step > bestStep)))) {
       bestKey = k;
       bestIndex = idx;
       bestTime = t;
+      bestStep = step;
     }
   }
   return bestKey;
@@ -281,8 +316,9 @@ export default function JobReportScreen({ navigation, route }) {
   const [month, setMonth] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
   const [listWidth, setListWidth] = useState(0);
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true); else setLoading(true);
+  // silent: background poll — no spinner, and a failed poll keeps the list.
+  const load = useCallback(async (isRefresh = false, silent = false) => {
+    if (silent) { /* quiet */ } else if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
       // assignedToMe is scoped server-side to the signed-in technician; read
       // every page so the counts cover all of their jobs, not the first 100.
@@ -299,9 +335,10 @@ export default function JobReportScreen({ navigation, route }) {
       // Booking-timeline events are fetched separately, only for the tickets
       // actually rendered (see the displayedIds effect) — not for all 100.
     } catch {
+      if (silent) return;
       setError(true);
       if (isRefresh) {
-        notify('Could not refresh', 'Check your connection and pull down to try again.');
+        notify('Could not refresh', 'Check your connection and pull down to try again.', { type: 'error' });
       } else {
         setList([]);
         setEventStatusById({});
@@ -314,7 +351,12 @@ export default function JobReportScreen({ navigation, route }) {
 
   // Re-pull on every focus, not just mount, so a job finished on Job Details
   // is under Completed as soon as the technician lands back here.
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    load();
+    // Keep newly assigned jobs coming in while the screen stays open.
+    const id = setInterval(() => { if (AppState.currentState === 'active') load(false, true); }, 30000);
+    return () => clearInterval(id);
+  }, [load]));
 
   // Honour the filter HomeScreen passes ('Pending' / 'Completed'), including
   // when this screen is already mounted and re-navigated with new params.

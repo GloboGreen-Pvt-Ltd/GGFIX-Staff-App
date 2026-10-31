@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { markNotificationsSeen } from './NotificationsScreen';
-import { View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Pressable, Platform, Alert, Animated, AppState, Modal, Easing } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Pressable, Platform, Alert, Animated, AppState, Modal, Easing, KeyboardAvoidingView } from 'react-native';
 import { Text, TextInput } from '../components/Typography';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from '../utils/audio';
 import {
-  Smartphone, Search, UploadCloud, Pencil, X, Check,
+  Smartphone, Search, UploadCloud, X, Check,
   Mic, Play, Pause, Trash2, Plus, Image as ImageIcon,
   ShieldCheck, PackageX, Square, IndianRupee, BadgeCheck, Hourglass,
   Package, ChevronRight, Lock, CircleCheck,
@@ -14,14 +14,19 @@ import {
 import DatePickerField, { toISO } from '../components/DatePickerField';
 import {
   getTicket, setTechnicianPhotos, addRepairNote, listRepairNotes,
-  updateRepairNote, listTicketEvents, postProgressEvent,
+  listTicketEvents, postProgressEvent, acceptTicket,
+  requestReEstimate, acknowledgeReEstimate,
 } from '../api/tickets';
+import { ticketApi } from '../api/client';
+import { autoStartRepair } from '../utils/autoProgress';
 import { uploadMedia } from '../api/media';
 import { confirm, notify } from '../components/confirm';
+import { userMessage } from '../utils/userMessages';
 import { rf, rs } from '../utils/responsive';
 import {
   MIN_NOTE_PHOTOS, noteIsComplete, savedNotePhotoCount, currentEvents, findEvent,
   repairStartBlocker, shouldAutoStartRepair, photosToSync, PARTS_RECEIVED_MARK,
+  checklistResetAt, eventTime,
 } from '../utils/serviceProgress';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
@@ -51,10 +56,10 @@ import ImageViewerModal from '../components/ImageViewerModal';
 //   manual   — the technician's tick: the Quality Check
 //   failed   — Repair Not Completed, from the Unable to Repair action
 const PROGRESS_ROWS = [
-  { key: 'IN_REPAIR',               label: 'Repair Work Started', mode: 'auto' },
+  { key: 'IN_REPAIR',               label: 'Repair Work in Progress', mode: 'auto' },
   // Issue Verified + Repair Photos Added as one row: done once the saved note
   // has the description and the required photos.
-  { key: 'ISSUE_VERIFIED',          label: 'Verified Issue & Repair Details', mode: 'auto', synthetic: true },
+  { key: 'ISSUE_VERIFIED',          label: 'Technician Issue Verified & Updated', mode: 'auto', synthetic: true },
   // One spare-parts row. "Spare Parts Replaced" (PARTS_REPLACED) was retired
   // with migration 87 — the technician records the outcome in this row's note
   // instead, and the backend no longer accepts the old key.
@@ -83,11 +88,59 @@ const PROGRESS_ROWS = [
 // Spare Parts Waiting and Repair Not Completed are recorded from Next Action
 // and shown inside it, not as rows of their own.
 const NEXT_ACTION_ROW = { key: 'NEXT_ACTION', label: 'Next Action', mode: 'next', synthetic: true };
+// The job is assigned to this technician (the screen only opens for them);
+// its time comes from the assignment event when the booking has one.
+const ASSIGNED_ROW = { key: 'TECHNICIAN_ASSIGNED', label: 'Technician Assigned', mode: 'auto', synthetic: true };
+const ASSIGNED_EVENT_KEYS = ['ASSIGNED_TO_TECHNICIAN', 'TECHNICIAN_ASSIGNED', 'REASSIGNED_TO_TECHNICIAN'];
+// Re-estimate rows (contract order), each shown only once its event is on the
+// booking — read off the events, never given a time of their own.
+const RE_ESTIMATE_ROWS = [
+  { key: 'TECHNICIAN_REESTIMATE_REQUESTED', label: 'Technician Re-Estimate Requested', mode: 'reestimate', events: ['TECHNICIAN_REESTIMATE_REQUESTED'] },
+  { key: 'RE_ESTIMATED_CONFIRMED', label: 'Service Re-Estimated – Awaiting Customer Approval', mode: 'reestimate', events: ['RE_ESTIMATED_CONFIRMED', 'WAITING_FOR_CUSTOMER_APPROVAL'] },
+  { key: 'RE_ESTIMATE_DECIDED', label: 'Re-Estimate Approved by Customer', mode: 'reestimate', events: ['RE_ESTIMATE_APPROVED', 'RE_ESTIMATE_REJECTED'] },
+  { key: 'REPAIR_WORK_RESUMED', label: 'Repair Work in Progress (Resumed)', mode: 'reestimate', events: ['REPAIR_WORK_RESUMED'] },
+];
 const TIMELINE_ROWS = [
+  ASSIGNED_ROW,
   ...PROGRESS_ROWS.filter((r) => r.key === 'IN_REPAIR' || r.key === 'ISSUE_VERIFIED'),
+  ...RE_ESTIMATE_ROWS,
   NEXT_ACTION_ROW,
   ...PROGRESS_ROWS.filter((r) => r.key === 'REPAIR_COMPLETED' || r.key === 'QUALITY_CHECK_COMPLETED'),
 ];
+
+// Request Service Re-Estimate form (POST /tickets/{id}/re-estimate-requests).
+const EMPTY_RE_ESTIMATE = { issue: '', reason: '', amount: '', notes: '' };
+const RE_ESTIMATE_SUBMITTED = 'Service re-estimate request submitted to the Partner App.';
+// Rupee amount input: digits and one dot, at most 2 decimals.
+const cleanAmount = (v) => {
+  const [whole, ...rest] = String(v || '').replace(/[^0-9.]/g, '').split('.');
+  return rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole;
+};
+// Backend 409 while a revision is still open (request or awaiting approval).
+const isReEstimatePending = (e) => e?.status === 409
+  && /REESTIMATE_PENDING/i.test(`${JSON.stringify(e?.payload || '')} ${e?.message || ''}`);
+
+// Re-estimate state off GET /tickets/{id}: the open revision (REQUESTED /
+// AWAITING_APPROVAL), or the latest decided one the technician hasn't
+// acknowledged yet. Either holds Finish Repair; `lock` says why.
+function reEstimateState(ticket) {
+  const active = ticket?.activeReEstimate || null;
+  const latest = ticket?.latestReEstimate || null;
+  const activeStatus = String(active?.status || '').toUpperCase();
+  const latestStatus = String(latest?.status || '').toUpperCase();
+  const pending = activeStatus === 'REQUESTED' || activeStatus === 'AWAITING_APPROVAL' ? active : null;
+  const decided = !pending && (latestStatus === 'APPROVED' || latestStatus === 'REJECTED') ? latest : null;
+  const unacked = decided && !decided.technicianAcknowledgedAt ? decided : null;
+  const lock = pending
+    ? (activeStatus === 'REQUESTED'
+      ? 'Re-estimate requested · waiting for the shop to review it.'
+      : 'Re-estimate awaiting customer approval.')
+    : unacked ? 'Acknowledge the customer\'s re-estimate decision first.' : null;
+  return {
+    pending, pendingStatus: pending ? activeStatus : null,
+    unacked, unackedRejected: !!unacked && latestStatus === 'REJECTED', lock,
+  };
+}
 
 // Unable to Repair: pick one; "Other" needs a comment.
 const UNABLE_REASONS = [
@@ -104,6 +157,7 @@ const ACTION_TONE = {
   green: { fg: '#609138', bg: '#EEF4E9', line: '#D6E6C8' },
   amber: { fg: '#FAA700', bg: '#FFF6E0', line: '#FBE3A6' },
   red: { fg: '#F32C26', bg: '#FEECEC', line: '#FBD0D0' },
+  navy: { fg: '#1C3053', bg: '#EEF1F6', line: '#D5DCE8' },
 };
 
 // "YYYY-MM-DD" (DatePickerField) → "30 Oct 2026".
@@ -137,13 +191,13 @@ const DEFAULT_PROGRESS_NOTE = {
   REPAIR_NOT_COMPLETED: 'Your repair is not completed',
 };
 
-// Recording either of these finishes a stage of the technician's work: the
-// screen shows its banner, then returns to the Job Report. Description + the
-// required photos (MIN_NOTE_PHOTOS / noteIsComplete in utils/serviceProgress)
+// Quality Check Completed ends the technician's work: the popup, then back to
+// the Job Report (Completed). Finish Repair (Repair Completed) only shows a
+// toast and stays on this page so the Quality Check can follow. Description +
+// the required photos (MIN_NOTE_PHOTOS / noteIsComplete in utils/serviceProgress)
 // are mandatory for both.
 const COMPLETION_MESSAGES = {
-  REPAIR_COMPLETED: 'Repair completed successfully!',
-  QUALITY_CHECK_COMPLETED: 'Quality check completed!',
+  QUALITY_CHECK_COMPLETED: 'Your work is completed!',
 };
 const COMPLETION_SUBTITLE = 'Job moved to Completed. Redirecting to Job Report...';
 const COMPLETION_REDIRECT_MS = 1000;
@@ -220,7 +274,7 @@ function photoUrl(item) {
   return item.url || item.uri || item.imageUrl || null;
 }
 
-// Screen palette — Near G Fix green / red / yellow on light neutrals, the same set
+// Screen palette — NearGFix green / red / yellow on light neutrals, the same set
 // the restyled Home and attendance screens use.
 const C = {
   green: '#035C6C',
@@ -310,6 +364,58 @@ function JobHeader({ navigation, sub }) {
         </View>
         <View style={{ width: rs(36) }} />
       </View>
+    </View>
+  );
+}
+
+// Assignment preview for a job not accepted yet: just what's needed to decide
+// (device, issue, when it was assigned, due date) and Accept / Not Accepted.
+// A declined or closed job shows no actions.
+function AssignmentPreview({ ticket, navigation, busy, onAccept, onReject }) {
+  const status = String(ticket.status || '').toUpperCase();
+  const open = !['DELIVERED', 'CANCELLED'].includes(status);
+  const issue = ticket.repairServicesSummary || ticket.issueDescription;
+  const due = ticket.estimatedDeliveryAt || ticket.estimatedReadyAt;
+  const Line = ({ label, value }) => (value ? (
+    <View style={{ marginTop: rs(10) }}>
+      <Text style={{ fontSize: rf(11), color: C.muted }}>{label}</Text>
+      <Text style={{ fontSize: rf(13.5), fontWeight: '700', color: C.ink, marginTop: 2 }}>{value}</Text>
+    </View>
+  ) : null);
+  return (
+    <View className="flex-1" style={{ backgroundColor: C.bg }}>
+      <JobHeader navigation={navigation} sub={ticketRef(ticket)} />
+      <ScrollView contentContainerStyle={{ padding: rs(14) }}>
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: rs(16), borderWidth: 1, borderColor: C.border, padding: rs(14) }}>
+          <Text style={{ fontSize: rf(15), fontWeight: '800', color: '#1C3053' }}>
+            {open ? 'New job assigned' : status === 'CANCELLED' ? 'Job declined' : 'Job closed'}
+          </Text>
+          <Line label="Device" value={ticket.deviceDisplayName || 'Device'} />
+          <Line label="Issue" value={issue} />
+          <Line label="Assigned" value={fmtDateTime(ticket.assignedAt || ticket.createdAt)} />
+          <Line label="Due" value={fmtDateTime(due)} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: rs(6), marginTop: rs(14), padding: rs(10), borderRadius: rs(10), backgroundColor: C.surface }}>
+            <Lock size={rs(14)} color={C.muted} />
+            <Text style={{ flex: 1, fontSize: rf(11.5), color: C.muted }}>
+              {open
+                ? 'Device security, customer photos and the repair steps open after you accept.'
+                : 'This job was not accepted, so its details are not available.'}
+            </Text>
+          </View>
+        </View>
+        {open ? (
+          <View style={{ flexDirection: 'row', gap: rs(10), marginTop: rs(14) }}>
+            <TouchableOpacity onPress={onReject} disabled={busy} activeOpacity={0.85} accessibilityRole="button"
+              style={{ flex: 1, minHeight: rs(46), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center', backgroundColor: C.red, opacity: busy ? 0.6 : 1 }}>
+              <Text style={{ fontSize: rf(14), fontWeight: '800', color: '#FFFFFF' }}>Not Accepted</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onAccept} disabled={busy} activeOpacity={0.85} accessibilityRole="button"
+              style={{ flex: 1, minHeight: rs(46), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center', backgroundColor: C.green, opacity: busy ? 0.6 : 1 }}>
+              {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={{ fontSize: rf(14), fontWeight: '800', color: '#FFFFFF' }}>Accept</Text>}
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </ScrollView>
     </View>
   );
 }
@@ -550,7 +656,6 @@ export default function JobDetailsScreen({ route, navigation }) {
   // ScrollView + section offsets for the Add / Edit Report shortcut.
   const scrollRef = useRef(null);
   const composeY = useRef(null);
-  const notesY = useRef(null);
 
   // Your-Side photos: { uri, remoteUrl } — uri is local until uploaded.
   const [yourPhotos, setYourPhotos] = useState([null, null, null]);
@@ -562,15 +667,6 @@ export default function JobDetailsScreen({ route, navigation }) {
   const [note, setNote] = useState('');
   const [noteSubmitting, setNoteSubmitting] = useState(false);
   const [notesList, setNotesList] = useState([]);
-
-  // Submitted Notes → Edit. Only one note is open for editing at a time; its
-  // draft lives here rather than in the compose card's state so an in-progress
-  // new note isn't clobbered by opening an edit.
-  const [editingNoteId, setEditingNoteId] = useState(null);
-  const [editNoteText, setEditNoteText] = useState('');
-  const [editNoteImages, setEditNoteImages] = useState([null, null, null]);
-  const [editNoteAudioUrl, setEditNoteAudioUrl] = useState('');
-  const [editNoteSaving, setEditNoteSaving] = useState(false);
 
   // Compliance note attachments. Image slots mirror the Your-Side photos grid
   // above (3 slots). Audio mirrors the owner-side ServicePriceEstimateScreen
@@ -625,7 +721,7 @@ export default function JobDetailsScreen({ route, navigation }) {
       setError(null);
       markSync(null);
     } catch (e) {
-      setError(e?.message || 'Could not load ticket');
+      setError(userMessage(e, 'Could not load ticket'));
       markSync(e);
     } finally {
       setLoading(false);
@@ -676,10 +772,11 @@ export default function JobDetailsScreen({ route, navigation }) {
   // ("which part is on order, ETA?") and it's passed through to the backend so
   // the customer / shop / technician timelines all read the same explanation.
   const [progressNotes, setProgressNotes] = useState({});
-  // Completion popup ("Repair completed successfully!") + the timer that leaves the
+  // Completion popup ("Your work is completed!", Quality Check only) + the timer that leaves the
   // screen after it. The ref blocks a second save while one is in flight (a double tap lands
   // before progressBusy re-renders), so a completion is never posted twice.
   const [completedBanner, setCompletedBanner] = useState(false);
+  const [acceptBusy, setAcceptBusy] = useState(false);
   const completionTimer = useRef(null);
   const progressInFlight = useRef(false);
   useEffect(() => () => { if (completionTimer.current) clearTimeout(completionTimer.current); }, []);
@@ -698,15 +795,10 @@ export default function JobDetailsScreen({ route, navigation }) {
       // on a step the owner closed from their Service History screen.
       const actorByKey = {};
       const atByKey = {};
-      // A re-estimate restarts the checklist: steps marked before the latest
-      // RE_ESTIMATED_CONFIRMED belong to the old quote and are not shown as done.
-      const evTime = (e) => Math.max(
-        new Date(e?.createdAt || 0).getTime() || 0,
-        new Date(e?.updatedAt || 0).getTime() || 0,
-      );
-      const reEstimatedAt = (Array.isArray(rows) ? rows : [])
-        .filter((e) => (e.status || '').toUpperCase() === 'RE_ESTIMATED_CONFIRMED')
-        .reduce((max, e) => Math.max(max, evTime(e)), 0);
+      // A legacy re-estimate restarts the checklist: steps marked before it
+      // belong to the old quote and are not shown as done. A re-estimate
+      // raised during the repair doesn't (see checklistResetAt).
+      const reEstimatedAt = checklistResetAt(rows);
       // Only pre-tick rows a PERSON explicitly submitted:
       //   TECHNICIAN — this checklist
       //   OWNER      — the shop app's own action (Quality Check Completed)
@@ -717,7 +809,7 @@ export default function JobDetailsScreen({ route, navigation }) {
         const actor = (e.actor || '').toUpperCase();
         const isProgressRow = PROGRESS_ROWS.some((r) => r.key === k);
         if (!isProgressRow) return;
-        if (reEstimatedAt && evTime(e) < reEstimatedAt) return;
+        if (reEstimatedAt && eventTime(e) < reEstimatedAt) return;
         if (actor === 'TECHNICIAN' || actor === 'OWNER') {
           done[k] = true;
           actorByKey[k] = actor;
@@ -837,6 +929,8 @@ export default function JobDetailsScreen({ route, navigation }) {
   // with one); refreshAt re-applies the filter even if it was already set.
   const [bannerText, setBannerText] = useState('');
   const showCompletion = useCallback((message) => {
+    // Once per completion: no second popup or second redirect.
+    if (completionTimer.current) return;
     setBannerText(message);
     setCompletedBanner(true);
     completionTimer.current = setTimeout(() => {
@@ -847,7 +941,7 @@ export default function JobDetailsScreen({ route, navigation }) {
 
   const submitProgress = useCallback(async (row, lockReason) => {
     if (lockReason) {
-      notify('Step locked', lockReason);
+      notify('Step locked', lockReason, { type: 'warning' });
       return;
     }
     if (progressInFlight.current || progressDone[row.key] || completedBanner) return;
@@ -855,7 +949,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     // waiting; without it the customer / shop see no detail beyond the label.
     const rawNote = (progressNotes[row.key] || '').trim();
     if (row.key === 'PARTS_REQUIRED' && !rawNote) {
-      notify('Add a note', 'Mention which spare part is on order so the customer and shop know what we\'re waiting for.');
+      notify('Add a note', 'Mention which spare part is on order so the customer and shop know what we\'re waiting for.', { type: 'warning' });
       return;
     }
     // Rows in DEFAULT_PROGRESS_NOTE auto-attach the canonical sentence the
@@ -881,11 +975,11 @@ export default function JobDetailsScreen({ route, navigation }) {
         refreshTicket();
         showCompletion(COMPLETION_MESSAGES[row.key]);
       } else {
-        notify('Saved', `"${row.label}" recorded.`);
+        notify('Saved', `"${row.label}" recorded.`, { type: 'success' });
       }
     } catch (e) {
       markSync(e);
-      notify('Save failed', e?.message || 'Try again');
+      notify('Could not save', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       progressInFlight.current = false;
       setProgressBusy(null);
@@ -895,7 +989,7 @@ export default function JobDetailsScreen({ route, navigation }) {
   // Quality Check — the technician's confirmation, recorded only after the
   // backend accepts it (it rejects anyone not allowed to post the step).
   const confirmQualityCheck = useCallback(async (row, lockReason) => {
-    if (lockReason) { notify('Step locked', lockReason); return; }
+    if (lockReason) { notify('Step locked', lockReason, { type: 'warning' }); return; }
     const ok = await confirm({
       title: 'Quality check completed?',
       message: 'Confirm the device passed the quality check. This is recorded on the Service History.',
@@ -909,9 +1003,10 @@ export default function JobDetailsScreen({ route, navigation }) {
   // the customer approval is current; this re-reads the booking first so a
   // step recorded elsewhere meanwhile isn't posted twice, records Repair Work
   // Started if the automatic step never landed (keeps the timeline in order),
-  // then Repair Completed. Ticks + banner only after the backend confirms.
+  // then Repair Completed. Tick + toast only after the backend confirms; the
+  // employee stays on this page (no popup, no redirect) for the Quality Check.
   const finishRepair = useCallback(async (lockReason) => {
-    if (lockReason) { notify('Finish Repair', lockReason); return; }
+    if (lockReason) { notify('Finish Repair', lockReason, { type: 'warning' }); return; }
     if (progressInFlight.current || progressDone.REPAIR_COMPLETED || completedBanner) return;
     const ok = await confirm({
       title: 'Finish repair?',
@@ -923,6 +1018,13 @@ export default function JobDetailsScreen({ route, navigation }) {
     setProgressBusy('REPAIR_COMPLETED');
     try {
       const [fresh, events] = await Promise.all([getTicket(ticketId), listTicketEvents(ticketId)]);
+      // A re-estimate opened or decided elsewhere meanwhile still holds it.
+      const heldBy = reEstimateState(fresh).lock;
+      if (heldBy) {
+        setTicket(fresh);
+        notify('Finish Repair', heldBy, { type: 'warning' });
+        return;
+      }
       if (!findEvent(currentEvents(events), 'REPAIR_COMPLETED')) {
         if (shouldAutoStartRepair(fresh, events)) {
           await postProgressEvent(ticketId, { statusKey: 'IN_REPAIR' });
@@ -933,16 +1035,20 @@ export default function JobDetailsScreen({ route, navigation }) {
       setProgressActor((prev) => ({ ...prev, REPAIR_COMPLETED: 'TECHNICIAN' }));
       refreshProgress();
       refreshTicket();
-      showCompletion(COMPLETION_MESSAGES.REPAIR_COMPLETED);
+      notify('Repair completed successfully', '', { type: 'success' });
     } catch (e) {
-      const detail = e?.status ? `${e.message || 'Failed'} (HTTP ${e.status})` : e?.message;
+      if (isReEstimatePending(e)) {
+        refreshTicket();
+        notify('Finish Repair', 'A service re-estimate is still pending for this job. Finish the repair once it is decided.', { type: 'warning' });
+        return;
+      }
       markSync(e);
-      notify('Could not finish repair', detail || 'No response from server. Try again.');
+      notify('Could not finish repair', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       progressInFlight.current = false;
       setProgressBusy(null);
     }
-  }, [ticketId, progressDone, completedBanner, refreshProgress, refreshTicket, showCompletion, markSync]);
+  }, [ticketId, progressDone, completedBanner, refreshProgress, refreshTicket, markSync]);
 
   // Resume Repair — the spare parts are in. See PARTS_RECEIVED_ENABLED.
   const resumeRepair = useCallback(async (waitEvent) => {
@@ -960,10 +1066,10 @@ export default function JobDetailsScreen({ route, navigation }) {
         });
       }
       await refreshProgress();
-      notify('Repair resumed', 'Spare parts received.');
+      notify('Repair resumed', 'Spare parts received.', { type: 'success' });
     } catch (e) {
       markSync(e);
-      notify('Save failed', e?.message || 'Try again');
+      notify('Could not resume repair', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       progressInFlight.current = false;
       setProgressBusy(null);
@@ -978,7 +1084,7 @@ export default function JobDetailsScreen({ route, navigation }) {
   const savePartsWaiting = useCallback(async () => {
     const name = partsForm.name.trim();
     const reason = partsForm.reason.trim();
-    if (!name || !reason) { notify('Parts Waiting', 'Add the spare part name and why the repair is waiting.'); return; }
+    if (!name || !reason) { notify('Parts Waiting', 'Add the spare part name and why the repair is waiting.', { type: 'warning' }); return; }
     if (progressInFlight.current) return;
     const qty = partsForm.qty.trim();
     const eta = fmtIsoDate(partsForm.eta);
@@ -992,10 +1098,10 @@ export default function JobDetailsScreen({ route, navigation }) {
       await refreshProgress();
       setPartsOpen(false);
       setPartsForm(EMPTY_PARTS);
-      notify('Saved', 'Parts Waiting recorded.');
+      notify('Parts waiting submitted', '', { type: 'success' });
     } catch (e) {
       markSync(e);
-      notify('Save failed', e?.message || 'Try again');
+      notify('Could not save parts waiting', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       progressInFlight.current = false;
       setProgressBusy(null);
@@ -1011,8 +1117,8 @@ export default function JobDetailsScreen({ route, navigation }) {
   const [unableReason, setUnableReason] = useState('');
   const recordUnableToRepair = useCallback(async () => {
     const comment = unableReason.trim();
-    if (!unablePick) { notify('Select a reason', 'Pick why the device cannot be repaired.'); return; }
-    if (unablePick === 'Other' && !comment) { notify('Add a comment', 'Say why the repair could not be done.'); return; }
+    if (!unablePick) { notify('Select a reason', 'Pick why the device cannot be repaired.', { type: 'warning' }); return; }
+    if (unablePick === 'Other' && !comment) { notify('Add a comment', 'Say why the repair could not be done.', { type: 'warning' }); return; }
     const reason = unablePick === 'Other' ? comment : `${unablePick}${comment ? ` — ${comment}` : ''}`;
     if (progressInFlight.current) return;
     const ok = await confirm({
@@ -1033,15 +1139,112 @@ export default function JobDetailsScreen({ route, navigation }) {
       setUnableOpen(false);
       setUnablePick('');
       setUnableReason('');
-      notify('Saved', 'Recorded as unable to repair.');
+      notify('Reason submitted', 'Recorded as unable to repair.', { type: 'success' });
     } catch (e) {
       markSync(e);
-      notify('Save failed', e?.message || 'Try again');
+      notify('Could not submit reason', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       progressInFlight.current = false;
       setProgressBusy(null);
     }
   }, [unablePick, unableReason, ticketId, refreshProgress, markSync]);
+
+  // Request Service Re-Estimate — the compact form opened from its Next Action
+  // card; the shop answers it from the Partner App. The ref blocks a second
+  // submit landing before `reSubmitting` re-renders.
+  const [reOpen, setReOpen] = useState(false);
+  const [reForm, setReForm] = useState(EMPTY_RE_ESTIMATE);
+  const [reImages, setReImages] = useState([null, null, null]);
+  const [reSubmitting, setReSubmitting] = useState(false);
+  const [ackBusy, setAckBusy] = useState(false);
+  const reInFlight = useRef(false);
+  const reEstimate = useMemo(() => reEstimateState(ticket), [ticket]);
+
+  const closeReEstimate = () => {
+    if (reInFlight.current) return;
+    setReOpen(false);
+  };
+
+  const submitReEstimate = async () => {
+    const issue = reForm.issue.trim();
+    const reason = reForm.reason.trim();
+    const notes = reForm.notes.trim();
+    const amountText = reForm.amount.trim();
+    const amount = amountText === '' ? null : Number(amountText);
+    if (reason.length < 3) { notify('Reason required', 'Enter the reason for the re-estimate (at least 3 characters).', { type: 'warning' }); return; }
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) { notify('Check the amount', 'Additional estimated cost must be 0 or more.', { type: 'warning' }); return; }
+    if (!issue && amount === null && !notes) {
+      notify('Add the change', 'Enter the additional issue / service, an additional cost or technician notes.', { type: 'warning' });
+      return;
+    }
+    if (reInFlight.current || reEstimate.pending) return;
+    reInFlight.current = true;
+    setReSubmitting(true);
+    try {
+      // Same upload as the issue report photos; optional here.
+      const imageUrls = [];
+      for (const slot of reImages) {
+        if (!slot?.uri) continue;
+        if (slot.remoteUrl) { imageUrls.push(slot.remoteUrl); continue; }
+        const res = await uploadMedia({
+          uri: slot.uri,
+          name: slot.name || `re-estimate-${Date.now()}.jpg`,
+          type: slot.type || 'image/jpeg',
+          folder: `tickets/${ticketId}/re-estimate`,
+        });
+        const url = res?.url || res?.secure_url || null;
+        if (!url) throw new Error('Photo upload failed. Please try again.');
+        imageUrls.push(url);
+        // Keep the hosted URL so a retry doesn't upload the same photo again.
+        const at = reImages.indexOf(slot);
+        setReImages((prev) => prev.map((p, i) => (i === at && p ? { ...p, remoteUrl: url } : p)));
+      }
+      await requestReEstimate(ticketId, {
+        additionalIssue: issue || null,
+        reason,
+        proposedAmount: amount,
+        technicianNotes: notes || null,
+        imagesJson: JSON.stringify(imageUrls),
+      });
+      setReOpen(false);
+      setReForm(EMPTY_RE_ESTIMATE);
+      setReImages([null, null, null]);
+      notify(RE_ESTIMATE_SUBMITTED, '', { type: 'success' });
+      refreshTicket();
+      refreshProgress();
+    } catch (e) {
+      if (isReEstimatePending(e)) {
+        setReOpen(false);
+        refreshTicket();
+        refreshProgress();
+        notify('Re-estimate already pending', 'A service re-estimate is already open for this job.', { type: 'warning' });
+      } else {
+        markSync(e);
+        notify('Could not submit re-estimate request', userMessage(e, 'Please try again.'), { type: 'error' });
+      }
+    } finally {
+      reInFlight.current = false;
+      setReSubmitting(false);
+    }
+  };
+
+  // Acknowledge & Continue on a decided re-estimate (approved or rejected).
+  const acknowledgeDecision = async () => {
+    const rev = reEstimate.unacked;
+    if (!rev?.id || ackBusy) return;
+    setAckBusy(true);
+    try {
+      await acknowledgeReEstimate(ticketId, rev.id);
+      await refreshTicket();
+      refreshProgress();
+      notify('Re-estimate acknowledged', reEstimate.unackedRejected ? 'Continue with the original approved repair only.' : 'Continue the repair.', { type: 'success' });
+    } catch (e) {
+      markSync(e);
+      notify('Could not acknowledge', userMessage(e, 'Please try again.'), { type: 'error' });
+    } finally {
+      setAckBusy(false);
+    }
+  };
 
   const devicePhotos = useMemo(
     () => parseDevicePhotos(ticket?.devicePhotosJson),
@@ -1074,12 +1277,38 @@ export default function JobDetailsScreen({ route, navigation }) {
       .pop() || null;
     const reEstimated = latestOf('RE_ESTIMATED_CONFIRMED');
     const approved = latestOf('CUSTOMER_APPROVED');
+    // The customer's decision on a re-estimate revision (approved, or rejected
+    // — the original approved estimate stands). One no older than the latest
+    // re-estimate settles it either way.
+    const decided = [latestOf('RE_ESTIMATE_APPROVED'), latestOf('RE_ESTIMATE_REJECTED')]
+      .filter(Boolean)
+      .sort((a, b) => eventTime(a) - eventTime(b))
+      .pop() || null;
+    const decisionIsCurrent = !!reEstimated && !!decided && eventTime(decided) >= eventTime(reEstimated);
     // An approval older than the latest re-estimate belongs to the PREVIOUS
     // price — the backend clears customerApproval and re-prompts on a re-edit,
     // so that row must read as still-pending, not approved.
-    const approvalIsCurrent = !!approved && (!reEstimated
-      || new Date(approved.createdAt || 0) >= new Date(reEstimated.createdAt || 0));
-    return { reEstimated, approved, approvalIsCurrent };
+    const approvalIsCurrent = decisionIsCurrent || (!!approved && (!reEstimated
+      || new Date(approved.createdAt || 0) >= new Date(reEstimated.createdAt || 0)));
+    return { reEstimated, approved, decided, decisionIsCurrent, approvalIsCurrent };
+  }, [ticketEvents]);
+
+  // Re-estimate rows of the Service Progress timeline: the latest event of
+  // each, kept only while they read forward in time — a row older than the
+  // one before it belongs to an earlier revision and drops out.
+  const reEstimateSteps = useMemo(() => {
+    const steps = {};
+    let floor = 0;
+    RE_ESTIMATE_ROWS.forEach((row) => {
+      const ev = ticketEvents
+        .filter((e) => row.events.includes(String(e?.status || '').toUpperCase()))
+        .sort((a, b) => eventTime(a) - eventTime(b))
+        .pop();
+      if (!ev || eventTime(ev) < floor) return;
+      floor = eventTime(ev);
+      steps[row.key] = ev;
+    });
+    return steps;
   }, [ticketEvents]);
 
   // Step-by-step gate for the Service Progress checklist: a row stays locked
@@ -1092,7 +1321,8 @@ export default function JobDetailsScreen({ route, navigation }) {
   //   photoCount    — photos uploaded on the best saved note, for "n of 2"
   const autoState = useMemo(() => {
     const cur = currentEvents(ticketEvents);
-    const startEv = findEvent(cur, 'IN_REPAIR');
+    // A decided re-estimate resumes the same repair (REPAIR_WORK_RESUMED).
+    const startEv = findEvent(cur, 'IN_REPAIR') || findEvent(cur, 'REPAIR_WORK_RESUMED');
     const verifyEv = findEvent(ticketEvents, 'TECHNICIAN_COMPLIANCE_ISSUE_VERIFIED_UPDATED');
     const photosEv = findEvent(ticketEvents, 'TECHNICIAN_UPLOADED_DEVICE_IMAGES');
     const firstNote = [...notesList]
@@ -1140,6 +1370,8 @@ export default function JobDetailsScreen({ route, navigation }) {
       PARTS_REQUIRED: !autoState.workStarted ? (autoState.startBlocker || 'Starting repair work…') : null,
       // Spare parts only hold it while a saved wait is still open.
       REPAIR_COMPLETED: (!ticket?.technicianAcceptedAt ? 'Accept the task first.' : null)
+        // An open re-estimate, or a decision not yet acknowledged, holds it.
+        || reEstimate.lock
         || (!approvedNow ? 'Waiting for customer approval.' : null) || noteReason
         || (autoState.partsEvent && !autoState.partsReceived ? 'Tap Resume Repair once the spare parts arrive.' : null),
       QUALITY_CHECK_COMPLETED: (!progressDone.REPAIR_COMPLETED ? 'Finish the repair first.' : null) || noteReason,
@@ -1147,7 +1379,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     };
     Object.keys(lock).forEach((k) => { if (!lock[k] || progressDone[k]) delete lock[k]; });
     return lock;
-  }, [autoState, notesList, estimateApproval, progressDone, ticket?.customerApproval, ticket?.technicianAcceptedAt]);
+  }, [autoState, notesList, estimateApproval, progressDone, ticket?.customerApproval, ticket?.technicianAcceptedAt, reEstimate.lock]);
 
   // Estimate breakdown that the re-estimate produced. priceItemsJson always
   // holds the CURRENT quote, which after a re-estimate is the re-estimated one.
@@ -1189,7 +1421,7 @@ export default function JobDetailsScreen({ route, navigation }) {
       return next;
     });
     } catch (e) {
-      notify('Could not open camera/gallery', e?.message || 'Please try again.');
+      notify('Could not open camera/gallery', 'Please try again.', { type: 'error' });
     }
   };
 
@@ -1236,7 +1468,7 @@ export default function JobDetailsScreen({ route, navigation }) {
         // Don't silently drop a photo: a missing URL on a 200 response usually
         // means media storage is misconfigured — surface it so the user
         // knows the photo wasn't actually saved.
-        if (!url) throw new Error('Upload returned no URL');
+        if (!url) throw new Error('Upload failed. Please try again.');
         uploaded.push(url);
       }
       await setTechnicianPhotos(ticketId, uploaded);
@@ -1248,11 +1480,10 @@ export default function JobDetailsScreen({ route, navigation }) {
       setYourPhotos(nextSlots);
       setPhotosEditing(uploaded.length === 0);
       refreshProgress();
-      notify('Saved', 'Your device images have been uploaded.');
+      notify('Photos uploaded', '', { type: 'success' });
     } catch (e) {
-      const msg = e?.message || 'Could not save photos';
-      console.warn('[upload] device photos failed', e?.status, msg);
-      notify('Upload failed', e?.status && !msg.includes('HTTP') ? `${msg} (HTTP ${e.status})` : msg);
+      console.warn('[upload] device photos failed', e?.status, e?.diagnostic || e?.message);
+      notify('Upload failed', userMessage(e, 'Could not save photos'));
     } finally {
       setPhotosSubmitting(false);
     }
@@ -1297,7 +1528,7 @@ export default function JobDetailsScreen({ route, navigation }) {
       return next;
     });
     } catch (e) {
-      notify('Could not open camera/gallery', e?.message || 'Please try again.');
+      notify('Could not open camera/gallery', 'Please try again.', { type: 'error' });
     }
   };
 
@@ -1321,7 +1552,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     try {
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
-        notify('Microphone needed', 'Allow microphone access to record a voice note.');
+        notify('Microphone needed', 'Allow microphone access to record a voice note.', { type: 'warning' });
         return;
       }
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
@@ -1331,7 +1562,7 @@ export default function JobDetailsScreen({ route, navigation }) {
       recordingRef.current = rec;
       setIsRecording(true);
     } catch (e) {
-      notify('Could not start recording', e?.message || 'Please try again.');
+      notify('Could not start recording', 'Please try again.', { type: 'error' });
     }
   };
 
@@ -1365,15 +1596,15 @@ export default function JobDetailsScreen({ route, navigation }) {
           folder: `tickets/${ticketId}/notes`,
         });
         const url = res?.url || res?.secure_url || null;
-        if (!url) throw new Error('Upload returned no URL');
+        if (!url) throw new Error('Upload failed. Please try again.');
         setNoteAudioUrl(url);
       } catch (err) {
-        notify('Upload failed', err?.message || 'Could not upload recording.');
+        notify('Could not upload recording', userMessage(err, 'Please try again.'), { type: 'error' });
       } finally {
         setUploadingAudio(false);
       }
     } catch (e) {
-      notify('Could not stop recording', e?.message || 'Please try again.');
+      notify('Could not stop recording', 'Please try again.', { type: 'error' });
     }
   };
 
@@ -1411,7 +1642,7 @@ export default function JobDetailsScreen({ route, navigation }) {
       await sound.playAsync();
       setPlayingId(key);
     } catch (e) {
-      notify('Playback failed', e?.message || 'Could not play this clip.');
+      notify('Playback failed', 'Could not play this clip.', { type: 'error' });
     }
   };
 
@@ -1438,7 +1669,7 @@ export default function JobDetailsScreen({ route, navigation }) {
           folder: `tickets/${ticketId}/notes`,
         });
         const url = res?.url || res?.secure_url || null;
-        if (!url) throw new Error('Image upload returned no URL');
+        if (!url) throw new Error('Photo upload failed. Please try again.');
         imageUrls.push(url);
       }
 
@@ -1453,80 +1684,17 @@ export default function JobDetailsScreen({ route, navigation }) {
       // own refresh from the backend event we just emitted.
       refreshNotes();
       refreshProgress();
-      notify('Note added', 'Your compliance note has been saved.');
+      notify('Report saved', '', { type: 'success' });
     } catch (e) {
       // Surface the backend's actual message so a stale ticket-service or a
       // server-side validation error stops being hidden behind a generic
       // "Try again" string. e.status comes from ticketApi.client when the
       // response was an HTTP error; we include it so the user can tell a
       // network failure (status undefined) from a backend 5xx.
-      const detail = e?.status ? `${e.message || 'Failed'} (HTTP ${e.status})` : e?.message;
       markSync(e);
-      notify('Could not save note', detail || 'No response from server. Check that ticket-service is running.');
+      notify('Could not save report', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       setNoteSubmitting(false);
-    }
-  };
-
-  // ---------- Submitted note edit ----------
-
-  // Open one submitted note for editing. Existing photos come back as filled
-  // slots that already carry their hosted URL, so saving without touching them
-  // re-sends the same URLs and uploads nothing.
-  const beginEditNote = (n) => {
-    setEditingNoteId(n.id);
-    setEditNoteText(n.note || '');
-    const slots = [null, null, null];
-    (Array.isArray(n.imageUrls) ? n.imageUrls : []).slice(0, 3).forEach((url, i) => {
-      slots[i] = { uri: url, remoteUrl: url };
-    });
-    setEditNoteImages(slots);
-    setEditNoteAudioUrl(n.audioUrl || '');
-  };
-
-  const cancelEditNote = () => {
-    setEditingNoteId(null);
-    setEditNoteText('');
-    setEditNoteImages([null, null, null]);
-    setEditNoteAudioUrl('');
-  };
-
-  const saveEditNote = async () => {
-    const trimmed = editNoteText.trim();
-    if (!trimmed || !editingNoteId || editNoteImages.filter((s) => !!s?.uri).length < MIN_NOTE_PHOTOS) return;
-    setEditNoteSaving(true);
-    try {
-      // Same upload loop as submitNote, but slots restored from the saved note
-      // already have a remoteUrl and are passed straight through.
-      const imageUrls = [];
-      for (const slot of editNoteImages) {
-        if (!slot?.uri) continue;
-        if (slot.remoteUrl) { imageUrls.push(slot.remoteUrl); continue; }
-        const res = await uploadMedia({
-          uri: slot.uri,
-          name: slot.name || `note-image-${Date.now()}.jpg`,
-          type: slot.type || 'image/jpeg',
-          folder: `tickets/${ticketId}/notes`,
-        });
-        const url = res?.url || res?.secure_url || null;
-        if (!url) throw new Error('Image upload returned no URL');
-        imageUrls.push(url);
-      }
-      await updateRepairNote(ticketId, editingNoteId, {
-        note: trimmed,
-        audioUrl: editNoteAudioUrl || null,
-        imageUrls,
-      });
-      cancelEditNote();
-      refreshNotes();
-      refreshProgress();
-      notify('Note updated', 'Your changes have been saved.');
-    } catch (e) {
-      const detail = e?.status ? `${e.message || 'Failed'} (HTTP ${e.status})` : e?.message;
-      markSync(e);
-      notify('Could not update note', detail || 'No response from server.');
-    } finally {
-      setEditNoteSaving(false);
     }
   };
 
@@ -1549,6 +1717,48 @@ export default function JobDetailsScreen({ route, navigation }) {
 
   const openUploadScreen = () => {
     navigation.navigate('SolutionPackUpload', { ticketId, defaults: solutionPackDefaults });
+  };
+
+  // Accept / Not Accepted from the assignment preview — same endpoints as the
+  // Job Assign Report. The full job opens only when the re-read ticket shows
+  // the server's technicianAcceptedAt.
+  const acceptJob = async () => {
+    if (acceptBusy) return;
+    const ok = await confirm({ title: 'Accept job?', message: 'Mark this job as accepted and start work.', confirmText: 'Accept' });
+    if (!ok) return;
+    setAcceptBusy(true);
+    try {
+      await acceptTicket(ticketId);
+      await autoStartRepair(ticketId);
+      const fresh = await getTicket(ticketId);
+      setTicket(fresh);
+      if (!fresh?.technicianAcceptedAt) {
+        notify('Could not accept job', 'Please try again.', { type: 'error' });
+        return;
+      }
+      refreshNotes();
+      refreshProgress();
+      notify('Job accepted', '', { type: 'success' });
+    } catch (e) {
+      notify('Could not accept job', userMessage(e, 'Please try again.'), { type: 'error' });
+    } finally {
+      setAcceptBusy(false);
+    }
+  };
+  const rejectJob = async () => {
+    if (acceptBusy) return;
+    const ok = await confirm({ title: 'Decline job?', message: 'The job will be cancelled. Continue?', confirmText: 'Decline', destructive: true });
+    if (!ok) return;
+    setAcceptBusy(true);
+    try {
+      await ticketApi.patch(`/tickets/${ticketId}/status`, { query: { status: 'CANCELLED' } });
+      notify('Job rejected', '', { type: 'success' });
+      if (navigation.canGoBack()) navigation.goBack(); else refreshTicket();
+    } catch (e) {
+      notify('Could not reject job', userMessage(e, 'Please try again.'), { type: 'error' });
+    } finally {
+      setAcceptBusy(false);
+    }
   };
 
   if (loading && !ticket) {
@@ -1588,6 +1798,13 @@ export default function JobDetailsScreen({ route, navigation }) {
     );
   }
 
+  // Not accepted yet (from the ticket just read from the server, so a stale
+  // list, a notification or a scanned QR can't open more): only the
+  // assignment preview — no device security, customer photos or repair steps.
+  if (!ticket.technicianAcceptedAt) {
+    return <AssignmentPreview ticket={ticket} navigation={navigation} busy={acceptBusy} onAccept={acceptJob} onReject={rejectJob} />;
+  }
+
   // Delivered / cancelled job: Job Details turns read-only.
   const jobClosed = ['DELIVERED', 'CANCELLED'].includes(String(ticket.status || '').toUpperCase());
   // Quality Check Completed ends the Service Progress process: from then on
@@ -1597,6 +1814,8 @@ export default function JobDetailsScreen({ route, navigation }) {
   // Done state per checklist row: automatic rows from the backend's own
   // records (whoever wrote them), the rest from rows a person submitted.
   const rowDone = (key) => {
+    if (key === 'TECHNICIAN_ASSIGNED') return true;
+    if (RE_ESTIMATE_ROWS.some((r) => r.key === key)) return !!reEstimateSteps[key];
     if (key === 'NEXT_ACTION') return !!progressDone.REPAIR_COMPLETED;
     if (key === 'IN_REPAIR') return autoState.workStarted;
     if (key === 'ISSUE_VERIFIED') return autoState.issueVerified && autoState.photosVerified;
@@ -1610,6 +1829,16 @@ export default function JobDetailsScreen({ route, navigation }) {
     ? rowDone('ISSUE_VERIFIED')
     : rowDone(key));
   const partsWaiting = !!autoState.partsEvent && !autoState.partsReceived;
+  // Latest assignment event, for the Technician Assigned row's time.
+  const assignedEvent = ticketEvents
+    .filter((e) => ASSIGNED_EVENT_KEYS.includes(String(e?.status || '').toUpperCase()))
+    .sort((a, b) => eventTime(a) - eventTime(b))
+    .pop() || null;
+  // Re-estimate rows read 'Rejected' when the customer turned the revision down.
+  const decisionRejected = String(reEstimateSteps.RE_ESTIMATE_DECIDED?.status || '').toUpperCase() === 'RE_ESTIMATE_REJECTED';
+  const rowLabel = (row) => (row.key === 'RE_ESTIMATE_DECIDED' && decisionRejected
+    ? 'Re-Estimate Rejected by Customer'
+    : row.label);
   // The saved wait reason, without the "parts received" prefix added on resume.
   const partsReason = (() => {
     const n = String(autoState.partsEvent?.note || '');
@@ -1634,7 +1863,26 @@ export default function JobDetailsScreen({ route, navigation }) {
   const stepStatus = (key) => {
     const lock = progressLock[key];
     const done = (at, actor, lead = 'Completed') => ({ kind: 'done', text: [lead, stamp(at, actor)].filter(Boolean).join(' · ') });
+    const reEv = reEstimateSteps[key];
     switch (key) {
+      case 'TECHNICIAN_ASSIGNED':
+        return done(assignedEvent?.createdAt || ticket.assignedAt, assignedEvent?.actor);
+      // Re-estimate rows: present only with their event (see reEstimateSteps).
+      case 'TECHNICIAN_REESTIMATE_REQUESTED':
+        return reEstimate.pendingStatus === 'REQUESTED'
+          ? { kind: 'waiting', text: ['Waiting for the shop', stamp(reEv?.createdAt, reEv?.actor)].filter(Boolean).join(' · ') }
+          : done(reEv?.createdAt, reEv?.actor, 'Requested');
+      case 'RE_ESTIMATED_CONFIRMED':
+        return reEstimate.pendingStatus === 'AWAITING_APPROVAL'
+          || (String(ticket.status || '').toUpperCase() === 'QUOTED' && !estimateApproval.approvalIsCurrent)
+          ? { kind: 'waiting', text: ['Awaiting customer approval', fmtDateTime(reEv?.createdAt)].filter(Boolean).join(' · ') }
+          : done(reEv?.createdAt, reEv?.actor, 'Re-estimated');
+      case 'RE_ESTIMATE_DECIDED':
+        return decisionRejected
+          ? { kind: 'failed', text: ['Continue with the original approved repair only', fmtDateTime(reEv?.createdAt)].filter(Boolean).join(' · ') }
+          : done(reEv?.createdAt, null, 'Approved');
+      case 'REPAIR_WORK_RESUMED':
+        return done(reEv?.createdAt, reEv?.actor, 'Resumed');
       case 'IN_REPAIR':
         if (autoState.workStarted) return done(autoState.workStartedAt, autoState.workStartedBy);
         if (!ticket.technicianAcceptedAt) return { kind: 'pending', text: 'Pending · starts when you accept the task' };
@@ -1669,7 +1917,8 @@ export default function JobDetailsScreen({ route, navigation }) {
         if (autoState.unableEvent) {
           return { kind: 'failed', text: ['Unable to repair', stamp(autoState.unableEvent.createdAt, autoState.unableEvent.actor)].filter(Boolean).join(' · ') };
         }
-        if (!rowDone('IN_REPAIR')) return { kind: 'locked', text: 'Locked · unlocks after Repair Work Started' };
+        if (reEstimate.lock) return { kind: 'waiting', text: reEstimate.lock };
+        if (!rowDone('IN_REPAIR')) return { kind: 'locked', text: 'Locked · unlocks after Repair Work in Progress' };
         if (!rowDone('ISSUE_VERIFIED')) return { kind: 'locked', text: `Locked · save the issue description and ${MIN_NOTE_PHOTOS} photos` };
         if (partsWaiting) return { kind: 'waiting', text: `Waiting for parts · since ${fmtDateTime(autoState.partsEvent.createdAt)}` };
         return { kind: 'pending', text: 'Choose what happens next' };
@@ -1697,7 +1946,10 @@ export default function JobDetailsScreen({ route, navigation }) {
     .replace(new RegExp(`^${DEFAULT_PROGRESS_NOTE.REPAIR_NOT_COMPLETED}:?\\s*`), '');
   // Repair Not Completed shows only once recorded; after the Quality Check
   // only recorded steps remain.
-  const visibleProgressRows = TIMELINE_ROWS.filter((r) => (progressClosed ? rowDone(r.key) : true));
+  // Re-estimate rows only once their event is on the booking.
+  const visibleProgressRows = TIMELINE_ROWS
+    .filter((r) => r.mode !== 'reestimate' || !!reEstimateSteps[r.key])
+    .filter((r) => (progressClosed ? rowDone(r.key) : true));
   // Next Action: the three cards once both automatic steps are done, until the
   // repair is finished or recorded as unable to repair (then only the outcome).
   const nextUnlocked = rowDone('IN_REPAIR') && rowDone('ISSUE_VERIFIED');
@@ -1737,6 +1989,78 @@ export default function JobDetailsScreen({ route, navigation }) {
       </TouchableOpacity>
     </View>
   );
+  // Re-estimate status inside Next Action: the open request / revision, or the
+  // customer's decision until the technician acknowledges it. Read off
+  // GET /tickets/{id} (activeReEstimate / latestReEstimate) — nothing shown
+  // when the backend doesn't send them.
+  const reLine = (label, value) => (value ? (
+    <Text style={{ fontSize: rf(11), color: C.ink, marginTop: 2 }}>
+      <Text style={{ color: C.muted }}>{label}: </Text>{value}
+    </Text>
+  ) : null);
+  const reShown = !rowDone('REPAIR_COMPLETED') && !autoState.unableEvent && !progressClosed && !jobClosed;
+  const reBannerBox = (tone, Icon, title, children) => (
+    <View style={{ marginTop: 6, borderRadius: 10, padding: 8, borderWidth: 1, backgroundColor: tone.bg, borderColor: tone.line }}>
+      <View className="flex-row items-center">
+        <View className="rounded-full items-center justify-center" style={{ width: 20, height: 20, backgroundColor: tone.fg }}>
+          <Icon size={11} color="#FFFFFF" strokeWidth={2.6} />
+        </View>
+        <Text className="font-bold flex-1" style={{ fontSize: rf(11), color: C.ink, marginLeft: 6 }}>{title}</Text>
+      </View>
+      {children}
+    </View>
+  );
+  const rePending = reEstimate.pending;
+  const reDecided = reEstimate.unacked;
+  const reEstimateBanner = !reShown ? null
+    : rePending && reEstimate.pendingStatus === 'REQUESTED'
+    ? reBannerBox(ACTION_TONE.amber, Hourglass, 'Technician Requested Re-Estimate', (
+      <>
+        {reLine('Additional issue / service', rePending.additionalIssue)}
+        {reLine('Reason', rePending.reason)}
+        {reLine('Additional estimated cost', formatINR(rePending.proposedAmount))}
+        {reLine('Requested', fmtDateTime(rePending.requestedAt))}
+        <Text style={{ fontSize: rf(10), color: C.yellowInk, marginTop: 4 }}>Waiting for the shop to review it. Finish Repair is on hold.</Text>
+      </>
+    ))
+    : rePending
+    ? reBannerBox(ACTION_TONE.amber, IndianRupee, 'Service Re-Estimated – Awaiting Customer Approval', (
+      <>
+        {reLine('Revised total', formatINR(rePending.revisedTotal))}
+        {reLine('Additional amount', formatINR(rePending.additionalAmount))}
+        {reLine('Reason', rePending.revisionReason || rePending.reason)}
+        {reLine('Sent', fmtDateTime(rePending.submittedAt))}
+        <Text style={{ fontSize: rf(10), color: C.yellowInk, marginTop: 4 }}>Finish Repair is on hold until the customer decides.</Text>
+      </>
+    ))
+    : reDecided
+    ? reBannerBox(
+      reEstimate.unackedRejected ? ACTION_TONE.red : ACTION_TONE.green,
+      reEstimate.unackedRejected ? X : BadgeCheck,
+      reEstimate.unackedRejected ? 'Re-Estimate Rejected by Customer' : 'Re-Estimate Approved by Customer',
+      (
+        <>
+          {reEstimate.unackedRejected ? (
+            <Text className="font-bold" style={{ fontSize: rf(11), color: C.red, marginTop: 3 }}>Continue with the original approved repair only</Text>
+          ) : reLine('Revised total', formatINR(reDecided.revisedTotal))}
+          {reLine('Reason', reDecided.decisionReason)}
+          {reLine('Decided', fmtDateTime(reDecided.decidedAt))}
+          <TouchableOpacity
+            onPress={acknowledgeDecision}
+            disabled={ackBusy}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            className="self-start rounded-full mt-2 flex-row items-center justify-center"
+            style={{ backgroundColor: C.green, paddingHorizontal: 13, paddingVertical: 5, minWidth: 140, opacity: ackBusy ? 0.6 : 1 }}
+          >
+            {ackBusy
+              ? <ActivityIndicator color="#FFFFFF" size="small" />
+              : <Text className="font-bold text-white" style={{ fontSize: rf(11) }}>Acknowledge & Continue</Text>}
+          </TouchableOpacity>
+        </>
+      ),
+    )
+    : null;
   const nextActionBody = (
     <View>
       {/* A saved parts wait (open or resumed): its details, and Resume Repair. */}
@@ -1781,8 +2105,25 @@ export default function JobDetailsScreen({ route, navigation }) {
         </View>
       ) : null}
 
+      {reEstimateBanner}
+
       {canAct ? (
         <>
+          <ActionCard
+            tone={ACTION_TONE.navy}
+            Icon={IndianRupee}
+            title="Request Service Re-Estimate"
+            subtitle={reEstimate.lock ? `Locked · ${reEstimate.lock}` : 'Report an additional issue or cost to the shop.'}
+            locked={!!reEstimate.lock}
+            busy={reSubmitting}
+            onPress={() => {
+              if (reEstimate.lock) { notify('Request Service Re-Estimate', reEstimate.lock, { type: 'warning' }); return; }
+              setPartsOpen(false);
+              setUnableOpen(false);
+              setReOpen(true);
+            }}
+          />
+
           <ActionCard
             tone={ACTION_TONE.green}
             Icon={CircleCheck}
@@ -1801,7 +2142,7 @@ export default function JobDetailsScreen({ route, navigation }) {
               subtitle={partsLock ? `Locked · ${partsLock}` : 'Add required spare part details.'}
               locked={!!partsLock}
               onPress={() => {
-                if (partsLock) { notify('Parts Waiting', partsLock); return; }
+                if (partsLock) { notify('Parts Waiting', partsLock, { type: 'warning' }); return; }
                 setUnableOpen(false);
                 setPartsOpen((v) => !v);
               }}
@@ -1869,7 +2210,7 @@ export default function JobDetailsScreen({ route, navigation }) {
             subtitle={unableLock ? `Locked · ${unableLock}` : 'Select why the device cannot be repaired.'}
             locked={!!unableLock}
             onPress={() => {
-              if (unableLock) { notify('Unable to Repair', unableLock); return; }
+              if (unableLock) { notify('Unable to Repair', unableLock, { type: 'warning' }); return; }
               setPartsOpen(false);
               setUnableOpen((v) => !v);
             }}
@@ -1921,17 +2262,14 @@ export default function JobDetailsScreen({ route, navigation }) {
       ) : null}
     </View>
   );
-  // Add / Edit Report shortcut on the Issue Verified row (latest note first).
+  // Latest saved note — the Technician Repair Report reads it.
   const latestNote = notesList[0] || null;
+  // Add Report shortcut on the Issue Verified row: scrolls to the entry form.
   const openReport = () => {
-    if (latestNote) {
-      if (!editingNoteId) beginEditNote(latestNote);
-      if (notesY.current != null) scrollRef.current?.scrollTo({ y: Math.max(0, notesY.current - 8), animated: true });
-    } else if (composeY.current != null) {
+    if (composeY.current != null) {
       scrollRef.current?.scrollTo({ y: Math.max(0, composeY.current - 8), animated: true });
     }
   };
-  const showReportAction = !jobClosed && !rowDone('REPAIR_COMPLETED');
   // Once the repair is finished (or the job is closed) the report is final:
   // the entry form and the editable notes give way to the read-only
   // Technician Repair Report — latest description, every saved photo.
@@ -1941,19 +2279,18 @@ export default function JobDetailsScreen({ route, navigation }) {
     .filter(Boolean))];
   const reportBadge = rowDone('REPAIR_COMPLETED') || String(ticket.status || '').toUpperCase() !== 'CANCELLED'
     ? 'Completed' : 'Closed';
-  const showNotesList = !reportLocked && notesList.length > 0;
   // The technician report is the saved repair notes (description + uploaded
   // photos) — the same persisted data the Service Progress row and Finish
-  // Repair read. A complete one replaces the blank compose form; it is shown
-  // read-only under Repair Issue & Photos, and Edit Report opens it.
+  // Repair read. A complete one replaces the blank compose form.
   const hasSavedReport = notesList.some(noteIsComplete);
   const hasIncompleteReport = !hasSavedReport && notesList.some((n) => String(n?.note || '').trim());
   const showCompose = !reportLocked && !hasSavedReport;
+  const showReportAction = showCompose;
   // A step on record with no report behind it (e.g. notes removed on the
   // server): say so rather than show an empty form as if nothing was done.
   const reportMissing = notesLoaded && !notesList.some((n) => String(n?.note || '').trim())
     && (rowDone('REPAIR_COMPLETED') || !!findEvent(ticketEvents, 'TECHNICIAN_COMPLIANCE_ISSUE_VERIFIED_UPDATED'));
-  const syncBusy = !!progressBusy || noteSubmitting || editNoteSaving || autoSaving > 0;
+  const syncBusy = !!progressBusy || noteSubmitting || reSubmitting || ackBusy || autoSaving > 0;
   const syncBadge = syncBusy
     ? { label: 'Saving…', fg: C.yellowInk, bg: C.yellowTint }
     : syncState.status === 'synced'
@@ -1975,8 +2312,6 @@ export default function JobDetailsScreen({ route, navigation }) {
   const notePhotosMsg = notePhotosNeeded
     ? `Add ${notePhotosNeeded} more photo${notePhotosNeeded === 1 ? '' : 's'} (minimum ${MIN_NOTE_PHOTOS}).`
     : null;
-  const editNoteReady = !!editNoteText.trim()
-    && editNoteImages.filter((s) => !!s?.uri).length >= MIN_NOTE_PHOTOS;
   // Repair Completed ticked (or job closed): Solution Packs drop out.
   const showSolutionPacks = !progressDone.REPAIR_COMPLETED && !progressClosed && !jobClosed;
   const noteSubmitBlocked = noteSubmitting || !noteReady || isRecording || uploadingAudio;
@@ -1986,227 +2321,41 @@ export default function JobDetailsScreen({ route, navigation }) {
   const recSeconds = Math.floor(recordingMs / 1000);
   const recLabel = `${String(Math.floor(recSeconds / 60)).padStart(2, '0')}:${String(recSeconds % 60).padStart(2, '0')}`;
 
-  // One saved technician note: inline edit form while open, else read-only
-  // (description, voice, its photos and their count) with Edit.
-  const renderSavedNote = (n) => {
-    const imgs = [...new Set((Array.isArray(n.imageUrls) ? n.imageUrls : []).filter(Boolean))];
-    const audioKey = `note-${n.id}`;
-    const editing = editingNoteId === n.id;
-    // updated_at is DB-defaulted to the insert instant, so a note
-    // that was never edited has the two within a tick of each
-    // other. Only a real gap counts as an edit.
-    const edited = n.updatedAt && n.createdAt
-      && (new Date(n.updatedAt) - new Date(n.createdAt)) > 2000;
-    return (
-      <View
-        key={n.id}
-        className="flex-row"
-        style={{
-          backgroundColor: '#FFFFFF', borderRadius: 12, padding: 10, marginBottom: 8,
-          borderWidth: 1, borderColor: editing ? C.yellowLine : C.border,
-        }}
-      >
-        <View
-          style={{
-            width: 3, borderRadius: 2, marginRight: 9,
-            backgroundColor: editing ? C.yellow : C.green,
-          }}
-        />
-        {editing ? (
-          /* ---- Edit mode: text, attachments, Save / Cancel ---- */
-          <View className="flex-1">
-            <Text
-              className="font-bold uppercase tracking-wider mb-1.5"
-              style={{ fontSize: rf(9.5), color: C.muted }}
-            >
-              Editing note
-            </Text>
-            <TextInput
-              value={editNoteText}
-              onChangeText={setEditNoteText}
-              multiline
-              placeholder="Update what you recorded for this ticket."
-              placeholderTextColor={C.faint}
-              style={{
-                fontSize: rf(12), color: C.ink,
-                backgroundColor: C.bg, borderWidth: 1, borderColor: C.border,
-                borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
-                minHeight: 68, textAlignVertical: 'top',
-              }}
-            />
-
-            {/* Voice note: playable, removable. Re-recording is
-                done by removing this clip and submitting a new
-                note — the recorder above belongs to the compose
-                card and can only hold one draft at a time. */}
-            {editNoteAudioUrl ? (
-              <View className="flex-row items-center mt-2">
-                <TouchableOpacity
-                  onPress={() => togglePlayAudio(`edit-${n.id}`, editNoteAudioUrl)}
-                  activeOpacity={0.8}
-                  className="flex-row items-center rounded-full px-2.5 py-1"
-                  style={{ borderWidth: 1, borderColor: C.line, backgroundColor: C.bg }}
-                >
-                  {playingId === `edit-${n.id}`
-                    ? <Pause size={12} color={C.ink} />
-                    : <Play size={12} color={C.ink} />}
-                  <Text className="font-bold ml-1" style={{ fontSize: rf(11), color: C.ink }}>Voice note</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => setEditNoteAudioUrl('')}
-                  hitSlop={8}
-                  activeOpacity={0.8}
-                  className="flex-row items-center rounded-full px-2.5 py-1 ml-2"
-                  style={{ backgroundColor: C.redTint }}
-                >
-                  <Trash2 size={11} color={C.red} />
-                  <Text className="font-bold ml-1" style={{ fontSize: rf(10.5), color: C.red }}>
-                    Remove
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-
-            <View className="flex-row -mx-1 mt-2">
-              {editNoteImages.map((slot, i) => (
-                <View key={i} className="flex-1 px-1">
-                  {slot ? (
-                    <View
-                      className="overflow-hidden"
-                      style={{ height: 68, borderRadius: 10, backgroundColor: C.surface }}
-                    >
-                      <Image source={{ uri: slot.uri }} style={{ width: '100%', height: '100%' }} />
-                      <TouchableOpacity
-                        onPress={() => removeSlotFrom(setEditNoteImages, i)}
-                        hitSlop={8}
-                        style={{
-                          position: 'absolute', top: 4, right: 4,
-                          backgroundColor: 'rgba(30,30,30,0.75)', borderRadius: 10, padding: 3,
-                        }}
-                      >
-                        <X size={11} color="#FFFFFF" />
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <AddPhotoSlot
-                      onPress={() => promptPickImageInto(setEditNoteImages, i)}
-                      height={68}
-                      required={i < MIN_NOTE_PHOTOS}
-                    />
-                  )}
-                </View>
-              ))}
-            </View>
-
-            <View className="flex-row mt-2.5">
-              <TouchableOpacity
-                onPress={cancelEditNote}
-                disabled={editNoteSaving}
-                activeOpacity={0.8}
-                className="items-center justify-center px-4 mr-2"
-                style={{ borderRadius: 10, paddingVertical: 8, borderWidth: 1, borderColor: C.line, backgroundColor: '#FFFFFF' }}
-              >
-                <Text className="font-bold" style={{ fontSize: rf(12), color: C.muted }}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={saveEditNote}
-                disabled={editNoteSaving || !editNoteReady}
-                activeOpacity={0.85}
-                className="flex-1 items-center justify-center"
-                style={{
-                  backgroundColor: C.green, borderRadius: 10, paddingVertical: 8,
-                  opacity: editNoteSaving || !editNoteReady ? 0.5 : 1,
-                }}
-              >
-                {editNoteSaving
-                  ? <ActivityIndicator color="#FFFFFF" />
-                  : (
-                    <Text className="text-white font-bold" style={{ fontSize: rf(12) }}>
-                      Save Changes
-                    </Text>
-                  )}
-              </TouchableOpacity>
-            </View>
-            {!editNoteReady && !editNoteSaving ? (
-              <Text style={{ fontSize: rf(10), color: C.red, marginTop: 6 }}>
-                Description and at least {MIN_NOTE_PHOTOS} photos are required.
-              </Text>
-            ) : null}
-          </View>
-        ) : (
-          /* ---- Read-only ---- */
-          <View className="flex-1">
-            <View className="flex-row items-start">
-              <Text className="flex-1 pr-2" style={{ fontSize: rf(12), color: C.ink }}>{n.note}</Text>
-              {/* Disabled while another note is open for editing so
-                  two drafts can't fight over the single edit slot. */}
-              {!jobClosed ? (
-              <TouchableOpacity
-                onPress={() => beginEditNote(n)}
-                disabled={!!editingNoteId}
-                hitSlop={8}
-                activeOpacity={0.8}
-                className="flex-row items-center rounded-full px-2.5 py-1"
-                style={{ backgroundColor: C.greenTint, opacity: editingNoteId ? 0.4 : 1 }}
-              >
-                <Pencil size={11} color={C.green} />
-                <Text className="font-bold ml-1" style={{ fontSize: rf(10.5), color: C.green }}>
-                  Edit
-                </Text>
-              </TouchableOpacity>
-              ) : null}
-            </View>
-            {n.audioUrl ? (
-              <View className="flex-row items-center mt-2">
-                <TouchableOpacity
-                  onPress={() => togglePlayAudio(audioKey, n.audioUrl)}
-                  activeOpacity={0.8}
-                  className="flex-row items-center rounded-full px-2.5 py-1"
-                  style={{ borderWidth: 1, borderColor: C.line, backgroundColor: C.bg }}
-                >
-                  {playingId === audioKey
-                    ? <Pause size={12} color={C.ink} />
-                    : <Play size={12} color={C.ink} />}
-                  <Text className="font-bold ml-1" style={{ fontSize: rf(11), color: C.ink }}>Voice note</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-            {imgs.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-2">
-                <View className="flex-row">
-                  {imgs.map((u, j) => (
-                    <Image
-                      key={j}
-                      source={{ uri: u }}
-                      style={{ width: 52, height: 52, borderRadius: 8, marginRight: 6 }}
-                    />
-                  ))}
-                </View>
-              </ScrollView>
-            ) : null}
-            <Text style={{ fontSize: rf(10), color: C.muted, marginTop: 5 }}>
-              {fmtDateTime(n.createdAt)}
-              {edited ? `  ·  Edited ${fmtDateTime(n.updatedAt)}` : ''}
-              {`  ·  ${Math.min(imgs.length, 3)}/3 photos`}
-            </Text>
-          </View>
-        )}
-      </View>
-    );
-  };
-
   // Re-estimate / approval block above Submitted Notes. Rendered as soon as
   // either half exists — a plain first-time approval with no re-estimate is
   // still a date the technician needs.
   const showEstimateBlock = !!(estimateApproval.reEstimated || estimateApproval.approved);
-  const estimatedPriceLabel = formatINR(ticket.estimatedPrice);
-  // Three approval states, worked out here rather than as nested ternaries in
-  // the JSX: approved for the current estimate / approved on a ticket old
-  // enough to predate the CUSTOMER_APPROVED event (flag only, no timestamp) /
-  // still waiting.
-  const approvalRowProps = estimateApproval.approvalIsCurrent
+  // The re-estimate revision behind the block, when the backend sends it: its
+  // revised total and added items (after a rejection the ticket's own price
+  // is the original again, so it can't stand in for the re-estimate).
+  const shownRevision = ['AWAITING_APPROVAL', 'APPROVED', 'REJECTED']
+    .includes(String(ticket.latestReEstimate?.status || '').toUpperCase()) ? ticket.latestReEstimate : null;
+  const estimatedPriceLabel = formatINR(shownRevision?.revisedTotal) || formatINR(ticket.estimatedPrice);
+  const revisionItems = (Array.isArray(shownRevision?.items) ? shownRevision.items : [])
+    .map((it) => (it && (it.label || it.code) ? { label: it.label || it.code, amount: it.amount } : null))
+    .filter(Boolean);
+  const reEstimateItems = revisionItems.length ? revisionItems : priceItems;
+  const decisionRejectedEv = String(estimateApproval.decided?.status || '').toUpperCase() === 'RE_ESTIMATE_REJECTED';
+  // Approval states, worked out here rather than as nested ternaries in the
+  // JSX: the customer's decision on the latest re-estimate / approved for the
+  // current estimate / approved on a ticket old enough to predate the
+  // CUSTOMER_APPROVED event (flag only, no timestamp) / still waiting.
+  const approvalRowProps = estimateApproval.decisionIsCurrent
+    ? {
+        icon: decisionRejectedEv ? X : BadgeCheck,
+        tint: decisionRejectedEv ? C.redTint : C.greenTint,
+        iconColor: decisionRejectedEv ? C.red : C.green,
+        title: decisionRejectedEv ? 'Re-Estimate Rejected by Customer' : 'Re-Estimate Approved by Customer',
+        pill: decisionRejectedEv ? 'REJECTED' : 'APPROVED',
+        pillTint: decisionRejectedEv ? C.redTint : C.greenTint,
+        pillColor: decisionRejectedEv ? C.red : C.green,
+        when: fmtDateTime(estimateApproval.decided.createdAt) || 'Date not recorded',
+        whenColor: decisionRejectedEv ? C.red : C.green,
+        note: decisionRejectedEv
+          ? 'Continue with the original approved repair only.'
+          : estimateApproval.decided.note,
+      }
+    : estimateApproval.approvalIsCurrent
     ? {
         icon: BadgeCheck, tint: C.greenTint, iconColor: C.green,
         title: 'Customer Approved',
@@ -2395,7 +2544,7 @@ export default function JobDetailsScreen({ route, navigation }) {
         <Card>
           {hasIncompleteReport ? (
             <Text style={{ fontSize: rf(10.5), color: C.yellowInk, marginBottom: 6 }}>
-              Your saved report needs at least {MIN_NOTE_PHOTOS} photos — tap Edit on it under Repair Issue & Photos, or save a new report here.
+              Your saved report needs at least {MIN_NOTE_PHOTOS} photos — save a new report here with the description and photos.
             </Text>
           ) : null}
           <Text className="font-bold tracking-widest" style={{ fontSize: rf(9.5), color: C.muted, marginBottom: 5 }}>
@@ -2579,12 +2728,6 @@ export default function JobDetailsScreen({ route, navigation }) {
           </>
         ) : null}
 
-        {/* Previously-submitted notes — each rendered as a left-accented
-            card so the technician can re-read what they've recorded. The
-            re-estimate / approval pair sits at the top of the same section:
-            it is the context the notes below were written against, and the
-            technician must not start work on a price the customer hasn't
-            signed off on yet. */}
         {/* After completion: the read-only Technician Repair Report — the
             verified issue and repair details (latest saved description, its
             voice note) and every evidence photo saved with the notes. */}
@@ -2641,27 +2784,6 @@ export default function JobDetailsScreen({ route, navigation }) {
           </>
         ) : null}
 
-        {/* Saved technician report — description, voice and the uploaded
-            repair photos, read-only with Edit (the same records Service
-            Progress counts). */}
-        {showNotesList ? (
-          <>
-            <View onLayout={(e) => { notesY.current = e.nativeEvent.layout.y; }} />
-            <SectionHeader
-              title="Repair Issue & Photos"
-              accent={C.yellow}
-              right={(
-                <Text className="font-bold" style={{ fontSize: rf(10), color: hasSavedReport ? C.green : C.muted }}>
-                  {Math.min(savedNotePhotoCount(notesList), 3)}/3 photos · min {MIN_NOTE_PHOTOS}
-                </Text>
-              )}
-            />
-            <View style={{ marginBottom: 12 }}>
-              {notesList.slice(0, 5).map((n) => renderSavedNote(n))}
-            </View>
-          </>
-        ) : null}
-
         {/* Re-estimate / approval: price + customer sign-off only. */}
         {showEstimateBlock ? (
           <>
@@ -2679,16 +2801,17 @@ export default function JobDetailsScreen({ route, navigation }) {
                     icon={IndianRupee}
                     tint={C.yellowTint}
                     iconColor={C.yellowInk}
-                    title="Service Re-Estimated"
+                    title={reEstimate.pendingStatus === 'AWAITING_APPROVAL'
+                      ? 'Service Re-Estimated – Awaiting Customer Approval' : 'Service Re-Estimated'}
                     pill={estimatedPriceLabel}
                     pillTint={C.yellowTint}
                     pillColor={C.yellowInk}
                     when={fmtDateTime(estimateApproval.reEstimated.createdAt) || 'Date not recorded'}
                     note={estimateApproval.reEstimated.note}
                   >
-                    {priceItems.length > 0 ? (
+                    {reEstimateItems.length > 0 ? (
                       <View className="mt-1.5 rounded-lg px-2 py-1.5" style={{ backgroundColor: C.bg }}>
-                        {priceItems.map((it, i) => (
+                        {reEstimateItems.map((it, i) => (
                           <View
                             key={`${it.label}-${i}`}
                             className="flex-row items-center"
@@ -2804,7 +2927,7 @@ export default function JobDetailsScreen({ route, navigation }) {
                   <View className="flex-row items-start">
                     <View style={{ flex: 1, paddingTop: 4 }}>
                       <Text className="font-bold" style={{ fontSize: rf(12), color: C.ink }} numberOfLines={1}>
-                        {row.label}
+                        {rowLabel(row)}
                       </Text>
                       {status.text ? (
                         <Text className="mt-0.5" style={{ fontSize: rf(10), color: STATUS_COLOR[status.kind] }} numberOfLines={2}>
@@ -2825,9 +2948,9 @@ export default function JobDetailsScreen({ route, navigation }) {
                           className="flex-row items-center rounded-full px-2.5 py-1"
                           style={{ backgroundColor: C.greenTint }}
                         >
-                          {latestNote ? <Pencil size={11} color={C.green} /> : <Plus size={11} color={C.green} />}
+                          <Plus size={11} color={C.green} />
                           <Text className="font-bold ml-1" style={{ fontSize: rf(10), color: C.green }}>
-                            {latestNote ? 'Edit Report' : 'Add Report'}
+                            Add Report
                           </Text>
                         </TouchableOpacity>
                       ) : row.mode === 'manual' ? (
@@ -2913,6 +3036,120 @@ export default function JobDetailsScreen({ route, navigation }) {
           </>
         ) : null}
       </ScrollView>
+      {/* Request Service Re-Estimate — compact centred form over the dimmed
+          screen; the backdrop or X closes it unless a submit is in flight. */}
+      <Modal visible={reOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={closeReEstimate}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <View
+            style={{
+              flex: 1, justifyContent: 'center', backgroundColor: 'rgba(17,24,39,0.55)',
+              paddingHorizontal: rs(16), paddingTop: insets.top + rs(16), paddingBottom: insets.bottom + rs(16),
+            }}
+          >
+            <Pressable
+              onPress={closeReEstimate}
+              accessibilityLabel="Close"
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+            />
+            <View style={{ width: '100%', maxWidth: 440, maxHeight: '100%', alignSelf: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, overflow: 'hidden' }}>
+              <View className="flex-row items-center" style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border }}>
+                <View className="rounded-full items-center justify-center" style={{ width: 26, height: 26, backgroundColor: ACTION_TONE.navy.fg }}>
+                  <IndianRupee size={14} color="#FFFFFF" strokeWidth={2.6} />
+                </View>
+                <Text className="flex-1" style={{ marginLeft: 8, fontSize: rf(14), fontWeight: '800', color: '#1C3053' }} numberOfLines={1}>
+                  Request Service Re-Estimate
+                </Text>
+                <TouchableOpacity onPress={closeReEstimate} disabled={reSubmitting} hitSlop={10} accessibilityLabel="Close">
+                  <X size={rs(20)} color={C.muted} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: 12 }}>
+                {fieldLabel('Additional Issue / Service')}
+                <TextInput
+                  value={reForm.issue}
+                  onChangeText={(v) => setReForm((f) => ({ ...f, issue: v }))}
+                  placeholder="e.g. Charging port also damaged"
+                  placeholderTextColor={C.faint}
+                  editable={!reSubmitting}
+                  style={fieldStyle}
+                />
+                {fieldLabel('Reason for Re-Estimate', true)}
+                <TextInput
+                  value={reForm.reason}
+                  onChangeText={(v) => setReForm((f) => ({ ...f, reason: v }))}
+                  placeholder="Why the estimate needs to change"
+                  placeholderTextColor={C.faint}
+                  editable={!reSubmitting}
+                  multiline
+                  style={[fieldStyle, { minHeight: 44, textAlignVertical: 'top' }]}
+                />
+                {fieldLabel('Additional Estimated Cost (₹)')}
+                <TextInput
+                  value={reForm.amount}
+                  onChangeText={(v) => setReForm((f) => ({ ...f, amount: cleanAmount(v) }))}
+                  placeholder="Optional"
+                  placeholderTextColor={C.faint}
+                  keyboardType="decimal-pad"
+                  editable={!reSubmitting}
+                  style={fieldStyle}
+                />
+                {fieldLabel('Technician Notes')}
+                <TextInput
+                  value={reForm.notes}
+                  onChangeText={(v) => setReForm((f) => ({ ...f, notes: v }))}
+                  placeholder="Anything the shop should know"
+                  placeholderTextColor={C.faint}
+                  editable={!reSubmitting}
+                  multiline
+                  style={[fieldStyle, { minHeight: 44, textAlignVertical: 'top' }]}
+                />
+                {fieldLabel('Supporting Photos (optional)')}
+                <View className="flex-row -mx-1">
+                  {reImages.map((slot, i) => (
+                    <View key={i} className="flex-1 px-1">
+                      {slot ? (
+                        <View className="overflow-hidden" style={{ height: 64, borderRadius: 10, backgroundColor: C.surface }}>
+                          <Image source={{ uri: slot.uri }} style={{ width: '100%', height: '100%' }} />
+                          {!reSubmitting ? (
+                            <TouchableOpacity
+                              onPress={() => removeSlotFrom(setReImages, i)}
+                              hitSlop={8}
+                              accessibilityLabel={`Remove photo ${i + 1}`}
+                              style={{ position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(30,30,30,0.75)', borderRadius: 10, padding: 3 }}
+                            >
+                              <X size={11} color="#FFFFFF" />
+                            </TouchableOpacity>
+                          ) : null}
+                        </View>
+                      ) : (
+                        <AddPhotoSlot onPress={() => { if (!reSubmitting) promptPickImageInto(setReImages, i); }} height={64} />
+                      )}
+                    </View>
+                  ))}
+                </View>
+                {!reSubmitting && (reForm.reason.trim().length < 3
+                  || (!reForm.issue.trim() && !reForm.amount.trim() && !reForm.notes.trim())) ? (
+                  <Text style={{ fontSize: rf(10), color: C.muted, marginTop: 8 }}>
+                    Reason is required, plus an additional issue / service, cost or technician notes.
+                  </Text>
+                ) : null}
+                <TouchableOpacity
+                  onPress={submitReEstimate}
+                  disabled={reSubmitting || !!reEstimate.pending}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  className="rounded-full items-center justify-center"
+                  style={{ backgroundColor: C.green, marginTop: 10, minHeight: 40, opacity: reSubmitting || reEstimate.pending ? 0.6 : 1 }}
+                >
+                  {reSubmitting
+                    ? <ActivityIndicator color="#FFFFFF" size="small" />
+                    : <Text className="font-bold text-white" style={{ fontSize: rf(12.5) }}>Submit Re-Estimate Request</Text>}
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
       {/* Completion popup (CompletionPopup above) while the screen hands over
           to the Job Report after Repair Completed / Quality Check Completed. */}
       <CompletionPopup

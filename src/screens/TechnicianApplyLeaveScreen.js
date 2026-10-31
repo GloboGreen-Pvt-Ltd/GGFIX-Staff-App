@@ -27,8 +27,9 @@ import TimePickerField, { to12h } from '../components/TimePickerField';
 import DatePickerField from '../components/DatePickerField';
 import MintScreenHeader, { useHideNativeHeader } from '../components/MintScreenHeader';
 import { rf, rlh, rs } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
-// Design tokens (Near G Fix green + mint) — same system as Apply for Permission.
+// Design tokens (NearGFix green + mint) — same system as Apply for Permission.
 const C = {
   green: '#035C6C',
   red: '#F32C26',
@@ -200,7 +201,7 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
       });
       setAttachment({ uri: asset.uri, url: res?.url, name: asset.fileName || 'Proof.jpg' });
     } catch (e) {
-      notify('Upload failed', e?.message ?? 'Could not upload attachment', { preset: 'error', haptic: 'error' });
+      notify('Could not upload attachment', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setUploading(false);
     }
@@ -234,7 +235,7 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
 
   const handleSubmit = async () => {
     const err = validate();
-    if (err) { notify('Check the form', err); return; }
+    if (err) { notify('Check the form', err, { type: 'warning' }); return; }
     setSaving(true);
     try {
       await applyEmployeeLeave({
@@ -245,10 +246,10 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
         reason: composedReason(),
         attachmentUrl: attachment?.url || null,
       });
-      notify('Leave request submitted', 'Your leave request has been sent to the owner for review.', { preset: 'done' });
+      notify('Leave request submitted', 'Sent to the owner for review.', { type: 'success' });
       navigation.goBack();
     } catch (e) {
-      notify('Could not submit', e?.message ?? 'Failed to submit leave request', { preset: 'error', haptic: 'error' });
+      notify('Could not submit leave request', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setSaving(false);
     }

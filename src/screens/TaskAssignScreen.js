@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { markNotificationsSeen } from './NotificationsScreen';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Pressable, ActivityIndicator, RefreshControl, Modal, Image } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Pressable, ActivityIndicator, RefreshControl, Modal, Image, AppState } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
@@ -34,6 +35,7 @@ import { listMyTickets, acceptTicket, listTicketEvents } from '../api/tickets';
 import { autoStartRepair } from '../utils/autoProgress';
 import { selectShopId } from '../store/authSlice';
 import { confirm, notify } from '../components/confirm';
+import { userMessage } from '../utils/userMessages';
 import { rf, rs, sheetWidth } from '../utils/responsive';
 import { ticketRef } from '../utils/ticketRef';
 import { resolveDeviceImageSource } from '../utils/images';
@@ -48,7 +50,7 @@ function matchesQuery(t, q) {
     .some((v) => v && String(v).toLowerCase().includes(q));
 }
 
-// Screen palette — Near G Fix green / red / yellow on light neutrals plus the
+// Screen palette — NearGFix green / red / yellow on light neutrals plus the
 // accent set the Assign Report mockup uses for its stat cards.
 const C = {
   green: '#035C6C',
@@ -209,8 +211,10 @@ export default function TaskAssignScreen({ navigation }) {
 
   const scrollRef = useRef(null);
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true); else setLoading(true);
+  // silent: background poll — no spinner, keeps cached events (only new
+  // tickets fetch theirs), and a failed poll keeps the current list.
+  const load = useCallback(async (isRefresh = false, silent = false) => {
+    if (silent) { /* quiet */ } else if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
       const page = await listMyTickets({ page: 0, size: 100 });
       const items = Array.isArray(page?.content) ? page.content : (Array.isArray(page) ? page : []);
@@ -218,15 +222,22 @@ export default function TaskAssignScreen({ navigation }) {
       setError(null);
       if (isRefresh) setEventsById({});
     } catch (e) {
+      if (silent) return;
       setList([]);
-      setError(e?.message || 'Could not load tasks');
+      setError(userMessage(e, 'Could not load tasks'));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Re-read on every focus and every 30 s while open, so a job the owner
+  // assigns from the Partner App shows up without leaving the screen.
+  useFocusEffect(useCallback(() => {
+    load();
+    const id = setInterval(() => { if (AppState.currentState === 'active') load(false, true); }, 30000);
+    return () => clearInterval(id);
+  }, [load]));
 
   // Shop name stands in for "Assigned by": ticket events only carry the actor
   // role ("SHOP"), not a person's name.
@@ -343,7 +354,6 @@ export default function TaskAssignScreen({ navigation }) {
   };
 
   const openTicket = (t) => navigation.navigate('TechnicianTicketDetail', { ticketId: t.id });
-  const openHistory = (t) => navigation.navigate('TechnicianBookingTimeline', { ticketId: t.id });
 
   // Accept hits the dedicated endpoint (POST /tickets/{id}/accept). Backend
   // stamps technician_accepted_at, bumps a CREATED ticket to IN_DIAGNOSIS,
@@ -365,9 +375,10 @@ export default function TaskAssignScreen({ navigation }) {
       // approval is current (utils/autoProgress); Job Details catches later approvals.
       await autoStartRepair(ticketId);
       setReviewTicket(null);
+      notify('Job accepted', '', { type: 'success' });
       await load(true);
     } catch (e) {
-      notify('Error', e?.message || 'Could not accept ticket');
+      notify('Could not accept job', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       setActingOn(null);
     }
@@ -386,9 +397,10 @@ export default function TaskAssignScreen({ navigation }) {
     try {
       await ticketApi.patch(`/tickets/${ticketId}/status`, { query: { status: 'CANCELLED' } });
       setReviewTicket(null);
+      notify('Job rejected', '', { type: 'success' });
       await load(true);
     } catch (e) {
-      notify('Error', e?.message || 'Could not update ticket');
+      notify('Could not reject job', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       setActingOn(null);
     }
@@ -479,8 +491,8 @@ export default function TaskAssignScreen({ navigation }) {
                         busy={actingOn === t.id}
                         onAccept={() => handleAccept(t.id)}
                         onReject={() => handleReject(t.id)}
-                        onOpen={() => openTicket(t)}
-                        onHistory={() => openHistory(t)}
+                        // Not accepted yet → the limited Review sheet, not the full job.
+                        onOpen={() => setReviewTicket(t)}
                       />
                     ) : (
                       <RecentRow
@@ -490,7 +502,6 @@ export default function TaskAssignScreen({ navigation }) {
                         assignedAt={a.assignedAt || t.createdAt}
                         acceptedAt={a.acceptedAt}
                         onPress={() => openTicket(t)}
-                        onLongPress={() => openHistory(t)}
                       />
                     )}
                   </View>
@@ -509,8 +520,6 @@ export default function TaskAssignScreen({ navigation }) {
         onClose={() => setReviewTicket(null)}
         onAccept={() => reviewTicket && handleAccept(reviewTicket.id)}
         onReject={() => reviewTicket && handleReject(reviewTicket.id)}
-        onOpen={() => { const t = reviewTicket; setReviewTicket(null); if (t) openTicket(t); }}
-        onHistory={() => { const t = reviewTicket; setReviewTicket(null); if (t) openHistory(t); }}
       />
 
       <Modal visible={!!info} transparent animationType="fade" onRequestClose={() => setInfo(null)}>
@@ -617,7 +626,7 @@ const shownText = (v) => {
 
 // Awaiting the technician: Waiting tab, then Reject · Accept under the details.
 // Tap the card for details, long-press it for history.
-function ReassignRow({ ticket, byLabel, byName, when, busy, onAccept, onReject, onOpen, onHistory }) {
+function ReassignRow({ ticket, byLabel, byName, when, busy, onAccept, onReject, onOpen }) {
   return (
     <JobPictureCard
       ticket={ticket}
@@ -651,7 +660,6 @@ function ReassignRow({ ticket, byLabel, byName, when, busy, onAccept, onReject, 
         </View>
       )}
       onPress={onOpen}
-      onLongPress={onHistory}
     />
   );
 }
@@ -663,7 +671,7 @@ function statusPill(t) {
   return { label: 'Assigned', fg: C.blue, bg: C.blueTint, Icon: Clock };
 }
 
-function RecentRow({ ticket, byLabel, byName, assignedAt, acceptedAt, onPress, onLongPress }) {
+function RecentRow({ ticket, byLabel, byName, assignedAt, acceptedAt, onPress }) {
   const p = statusPill(ticket);
   // Time range = assigned → accepted when both fall on the same day.
   const range = fmtTime(assignedAt)
@@ -684,12 +692,11 @@ function RecentRow({ ticket, byLabel, byName, assignedAt, acceptedAt, onPress, o
       date={fmtDate(assignedAt)}
       time={range}
       onPress={onPress}
-      onLongPress={onLongPress}
     />
   );
 }
 
-function ReviewSheet({ ticket, busy, byName, info, onClose, onAccept, onReject, onOpen, onHistory }) {
+function ReviewSheet({ ticket, busy, byName, info, onClose, onAccept, onReject }) {
   const visible = !!ticket;
   const when = info?.assignedAt || ticket?.createdAt;
   return (
@@ -730,14 +737,6 @@ function ReviewSheet({ ticket, busy, byName, info, onClose, onAccept, onReject, 
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.sheetBtn, { backgroundColor: C.green }]} onPress={onAccept} disabled={busy} activeOpacity={0.85}>
                   {busy ? <ActivityIndicator color={C.white} size="small" /> : <Text style={styles.sheetBtnText}>Accept</Text>}
-                </TouchableOpacity>
-              </View>
-              <View style={styles.sheetLinks}>
-                <TouchableOpacity onPress={onOpen} style={styles.sheetLink} activeOpacity={0.8}>
-                  <Text style={styles.sheetLinkText}>View Details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={onHistory} style={styles.sheetLink} activeOpacity={0.8}>
-                  <Text style={styles.sheetLinkText}>History</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -891,9 +890,6 @@ const styles = StyleSheet.create({
   sheetActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   sheetBtn: { flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
   sheetBtnText: { color: C.white, fontSize: rf(13.5), fontWeight: '800' },
-  sheetLinks: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  sheetLink: { flex: 1, borderRadius: 14, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: C.border },
-  sheetLinkText: { color: C.ink, fontSize: rf(12.5), fontWeight: '700' },
   cardActions: { flexDirection: 'row', gap: rs(6), marginTop: rs(6) },
   rejectBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(5),

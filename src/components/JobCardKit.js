@@ -72,7 +72,7 @@ export const RAIL_TONES = {
 // ---------------------------------------------------------------------------
 // Header: round back · centred title + subtitle · search + scan
 // ---------------------------------------------------------------------------
-export function JobHeader({ navigation, title, sub, searchOn, onSearch, onScan }) {
+export function JobHeader({ navigation, title, sub, searchOn, onSearch, onScan, right }) {
   return (
     <View style={s.headerBar}>
       <View pointerEvents="none" style={s.headerTitles}>
@@ -97,6 +97,7 @@ export function JobHeader({ navigation, title, sub, searchOn, onSearch, onScan }
           <ScanLine size={rs(17)} color={KIT.teal} strokeWidth={2.3} />
         </TouchableOpacity>
       ) : null}
+      {right}
     </View>
   );
 }

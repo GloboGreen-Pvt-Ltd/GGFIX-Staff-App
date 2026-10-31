@@ -46,13 +46,15 @@ import { loadUnreadNotificationCount } from './NotificationsScreen';
 import { readCurrentLocation, haversineMeters, GEOFENCE_RADIUS_METERS } from '../utils/geo';
 import { useLogout } from '../auth/LogoutContext';
 import { notify } from '../components/confirm';
+import { userMessage } from '../utils/userMessages';
 import CheckoutReminder from '../components/CheckoutReminder';
+import MyTasksShortcut from '../components/MyTasksShortcut';
 import { syncCheckoutAlarm, cancelCheckoutAlarm } from '../utils/checkoutAlarm';
 import { CalendarModal, parseISO, toISO } from '../components/DatePickerField';
 import { useBreak, formatMinutes } from '../utils/breakTracker';
 import { BadgeIconTile, MonthPill, TILE_TONES } from '../components/MintKit';
 
-// Home-screen palette (Near G Fix green + mint). Scoped to this screen so the
+// Home-screen palette (NearGFix green + mint). Scoped to this screen so the
 // app-wide theme tokens other screens rely on stay untouched.
 const C = {
   // Brand palette
@@ -459,23 +461,24 @@ export default function HomeScreen({ navigation }) {
         await cancelCheckoutAlarm();
         // After a successful check-out the shift is over — sign out back to the
         // login screen (per the attendance lifecycle).
-        notify('Checked out', 'Have a good day!', { preset: 'done', haptic: 'success' });
-        onLogout?.();
+        notify('Checked out', 'Have a good day!', { type: 'success', haptic: 'success' });
+        // quiet: this toast is the one confirmation (no "Logged out" on top).
+        onLogout?.({ quiet: true });
         return;
       }
-      notify('Checked in', 'You’re on duty.', { preset: 'done', haptic: 'success' });
+      notify('Checked in', 'You’re on duty.', { type: 'success', haptic: 'success' });
       reloadAttendance();
     } catch (e) {
       const code = e?.payload?.code;
       if (code === 'OUT_OF_RADIUS') {
-        notify('Too far from the shop', e?.message || 'Move within range to continue.', { preset: 'error', haptic: 'error' });
+        notify('Too far from the shop', userMessage(e, 'Move within range to continue.'), { type: 'error', haptic: 'error' });
       } else if (code === 'EARLY_CHECKOUT_BLOCKED') {
-        notify('Too early to check out', e?.message || 'You can check out only after your duty end time.', { preset: 'error', haptic: 'error' });
+        notify('Too early to check out', userMessage(e, 'You can check out only after your duty end time.'), { type: 'error', haptic: 'error' });
       } else if (code === 'LOCATION_REQUIRED') {
-        notify('Location needed', e?.message || 'Enable location and try again.', { preset: 'error', haptic: 'error' });
+        notify('Location needed', userMessage(e, 'Enable location and try again.'), { type: 'error', haptic: 'error' });
       } else {
         setErrors((s) => ({ ...s, checkin: e?.message }));
-        notify('Could not update attendance', e?.message || 'Please try again.', { preset: 'error' });
+        notify(isCheckout ? 'Could not check out' : 'Could not check in', userMessage(e, 'Please try again.'), { type: 'error' });
       }
     } finally {
       setCheckInBusy(false);
@@ -644,6 +647,11 @@ export default function HomeScreen({ navigation }) {
   const greeting = greetingFor(now);
   const onBreak = buttonMode === 'out' && brk.onBreak;
   const breakMin = brk.breakMinutes(now);
+  // Breaks are a phone-only log (utils/breakTracker): saved the moment it's tapped.
+  const toggleBreak = () => {
+    if (onBreak) { brk.endBreak(); notify('Break ended', '', { type: 'success' }); }
+    else { brk.startBreak(); notify('Break started', '', { type: 'success' }); }
+  };
   const statusText = onBreak ? 'On Break' : buttonMode === 'in' ? 'Not Checked In' : buttonMode === 'out' ? 'On Duty' : 'Completed';
   const statusColor = buttonMode === 'in' || onBreak ? '#FAA700' : '#609138';
 
@@ -755,7 +763,7 @@ export default function HomeScreen({ navigation }) {
             <PunchTile
               active={onBreak} icon={Coffee} accent="#FAA700" title={onBreak ? 'End Break' : 'Break'}
               sub={onBreak ? `On break · ${formatMinutes(breakMin)}` : breakMin > 0 ? `Taken ${formatMinutes(breakMin)}` : buttonMode === 'out' ? 'Tap to start' : 'After check-in'}
-              disabled={buttonMode !== 'out' || checkInBusy} onPress={onBreak ? brk.endBreak : brk.startBreak}
+              disabled={buttonMode !== 'out' || checkInBusy} onPress={toggleBreak}
             />
             <View style={{ width: 1, backgroundColor: C.border, marginVertical: rs(10), marginHorizontal: rs(4) }} />
             <PunchTile
@@ -815,6 +823,9 @@ export default function HomeScreen({ navigation }) {
               Couldn’t load tasks — will retry automatically.
             </Text>
           ) : null}
+
+          {/* 3c. My Tasks — general shop tasks (separate from repair jobs) */}
+          <MyTasksShortcut navigation={navigation} />
 
           {/* 4. Quick Access — every category for this role, Partner-app tile grid */}
           <SectionTitle title="Quick Access" />

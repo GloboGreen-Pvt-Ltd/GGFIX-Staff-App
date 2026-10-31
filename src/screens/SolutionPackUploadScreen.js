@@ -15,8 +15,9 @@ import {
 import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
 import { rf, sheetWidth } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
-// Near G Fix palette, same as Ticket Detail.
+// NearGFix palette, same as Ticket Detail.
 const C = {
   green: '#035C6C', greenTint: '#E5F3F5', red: '#F32C26',
   ink: '#111111', muted: '#6B7280', faint: '#A3A3A3',
@@ -116,7 +117,7 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
       if (kind === 'audio') setAudio(payload);
       else if (kind === 'video') setVideo(payload);
     } catch (e) {
-      notify('Could not open files', e?.message || 'Please try again.');
+      notify('Could not open files', 'Please try again.', { type: 'error' });
     }
   }, []);
 
@@ -145,7 +146,7 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
       return next;
     });
     } catch (e) {
-      notify('Could not open gallery', e?.message || 'Please try again.');
+      notify('Could not open gallery', 'Please try again.', { type: 'error' });
     }
   }, []);
 
@@ -156,11 +157,11 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
 
   const handleSubmit = async () => {
     if (!mainCat?.id) {
-      notify('Select a category', 'Pick the issue main category first.');
+      notify('Select a category', 'Pick the issue main category first.', { type: 'warning' });
       return;
     }
     if (!hasFile) {
-      notify('Attach a file', 'Add at least one audio, video or image.');
+      notify('Attach a file', 'Add at least one audio, video or image.', { type: 'warning' });
       return;
     }
     setSubmitting(true);
@@ -190,7 +191,7 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
         notify(
           'Upload failed',
           `${attempted - files.length} of ${attempted} file(s) failed to upload. Please check your connection and try again.`,
-          { preset: 'error', haptic: 'error' }
+          { type: 'error', haptic: 'error' }
         );
         return;
       }
@@ -212,11 +213,11 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
         issueSubcategoryId: subCat?.id || null,
         filesJson: JSON.stringify(files),
       });
-      notify('Solution pack uploaded', 'Saved as a new solution for this ticket.');
+      notify('Solution pack uploaded', 'Saved as a new solution for this ticket.', { type: 'success' });
       navigation.goBack();
     } catch (e) {
       console.warn('[upload] solution pack failed', e?.status, e?.message);
-      notify('Upload failed', e?.message || 'Could not save solution pack');
+      notify('Could not upload solution pack', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       setSubmitting(false);
     }

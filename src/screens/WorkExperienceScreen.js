@@ -20,6 +20,7 @@ import { shopApi, authApi } from '../api/client';
 import { listMyTickets } from '../api/tickets';
 import { selectShopId } from '../store/authSlice';
 import { rf } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
 const COLORS = {
   background: '#F3F4F6',
@@ -264,7 +265,7 @@ export default function WorkExperienceScreen() {
       const data = await getMyExperiences(technicianId);
       setExperiences(Array.isArray(data) ? data : []);
     } catch (e) {
-      setError(e?.message || 'Failed to load work experience');
+      setError(userMessage(e, 'Could not load work experience'));
     } finally {
       setLoading(false);
       setRefreshing(false);

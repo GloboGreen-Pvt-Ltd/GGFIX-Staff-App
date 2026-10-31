@@ -5,8 +5,8 @@ const host = process.env.EXPO_PUBLIC_API_HOST || null;
 
 export default {
   expo: {
-    name: 'Near G Fix Employee',
-    slug: 'ggfix-app',
+    name: 'NearGFix Employee',
+    slug: 'neargfix-employee',
     // EAS account/organization that owns the project (from your Expo dashboard).
     // Verify this matches expo.dev → your account. Change if different.
     owner: 'globogreen-system-and-technology-private-limited',
@@ -23,13 +23,15 @@ export default {
       // every orientation must opt out of Split View / Slide Over
       // (UIRequiresFullScreen) or App Store validation rejects the build.
       requireFullScreen: true,
-      bundleIdentifier: 'com.ggfix.employeeapp',
+      bundleIdentifier: 'com.neargfix.employee',
       infoPlist: {
         NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
       },
     },
     android: {
-      package: 'com.ggfix.employeeapp',
+      package: 'com.neargfix.employee',
+      // Firebase (project "neargfix") — needed for Android push (FCM).
+      googleServicesFile: './google-services.json',
       adaptiveIcon: { foregroundImage: './assets/logo.png', backgroundColor: '#202124' },
       // Checkout SOS alarm: exact timing at 6:30 PM + survive reboot.
       permissions: ['SCHEDULE_EXACT_ALARM', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE', 'POST_NOTIFICATIONS'],
@@ -46,7 +48,7 @@ export default {
       ['expo-audio', { microphonePermission: 'We use the microphone to record voice notes on repair tickets.' }],
       // Keychain/Keystore-backed storage for the auth token (see src/auth/session.js).
       'expo-secure-store',
-      ['expo-local-authentication', { faceIDPermission: 'Use Face ID to unlock Near G Fix.' }],
+      ['expo-local-authentication', { faceIDPermission: 'Use Face ID to unlock NearGFix.' }],
       // Live camera for scanning ticket QR slips (Home header scan icon).
       ['expo-camera', { cameraPermission: 'We use your camera to scan ticket QR slips and open the job.' }],
       // The bare `android.usesCleartextTraffic` key is NOT read by Expo prebuild —
@@ -72,7 +74,7 @@ export default {
       eas: {
         projectId:
           process.env.EAS_PROJECT_ID ||
-          '52db54d3-65c5-4efd-bab2-6718f0e3a686',
+          '3f39a0fb-1c52-43c8-a321-646e9a94a98a',
       },
     },
   },

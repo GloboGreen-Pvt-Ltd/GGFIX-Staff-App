@@ -23,8 +23,9 @@ import TimePickerField, { to12h } from '../components/TimePickerField';
 import DatePickerField from '../components/DatePickerField';
 import MintScreenHeader, { useHideNativeHeader } from '../components/MintScreenHeader';
 import { rf, rlh, rs } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
-// Design tokens (Near G Fix green + mint).
+// Design tokens (NearGFix green + mint).
 const C = {
   green: '#035C6C',
   red: '#F32C26',
@@ -151,7 +152,7 @@ export default function PermissionApplyScreen({ navigation }) {
       });
       setAttachment({ uri: asset.uri, url: res?.url, name: asset.fileName || 'Proof.jpg' });
     } catch (e) {
-      notify('Upload failed', e?.message ?? 'Could not upload attachment', { preset: 'error', haptic: 'error' });
+      notify('Could not upload attachment', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setUploading(false);
     }
@@ -179,7 +180,7 @@ export default function PermissionApplyScreen({ navigation }) {
 
   const handleSubmit = async () => {
     const err = validate();
-    if (err) { notify('Check the form', err); return; }
+    if (err) { notify('Check the form', err, { type: 'warning' }); return; }
     setSaving(true);
     try {
       await applyEmployeeLeave({
@@ -190,10 +191,10 @@ export default function PermissionApplyScreen({ navigation }) {
         reason: composedReason(),
         attachmentUrl: attachment?.url || null,
       });
-      notify('Permission request submitted', 'Sent to the owner for approval. You can check out early once it is approved.', { preset: 'done' });
+      notify('Permission request submitted', 'Sent to the owner for approval.', { type: 'success' });
       navigation.goBack();
     } catch (e) {
-      notify('Could not submit', e?.message ?? 'Failed to submit permission request', { preset: 'error', haptic: 'error' });
+      notify('Could not submit permission request', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setSaving(false);
     }

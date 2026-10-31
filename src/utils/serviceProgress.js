@@ -39,15 +39,40 @@ export function savedNotePhotoCount(notes) {
   return list(notes).reduce((max, n) => Math.max(max, noteImages(n).length), 0);
 }
 
-// Events that belong to the current quote. A re-estimate restarts the
-// checklist, so steps recorded before the latest RE_ESTIMATED_CONFIRMED don't
-// count — the same rule the checklist has always used.
+// Server time of a booking event (the later of createdAt / updatedAt — the
+// backend refreshes a re-saved row in place).
+export const eventTime = evTime;
+
+// Re-estimate workflow events (ticket_reestimate_revisions): a customer
+// decision on a revision, and the repair resuming after it.
+const REVISION_DECISION_KEYS = ['RE_ESTIMATE_APPROVED', 'RE_ESTIMATE_REJECTED'];
+const REVISION_RESUME_KEYS = [...REVISION_DECISION_KEYS, 'REPAIR_WORK_RESUMED'];
+const latestAt = (rows, keys) => rows
+  .filter((e) => keys.includes(up(e?.status)))
+  .reduce((max, e) => Math.max(max, evTime(e)), 0);
+
+// Where the checklist restarts (0 = it doesn't). A legacy re-estimate restarts
+// it at the latest RE_ESTIMATED_CONFIRMED. A re-estimate raised during the
+// repair does not: one the customer has decided (the backend moves the job
+// back to IN_REPAIR and records REPAIR_WORK_RESUMED), or one answering an open
+// technician request — the same repair continues on the same steps.
+export function checklistResetAt(events) {
+  const rows = list(events);
+  const reEstimatedAt = latestAt(rows, ['RE_ESTIMATED_CONFIRMED']);
+  if (!reEstimatedAt) return 0;
+  const resumedAt = latestAt(rows, REVISION_RESUME_KEYS);
+  if (resumedAt >= reEstimatedAt) return 0;
+  const requestedAt = latestAt(rows, ['TECHNICIAN_REESTIMATE_REQUESTED']);
+  if (requestedAt && requestedAt <= reEstimatedAt && requestedAt > resumedAt) return 0;
+  return reEstimatedAt;
+}
+
+// Events that belong to the current quote: steps recorded before the
+// checklist's restart point (see checklistResetAt) don't count.
 export function currentEvents(events) {
   const rows = list(events);
-  const reEstimatedAt = rows
-    .filter((e) => up(e?.status) === 'RE_ESTIMATED_CONFIRMED')
-    .reduce((max, e) => Math.max(max, evTime(e)), 0);
-  return reEstimatedAt ? rows.filter((e) => evTime(e) >= reEstimatedAt) : rows;
+  const resetAt = checklistResetAt(rows);
+  return resetAt ? rows.filter((e) => evTime(e) >= resetAt) : rows;
 }
 
 export function findEvent(events, key) {
@@ -64,6 +89,9 @@ export function approvalIsCurrent(ticket, events) {
     .pop() || null;
   const reEstimated = latestOf('RE_ESTIMATED_CONFIRMED');
   const approved = latestOf('CUSTOMER_APPROVED');
+  // A revision the customer has decided (approved, or rejected — the original
+  // approved estimate is restored) settles the latest re-estimate.
+  if (reEstimated && latestAt(list(events), REVISION_DECISION_KEYS) >= evTime(reEstimated)) return true;
   if (approved) {
     return !reEstimated || new Date(approved.createdAt || 0) >= new Date(reEstimated.createdAt || 0);
   }
@@ -72,7 +100,9 @@ export function approvalIsCurrent(ticket, events) {
 
 // Statuses where repair work can still start. READY and later, CANCELLED and
 // RETURNED never get an automatic step, so old and closed bookings are left as
-// they are. QUOTED is out too: the customer hasn't answered the estimate.
+// they are. QUOTED is out too: the customer hasn't answered the estimate. A
+// decided re-estimate moves the ticket back to IN_REPAIR (or APPROVED when work
+// hadn't started), so the repair continues from there.
 const STARTABLE_STATUSES = new Set(['IN_DIAGNOSIS', 'APPROVED', 'IN_REPAIR']);
 // Statuses where the technician is still working the job (photos can sync).
 const ACTIVE_STATUSES = new Set(['CREATED', 'IN_DIAGNOSIS', 'QUOTED', 'APPROVED', 'IN_REPAIR']);
@@ -96,7 +126,7 @@ export function shouldAutoStartRepair(ticket, events) {
   if (!STARTABLE_STATUSES.has(up(ticket?.status))) return false;
   if (repairStartBlocker(ticket, events)) return false;
   const cur = currentEvents(events);
-  if (findEvent(cur, 'IN_REPAIR')) return false;
+  if (findEvent(cur, 'IN_REPAIR') || findEvent(cur, 'REPAIR_WORK_RESUMED')) return false;
   return !REPAIR_END_KEYS.some((k) => findEvent(cur, k));
 }
 

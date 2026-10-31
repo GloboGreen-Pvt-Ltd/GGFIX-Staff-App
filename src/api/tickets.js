@@ -98,3 +98,26 @@ export async function searchSolutionPacks({
     query: { packType, brandId, modelId, issueCategoryId, issueSubcategoryId, issueCategory, issueSubcategory },
   });
 }
+
+// Re-estimate workflow (ticket_reestimate_revisions). GET /tickets/{id} carries
+// the open revision as `activeReEstimate` (REQUESTED / AWAITING_APPROVAL) and
+// the most recent one of any status as `latestReEstimate`.
+//
+// Technician asks the shop for a re-estimate. reason is required (≥3 chars);
+// at least one of additionalIssue / proposedAmount / technicianNotes must be
+// filled. imagesJson is a stringified ["url", ...] like technicianPhotosJson.
+// 409 REESTIMATE_PENDING while another revision is still open.
+export async function requestReEstimate(
+  ticketId,
+  { additionalIssue, reason, proposedAmount, technicianNotes, imagesJson } = {},
+) {
+  return ticketApi.post(`/tickets/${ticketId}/re-estimate-requests`, {
+    body: { additionalIssue, reason, proposedAmount, technicianNotes, imagesJson },
+  });
+}
+
+// The assigned technician has seen the customer's decision on a revision
+// (sets technicianAcknowledgedAt; idempotent).
+export async function acknowledgeReEstimate(ticketId, revisionId) {
+  return ticketApi.post(`/tickets/${ticketId}/re-estimates/${revisionId}/acknowledge`);
+}

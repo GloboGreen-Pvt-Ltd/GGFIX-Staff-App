@@ -4,7 +4,7 @@
  *   <View className="bg-primary" />.
  * The other named exports are kept for screens that still use StyleSheet.
  */
-// Brand palette (Near G Fix):
+// Brand palette (NearGFix):
 //   primary  Teal        #035C6C  primary buttons, header, key UI
 //   navy     Navy        #1C3053  headings, navigation, important text
 //   blue     Bright Blue #0788C9  links, secondary buttons, interactive icons

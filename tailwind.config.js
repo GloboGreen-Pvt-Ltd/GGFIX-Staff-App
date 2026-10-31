@@ -8,7 +8,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Brand palette (Near G Fix): Primary Teal #035C6C · Navy #1C3053 ·
+        // Brand palette (NearGFix): Primary Teal #035C6C · Navy #1C3053 ·
         // Bright Blue #0788C9 · Green #609138 · Orange #FAA700 · Red #F32C26 ·
         // White #FFFFFF · Light Gray #F3F4F6 · Black #111111. Shade scales are
         // tints / shades of the brand teal.

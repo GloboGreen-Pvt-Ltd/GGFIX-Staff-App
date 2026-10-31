@@ -80,7 +80,7 @@ export const SHOP_BOOKING_STATUS_OPTIONS = [
   // reads "Assigned to Technician / Assigned to Afsal" without a status of its own.
   { value: 'BOOKING_CREATED_BY_SHOP',                       label: 'Booking Created by Shop',               phase: SERVICE, group: G_ACCEPTED },
   { value: 'SERVICE_ACCEPTED',                              label: 'Service Accepted',                      phase: SERVICE, group: G_ACCEPTED },
-  { value: 'ASSIGNED_TO_TECHNICIAN',                        label: 'Assigned to Technician',                phase: SERVICE, group: G_ACCEPTED },
+  { value: 'ASSIGNED_TO_TECHNICIAN',                        label: 'Technician Assigned',                   phase: SERVICE, group: G_ACCEPTED },
   { value: 'AWAITING_TECHNICIAN_ACCEPTANCE',                label: 'Awaiting Technician Acceptance',        phase: SERVICE, group: G_ACCEPTED },
   { value: 'REASSIGNED_TO_TECHNICIAN',                      label: 'Re-Assigned to Technician',             phase: SERVICE, group: G_ACCEPTED },
   // ── Stage 2: In Process ───────────────────────────────────────────────────
@@ -90,7 +90,13 @@ export const SHOP_BOOKING_STATUS_OPTIONS = [
   { value: 'TECHNICIAN_WORK_STARTED',                       label: 'Technician Work Started',               phase: SERVICE, group: G_PROCESS },
   { value: 'TECHNICIAN_UPLOADED_DEVICE_IMAGES',             label: 'Technician Uploaded Device Images',     phase: SERVICE, group: G_PROCESS },
   { value: 'TECHNICIAN_COMPLIANCE_ISSUE_VERIFIED_UPDATED',  label: 'Technician Issue Verified & Updated',   phase: SERVICE, group: G_PROCESS },
-  { value: 'RE_ESTIMATED_CONFIRMED',                        label: 'Service Re-estimated',                  phase: SERVICE, group: G_PROCESS },
+  // Re-estimate rows (optional): drawn only once their event is on the
+  // booking. A re-estimate raised during the repair is decided by the customer
+  // (approved / rejected) and the repair resumes — never a fabricated row.
+  { value: 'TECHNICIAN_REESTIMATE_REQUESTED',               label: 'Technician Re-Estimate Requested',      phase: SERVICE, group: G_PROCESS, optional: true },
+  { value: 'RE_ESTIMATED_CONFIRMED',                        label: 'Service Re-Estimated – Awaiting Customer Approval', phase: SERVICE, group: G_PROCESS, optional: true },
+  { value: 'RE_ESTIMATE_APPROVED',                          label: 'Re-Estimate Approved by Customer',      phase: SERVICE, group: G_PROCESS, optional: true },
+  { value: 'RE_ESTIMATE_REJECTED',                          label: 'Re-Estimate Rejected by Customer',      phase: SERVICE, group: G_PROCESS, optional: true },
   { value: 'CUSTOMER_APPROVED',                             label: 'Customer Approved',                     phase: SERVICE, group: G_PROCESS },
   // ── Stage 3 (left branch): Working Pending ────────────────────────────────
   // The repaired ending. QUALITY_CHECK_COMPLETED is kept even though it is not
@@ -100,7 +106,8 @@ export const SHOP_BOOKING_STATUS_OPTIONS = [
   // Spare parts are ONE row: PARTS_REQUIRED, "Spare Parts Waiting". The old
   // PARTS_REPLACED status was retired by migration 87, which also deleted its
   // history rows, so nothing renders it any more.
-  { value: 'IN_REPAIR',                                     label: 'Repair Work In Progress',               phase: SERVICE, group: G_PENDING },
+  { value: 'IN_REPAIR',                                     label: 'Repair Work in Progress',               phase: SERVICE, group: G_PENDING },
+  { value: 'REPAIR_WORK_RESUMED',                           label: 'Repair Work in Progress (Resumed)',     phase: SERVICE, group: G_PENDING, optional: true },
   { value: 'PARTS_REQUIRED',                                label: 'Spare Parts Waiting',                   phase: SERVICE, group: G_PENDING },
   { value: 'REPAIR_COMPLETED',                              label: 'Repair Completed',                      phase: SERVICE, group: G_PENDING },
   // One quality-check row. QUALITY_CHECK_STARTED ("Quality Check Pending") was
@@ -530,9 +537,11 @@ export function ServiceHistoryTimeline({ events, status, phaseFilter }) {
   // only the doorstep-pickup rows (pickup-person views), 'SERVICE' hides them
   // (technician Service History). No filter = both phases, with the
   // walk-in-bookings hide rule kept below.
-  const visibleOptions = phaseFilter
+  // Optional rows (re-estimate) appear only once their event is on the booking.
+  const visibleOptions = (phaseFilter
     ? SHOP_BOOKING_STATUS_OPTIONS.filter((o) => o.phase === phaseFilter)
-    : SHOP_BOOKING_STATUS_OPTIONS;
+    : SHOP_BOOKING_STATUS_OPTIONS
+  ).filter((o) => !o.optional || !!eventByStatus[o.value]);
 
   // Which of the two endings the booking actually took. The shared handover
   // tail (Out for Delivery, Invoice Generated) has a row under BOTH branches,

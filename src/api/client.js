@@ -7,6 +7,7 @@ import {
   ORDER_BASE,
 } from './config';
 import { getToken, clearSession, notifyAuthExpired } from '../auth/session';
+import { friendlyApiMessage, transportMessage, logDiagnostic } from '../utils/userMessages';
 
 // Decode a JWT's `exp` claim locally (base64url, no library) to distinguish a
 // GENUINE expiry from a signature/verification failure (e.g. JWT_SECRET drift or
@@ -60,9 +61,11 @@ async function request(baseUrlOrNull, method, path, { query, body, headers, skip
       baseUrlOrNull && typeof baseUrlOrNull === 'string' && baseUrlOrNull.includes('localhost')
         ? ' (note: localhost on a phone means the phone itself)'
         : '';
-    const msg = e?.message || 'Network request failed';
-    const err = new Error(`Network request failed${baseHint}. URL: ${urlString}. ${msg}`);
+    // Users see a plain message; the detail (no host, no token) is for developers.
+    const err = new Error(transportMessage(false));
     err.status = 0;
+    err.diagnostic = `${method} ${url.pathname}: ${e?.message || 'Network request failed'}${baseHint}`;
+    logDiagnostic(err);
     throw err;
   }
 
@@ -96,12 +99,16 @@ async function request(baseUrlOrNull, method, path, { query, body, headers, skip
       await clearSession();
       notifyAuthExpired();
     }
-    const message = sessionExpired
-      ? 'Your session has expired. Please log in again.'
-      : (json && (json.message || json.error)) || text || `HTTP ${res.status}`;
-    const err = new Error(message);
+    // err.message is always a safe, friendly sentence; the server's own text
+    // stays on err.serverMessage for logic (never shown unless it's a plain
+    // validation sentence) and err.diagnostic for developer logs.
+    const serverMessage = (json && (json.message || json.error)) || text || '';
+    const err = new Error(friendlyApiMessage({ status: res.status, serverMessage, method, hadToken: !!token, sessionExpired }));
     err.status = res.status;
     err.payload = json;
+    err.serverMessage = serverMessage;
+    err.diagnostic = `${method} ${url.pathname} → ${res.status}: ${String(serverMessage).slice(0, 300)}`;
+    logDiagnostic(err);
     throw err;
   }
 
@@ -136,8 +143,10 @@ async function uploadRequest(baseUrlOrNull, path, { uri, name, type, fields } = 
       body: form,
     });
   } catch (e) {
-    const err = new Error(`Upload failed. URL: ${urlString}. ${e?.message || 'Network request failed'}`);
+    const err = new Error(transportMessage(false));
     err.status = 0;
+    err.diagnostic = `UPLOAD ${new URL(urlString).pathname}: ${e?.message || 'Network request failed'}`;
+    logDiagnostic(err);
     throw err;
   }
 
@@ -149,9 +158,12 @@ async function uploadRequest(baseUrlOrNull, path, { uri, name, type, fields } = 
     if (token && ((res.status === 401 && base === AUTH_BASE) || ((res.status === 401 || res.status === 403) && isJwtExpired(token)))) {
       await clearSession(); notifyAuthExpired();
     }
-    const message = (json && (json.message || json.error)) || text || `HTTP ${res.status}`;
-    const err = new Error(message);
+    const serverMessage = (json && (json.message || json.error)) || text || '';
+    const err = new Error(friendlyApiMessage({ status: res.status, serverMessage, method: 'POST', hadToken: !!token }));
     err.status = res.status;
+    err.serverMessage = serverMessage;
+    err.diagnostic = `UPLOAD ${new URL(urlString).pathname} → ${res.status}: ${String(serverMessage).slice(0, 300)}`;
+    logDiagnostic(err);
     throw err;
   }
   return json;

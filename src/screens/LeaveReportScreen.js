@@ -24,6 +24,7 @@ import { MonthPill, TILE_TONES } from '../components/MintKit';
 import { LeftVerticalSidebar, SidebarLayout, useSidebarWidth } from '../components/JobCardKit';
 import MintScreenHeader, { useHideNativeHeader } from '../components/MintScreenHeader';
 import { notify } from '../components/confirm';
+import { userMessage } from '../utils/userMessages';
 
 const MAX_CONTENT_WIDTH = 720;
 
@@ -174,8 +175,8 @@ export default function LeaveReportScreen({ navigation, route }) {
       setError(null);
     } else {
       setList([]);
-      setError(monthRes.reason?.message || 'Could not load leave requests');
-      if (isRefresh) notify('Could not refresh', monthRes.reason?.message ?? 'Please try again', { preset: 'error', haptic: 'error' });
+      setError(userMessage(monthRes.reason, 'Could not load leave requests'));
+      if (isRefresh) notify('Could not refresh', userMessage(monthRes.reason, 'Please try again.'), { type: 'error', haptic: 'error' });
     }
     setAllLeaves(allRes.status === 'fulfilled' && Array.isArray(allRes.value) ? keep(allRes.value) : null);
     setLoading(false);
@@ -525,7 +526,7 @@ function LeaveDetailsModal({ item, onClose }) {
             <TouchableOpacity
               style={styles.attachBtn}
               activeOpacity={0.85}
-              onPress={() => Linking.openURL(item.attachmentUrl).catch(() => notify('Could not open attachment', '', { preset: 'error' }))}
+              onPress={() => Linking.openURL(item.attachmentUrl).catch(() => notify('Could not open attachment', '', { type: 'error' }))}
             >
               <Paperclip size={rs(16)} color={C.green} strokeWidth={2.2} />
               <Text style={styles.attachText}>View attachment</Text>

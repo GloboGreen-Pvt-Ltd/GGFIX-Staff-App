@@ -10,6 +10,7 @@ import TechnicianNavigator from './TechnicianNavigator';
 import GeofenceGate from '../components/GeofenceGate';
 import AppLockGate from '../components/AppLockGate';
 import BootSplash from '../components/BootSplash';
+import { notify } from '../components/confirm';
 
 // Keep the boot splash up long enough for its intro animation to play.
 const MIN_SPLASH_MS = 1600;
@@ -52,6 +53,8 @@ export default function RootNavigator() {
 
   useEffect(() => {
     setAuthExpiredHandler(() => {
+      // Several requests can fail at once; the toast slot shows this once.
+      notify('Session expired. Please log in again.', '', { type: 'warning' });
       setSessionState(null);
       dispatch(clearAuth());
     });
@@ -62,11 +65,13 @@ export default function RootNavigator() {
     setSessionState(newSession);
     dispatch(setSession(newSession));
   };
-  const handleLogout = async () => {
+  // opts.quiet: the caller already showed its own confirmation (check-out).
+  const handleLogout = async (opts) => {
     try { await logout(); } catch (_) {}
     await clearSession();
     setSessionState(null);
     dispatch(clearAuth());
+    if (!opts?.quiet) notify('Logged out successfully', '', { type: 'success' });
   };
 
   if (loading) return <BootSplash />;

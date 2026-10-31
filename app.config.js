@@ -31,7 +31,9 @@ export default {
     android: {
       package: 'com.neargfix.employee',
       // Firebase (project "neargfix") — needed for Android push (FCM).
-      googleServicesFile: './google-services.json',
+      // EAS: secret file env var GOOGLE_SERVICES_JSON (the JSON is not in git);
+      // local builds fall back to the untracked ./google-services.json.
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || './google-services.json',
       adaptiveIcon: { foregroundImage: './assets/logo.png', backgroundColor: '#202124' },
       // Checkout SOS alarm: exact timing at 6:30 PM + survive reboot.
       permissions: ['SCHEDULE_EXACT_ALARM', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE', 'POST_NOTIFICATIONS'],

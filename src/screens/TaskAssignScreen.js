@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { markNotificationsSeen } from './NotificationsScreen';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Pressable, ActivityIndicator, RefreshControl, Modal, Image, useWindowDimensions } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Pressable, ActivityIndicator, RefreshControl, Modal, Image, AppState } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import {
-  ChevronLeft,
   FileText,
   Users,
   CircleCheck,
@@ -28,18 +28,19 @@ import {
   RefreshCw,
   CircleAlert,
   Inbox,
-  ScanLine,
   Check,
 } from 'lucide-react-native';
 import { ticketApi, shopApi } from '../api/client';
 import { listMyTickets, acceptTicket, listTicketEvents } from '../api/tickets';
+import { autoStartRepair } from '../utils/autoProgress';
 import { selectShopId } from '../store/authSlice';
 import { confirm, notify } from '../components/confirm';
-import { rf, rs } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
+import { rf, rs, sheetWidth } from '../utils/responsive';
 import { ticketRef } from '../utils/ticketRef';
 import { resolveDeviceImageSource } from '../utils/images';
 import { listModelsForBrand } from '../api/master';
-import TicketCard from '../components/TicketCard';
+import { JobHeader, JobRail, MonthBar, JobPictureCard, KText } from '../components/JobCardKit';
 import { SearchBar } from '../components/rnr';
 
 // Search box match: job ref, device, customer, phone or issue (case-insensitive).
@@ -48,9 +49,8 @@ function matchesQuery(t, q) {
   return [ticketRef(t), t.deviceDisplayName, t.customerName, t.customerPhone, t.issueDescription, t.repairServicesSummary]
     .some((v) => v && String(v).toLowerCase().includes(q));
 }
-import { BadgeIconTile } from '../components/MintKit';
 
-// Screen palette — Near G Fix green / red / yellow on light neutrals plus the
+// Screen palette — NearGFix green / red / yellow on light neutrals plus the
 // accent set the Assign Report mockup uses for its stat cards.
 const C = {
   green: '#035C6C',
@@ -63,7 +63,7 @@ const C = {
   blue: '#0788C9',
   blueTint: '#E9F0FE',
   purple: '#1C3053',
-  purpleTint: '#F1EAFE',
+  purpleTint: '#E6F3FA',
   orange: '#FAA700',
   orangeTint: '#FEF1DD',
   ink: '#111111',
@@ -187,7 +187,6 @@ function deriveAssignment(events, ticket) {
 
 export default function TaskAssignScreen({ navigation }) {
   const now = new Date();
-  const { width } = useWindowDimensions();
   const shopId = useSelector(selectShopId);
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
@@ -201,7 +200,9 @@ export default function TaskAssignScreen({ navigation }) {
   const [eventsById, setEventsById] = useState({}); // id -> events[] | null (failed)
   const [eventsLoading, setEventsLoading] = useState(false);
   const [shopName, setShopName] = useState(null);
-  const [filter, setFilter] = useState('all'); // all | accepted | assigned
+  const [filter, setFilter] = useState('all'); // all | assigned | reassign | accepted
+  const [showSearch, setShowSearch] = useState(false);
+  const [listWidth, setListWidth] = useState(0);
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
   const [showAll, setShowAll] = useState(false);
@@ -209,10 +210,11 @@ export default function TaskAssignScreen({ navigation }) {
   const [info, setInfo] = useState(null); // { title, body }
 
   const scrollRef = useRef(null);
-  const sectionY = useRef({ reassign: 0, recent: 0 });
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true); else setLoading(true);
+  // silent: background poll — no spinner, keeps cached events (only new
+  // tickets fetch theirs), and a failed poll keeps the current list.
+  const load = useCallback(async (isRefresh = false, silent = false) => {
+    if (silent) { /* quiet */ } else if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
       const page = await listMyTickets({ page: 0, size: 100 });
       const items = Array.isArray(page?.content) ? page.content : (Array.isArray(page) ? page : []);
@@ -220,15 +222,22 @@ export default function TaskAssignScreen({ navigation }) {
       setError(null);
       if (isRefresh) setEventsById({});
     } catch (e) {
+      if (silent) return;
       setList([]);
-      setError(e?.message || 'Could not load tasks');
+      setError(userMessage(e, 'Could not load tasks'));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Re-read on every focus and every 30 s while open, so a job the owner
+  // assigns from the Partner App shows up without leaving the screen.
+  useFocusEffect(useCallback(() => {
+    load();
+    const id = setInterval(() => { if (AppState.currentState === 'active') load(false, true); }, 30000);
+    return () => clearInterval(id);
+  }, [load]));
 
   // Shop name stands in for "Assigned by": ticket events only carry the actor
   // role ("SHOP"), not a person's name.
@@ -295,11 +304,15 @@ export default function TaskAssignScreen({ navigation }) {
     () => [...monthScoped].sort((a, b) => sortKey(b) - sortKey(a)),
     [monthScoped, sortKey],
   );
+  // The rail's filter over one list (each job once); jobs still awaiting
+  // Accept / Reject stay on top, as the old Re-Assign section did.
   const recentFiltered = useMemo(() => {
     const base = recentAll.filter((t) => matchesQuery(t, q));
-    if (filter === 'accepted') return base.filter(isAccepted);
-    if (filter === 'assigned') return base.filter((t) => !isCancelled(t));
-    return base;
+    let out = base;
+    if (filter === 'accepted') out = base.filter(isAccepted);
+    else if (filter === 'assigned') out = base.filter((t) => !isCancelled(t));
+    else if (filter === 'reassign') out = base.filter(needsAccept);
+    return [...out.filter(needsAccept), ...out.filter((t) => !needsAccept(t))];
   }, [recentAll, filter, q]);
   const recentVisible = showAll ? recentFiltered : recentFiltered.slice(0, RECENT_PREVIEW);
 
@@ -329,21 +342,18 @@ export default function TaskAssignScreen({ navigation }) {
     setShowAll(false);
   };
 
-  const scrollTo = (key) => {
-    const y = sectionY.current[key];
-    scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+  const pickFilter = (key) => {
+    setFilter(key);
+    setShowAll(false);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
-  const onStatPress = (key) => {
-    if (key === 'reassign') { scrollTo('reassign'); return; }
-    setFilter(key === 'accepted' ? 'accepted' : key === 'assigned' ? 'assigned' : 'all');
-    setShowAll(false);
-    // Wait a frame so the filtered list lays out before scrolling.
-    requestAnimationFrame(() => scrollTo('recent'));
+  const toggleSearch = () => {
+    if (showSearch) setQuery('');
+    setShowSearch(!showSearch);
   };
 
   const openTicket = (t) => navigation.navigate('TechnicianTicketDetail', { ticketId: t.id });
-  const openHistory = (t) => navigation.navigate('TechnicianBookingTimeline', { ticketId: t.id });
 
   // Accept hits the dedicated endpoint (POST /tickets/{id}/accept). Backend
   // stamps technician_accepted_at, bumps a CREATED ticket to IN_DIAGNOSIS,
@@ -361,10 +371,14 @@ export default function TaskAssignScreen({ navigation }) {
     setActingOn(ticketId);
     try {
       await acceptTicket(ticketId);
+      // Repair Work Started follows Accept on its own — once the customer
+      // approval is current (utils/autoProgress); Job Details catches later approvals.
+      await autoStartRepair(ticketId);
       setReviewTicket(null);
+      notify('Job accepted', '', { type: 'success' });
       await load(true);
     } catch (e) {
-      notify('Error', e?.message || 'Could not accept ticket');
+      notify('Could not accept job', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       setActingOn(null);
     }
@@ -383,9 +397,10 @@ export default function TaskAssignScreen({ navigation }) {
     try {
       await ticketApi.patch(`/tickets/${ticketId}/status`, { query: { status: 'CANCELLED' } });
       setReviewTicket(null);
+      notify('Job rejected', '', { type: 'success' });
       await load(true);
     } catch (e) {
-      notify('Error', e?.message || 'Could not update ticket');
+      notify('Could not reject job', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       setActingOn(null);
     }
@@ -400,163 +415,102 @@ export default function TaskAssignScreen({ navigation }) {
   };
 
   const initialLoading = loading && list.length === 0;
-  const wide = width >= 640;
+  // Two columns once the list pane is tablet-wide.
+  const wide = listWidth >= rs(600);
+  const railCounts = { all: counts.total, assigned: counts.assigned, reassign: counts.reassign, accepted: counts.accepted };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header */}
-      {/* Header: back · title + subtitle (left aligned), white bar, light bottom line */}
-      <View style={styles.headerBar}>
-        <View style={{ width: rs(36) }}>
-          {navigation.canGoBack() ? (
-            <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={8} accessibilityLabel="Back" activeOpacity={0.7} style={styles.headerBack}>
-              <ChevronLeft size={rs(20)} color="#111111" strokeWidth={2.4} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-        <View style={{ flex: 1, minWidth: 0, alignItems: 'center' }}>
-          <Text style={styles.headerTitle} numberOfLines={1}>Job Assign Report</Text>
-          <Text style={styles.headerSub} numberOfLines={1}>Assigned Jobs</Text>
-        </View>
-        {/* spacer = back button width, keeps the title truly centered */}
-        <View style={{ width: rs(36) }} />
-      </View>
+      <JobHeader
+        navigation={navigation}
+        title="Job Assign Report"
+        sub="Assigned Jobs"
+        searchOn={showSearch}
+        onSearch={toggleSearch}
+        onScan={() => navigation.navigate('ScanTicketQr')}
+      />
 
-      {/* Search (ref / device / customer / phone / issue) + scan a job QR */}
-      <View style={{ backgroundColor: C.bg, paddingHorizontal: rs(14), paddingTop: rs(10) }}>
-        <SearchBar
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search job, device, customer"
-          onClear={() => setQuery('')}
-          rightAccessory={(
-            <TouchableOpacity
-              onPress={() => navigation.navigate('ScanTicketQr')}
-              hitSlop={8} accessibilityLabel="Scan job QR code" activeOpacity={0.7}
-              style={{ marginLeft: rs(8), paddingLeft: rs(10), borderLeftWidth: 1, borderLeftColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <ScanLine size={rs(18)} color={C.green} strokeWidth={2.2} />
-            </TouchableOpacity>
+      {/* Search (ref / device / customer / phone / issue) */}
+      {showSearch ? (
+        <View style={styles.searchWrap}>
+          <SearchBar
+            className="rounded-full py-2.5"
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search job, device, customer"
+            onClear={() => setQuery('')}
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.body}>
+        <JobRail items={ASSIGN_RAIL} counts={railCounts} active={filter} onPick={pickFilter} />
+
+        <ScrollView
+          ref={scrollRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.content}
+          onLayout={(e) => setListWidth(e.nativeEvent.layout.width)}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.green} colors={[C.green]} />}
+        >
+          <MonthBar
+            title={`${MONTHS[month - 1]} ${year}`}
+            sub={`${counts.total} ${counts.total === 1 ? 'job' : 'jobs'}`}
+            onPrev={() => stepMonth(-1)}
+            onNext={() => stepMonth(1)}
+          />
+
+          {error && list.length === 0 ? (
+            <View style={[styles.card, styles.stateBox]}>
+              <CircleAlert size={rs(30)} color={C.red} />
+              <Text style={styles.stateTitle}>Couldn't load tasks</Text>
+              <Text style={styles.stateText}>{error}</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={() => load()} activeOpacity={0.85}>
+                <RefreshCw size={rs(14)} color={C.white} />
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : initialLoading ? (
+            <ActivityIndicator color={C.green} style={{ marginVertical: 18 }} />
+          ) : recentFiltered.length === 0 ? (
+            <EmptyRow text={q ? `No jobs match "${query.trim()}".` : `No assigned tasks in ${MONTHS[month - 1]} ${year}.`} />
+          ) : (
+            <View style={wide ? styles.cardGrid : null}>
+              {recentFiltered.map((t) => {
+                const a = assignInfo[t.id] || {};
+                const byLabel = a.reassigned ? 'Reassigned by' : 'Assigned by';
+                return (
+                  <View key={t.id} style={wide ? styles.cardCell : null}>
+                    {needsAccept(t) ? (
+                      <ReassignRow
+                        ticket={t}
+                        byLabel={byLabel}
+                        byName={assignerName(t)}
+                        when={a.assignedAt || t.createdAt}
+                        busy={actingOn === t.id}
+                        onAccept={() => handleAccept(t.id)}
+                        onReject={() => handleReject(t.id)}
+                        // Not accepted yet → the limited Review sheet, not the full job.
+                        onOpen={() => setReviewTicket(t)}
+                      />
+                    ) : (
+                      <RecentRow
+                        ticket={t}
+                        byName={assignerName(t)}
+                        byLabel={byLabel}
+                        assignedAt={a.assignedAt || t.createdAt}
+                        acceptedAt={a.acceptedAt}
+                        onPress={() => openTicket(t)}
+                      />
+                    )}
+                  </View>
+                );
+              })}
+            </View>
           )}
-        />
+        </ScrollView>
       </View>
-
-      <ScrollView
-        ref={scrollRef}
-        style={{ backgroundColor: C.bg }}
-        contentContainerStyle={[styles.content, { width: '100%', maxWidth: 900, alignSelf: 'center', paddingTop: rs(8) }]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.green} colors={[C.green]} />}
-      >
-
-        {/* Stat cards */}
-        <View style={styles.statRow}>
-          <StatCard
-            label="Total" value={counts.total} caption="Total tasks this month"
-            Icon={BriefcaseBusiness} fg="#1C3053" tint={C.purpleTint} wave="#EFE6FD"
-            active={filter === 'all'} onPress={() => onStatPress('total')}
-          />
-          <StatCard
-            label="Assigned" value={counts.assigned} caption="Tasks assigned this month"
-            Icon={FileText} fg={C.green} tint={C.greenTint} wave="#E5F3F5"
-            active={filter === 'assigned'} onPress={() => onStatPress('assigned')}
-          />
-          <StatCard
-            label="Re-Assign" value={counts.reassign} caption="Tasks sent for re-assignment"
-            Icon={Users} fg="#FAA700" tint={C.orangeTint} wave="#FDF0DA"
-            onPress={() => onStatPress('reassign')}
-          />
-          <StatCard
-            label="Accepted" value={counts.accepted} caption="Tasks accepted by employees"
-            Icon={CircleCheck} fg="#0788C9" tint={C.blueTint} wave="#E6EEFD"
-            active={filter === 'accepted'} onPress={() => onStatPress('accepted')}
-          />
-        </View>
-
-        {error && list.length === 0 ? (
-          <View style={[styles.card, styles.stateBox]}>
-            <CircleAlert size={rs(30)} color={C.red} />
-            <Text style={styles.stateTitle}>Couldn't load tasks</Text>
-            <Text style={styles.stateText}>{error}</Text>
-            <TouchableOpacity style={styles.retryBtn} onPress={() => load()} activeOpacity={0.85}>
-              <RefreshCw size={rs(14)} color={C.white} />
-              <Text style={styles.retryText}>Retry</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            {/* Re-assigned tickets awaiting acceptance (no section heading) */}
-            <View
-              style={styles.sectionPlain}
-              onLayout={(e) => { sectionY.current.reassign = e.nativeEvent.layout.y; }}
-            >
-              <View style={wide ? styles.cardGrid : null}>
-              {initialLoading ? null : (
-                reassignList.filter((t) => matchesQuery(t, q)).map((t) => {
-                  const a = assignInfo[t.id] || {};
-                  return (
-                    <View key={t.id} style={wide ? styles.cardCell : null}>
-                    <ReassignRow
-                      key={t.id}
-                      ticket={t}
-                      byLabel={a.reassigned ? 'Reassigned by' : 'Assigned by'}
-                      byName={assignerName(t)}
-                      when={a.assignedAt || t.createdAt}
-                      busy={actingOn === t.id}
-                      onAccept={() => handleAccept(t.id)}
-                      onReject={() => handleReject(t.id)}
-                      onOpen={() => openTicket(t)}
-                      onHistory={() => openHistory(t)}
-                    />
-                    </View>
-                  );
-                })
-              )}
-              </View>
-            </View>
-
-            {/* Assigned tasks (no section heading) */}
-            <View
-              style={styles.sectionPlain}
-              onLayout={(e) => { sectionY.current.recent = e.nativeEvent.layout.y; }}
-            >
-              {filter !== 'all' ? (
-                <TouchableOpacity style={styles.filterChip} onPress={() => setFilter('all')} activeOpacity={0.8}>
-                  <Text style={styles.filterChipText}>
-                    Showing: {filter === 'accepted' ? 'Accepted' : 'Assigned (active)'}
-                  </Text>
-                  <X size={rs(12)} color={C.green} />
-                </TouchableOpacity>
-              ) : null}
-              {initialLoading ? (
-                <ActivityIndicator color={C.green} style={{ marginVertical: 18 }} />
-              ) : recentFiltered.length === 0 ? (
-                <EmptyRow text={q ? `No jobs match "${query.trim()}".` : `No assigned tasks in ${MONTHS[month - 1]} ${year}.`} />
-              ) : (
-                <View style={wide ? styles.cardGrid : null}>
-                {recentFiltered.map((t) => {
-                  const a = assignInfo[t.id] || {};
-                  return (
-                    <View key={t.id} style={wide ? styles.cardCell : null}>
-                    <RecentRow
-                      key={t.id}
-                      ticket={t}
-                      byName={assignerName(t)}
-                      byLabel={a.reassigned ? 'Reassigned by' : 'Assigned by'}
-                      assignedAt={a.assignedAt || t.createdAt}
-                      acceptedAt={a.acceptedAt}
-                      onPress={() => openTicket(t)}
-                      onLongPress={() => openHistory(t)}
-                    />
-                    </View>
-                  );
-                })}
-                </View>
-              )}
-            </View>
-          </>
-        )}
-      </ScrollView>
 
       <ReviewSheet
         ticket={reviewTicket}
@@ -566,13 +520,11 @@ export default function TaskAssignScreen({ navigation }) {
         onClose={() => setReviewTicket(null)}
         onAccept={() => reviewTicket && handleAccept(reviewTicket.id)}
         onReject={() => reviewTicket && handleReject(reviewTicket.id)}
-        onOpen={() => { const t = reviewTicket; setReviewTicket(null); if (t) openTicket(t); }}
-        onHistory={() => { const t = reviewTicket; setReviewTicket(null); if (t) openHistory(t); }}
       />
 
       <Modal visible={!!info} transparent animationType="fade" onRequestClose={() => setInfo(null)}>
         <Pressable style={styles.backdropCenter} onPress={() => setInfo(null)}>
-          <Pressable style={styles.infoBox} onPress={() => {}}>
+          <Pressable style={[styles.infoBox, sheetWidth]} onPress={() => {}}>
             <View style={styles.infoHead}>
               <Info size={rs(18)} color={C.green} />
               <Text style={styles.infoTitle}>{info?.title}</Text>
@@ -589,9 +541,13 @@ export default function TaskAssignScreen({ navigation }) {
 }
 
 // ---------- building blocks ----------
-function StatCard({ label, value, Icon, fg, onPress, active }) {
-  return <BadgeIconTile icon={Icon} color={fg} label={label} count={value} active={active} onPress={onPress} size={rs(42)} />;
-}
+// Rail filters (Partner Job Report gradient tiles).
+const ASSIGN_RAIL = [
+  { key: 'all', label: 'All Jobs', icon: BriefcaseBusiness, tone: 'teal' },
+  { key: 'assigned', label: 'Assigned', icon: FileText, tone: 'blue' },
+  { key: 'reassign', label: 'Re-Assign', icon: Users, tone: 'orange' },
+  { key: 'accepted', label: 'Accepted', icon: CircleCheck, tone: 'green' },
+];
 
 function EmptyRow({ text }) {
   return (
@@ -636,8 +592,8 @@ function DeviceBadge({ ticket }) {
   return (
     <View style={[styles.deviceBadge, { backgroundColor: src && !failed ? C.white : bg, overflow: 'hidden' }]}>
       {src && !failed
-        ? <Image source={{ uri: src }} style={{ width: rs(30), height: rs(30) }} resizeMode="contain" onError={() => setFailed(true)} />
-        : <Icon size={rs(17)} color={fg} strokeWidth={2.2} />}
+        ? <Image source={{ uri: src }} style={{ width: rs(26), height: rs(26) }} resizeMode="contain" onError={() => setFailed(true)} />
+        : <Icon size={rs(15)} color={fg} strokeWidth={2.2} />}
     </View>
   );
 }
@@ -662,77 +618,91 @@ function splitDevice(ticket) {
   return { model: parts[0] || 'Device', specs: parts.slice(1).join(' - '), color: clean(ticket.color || '') };
 }
 
-function ReassignRow({ ticket, byLabel, byName, when, busy, onAccept, onReject, onOpen, onHistory }) {
+// A shown value, or null for blanks / placeholders.
+const shownText = (v) => {
+  const x = v == null ? '' : String(v).trim();
+  return x && !/^(n\/?a|na|null|undefined|none|-+|—+)$/i.test(x) ? x : null;
+};
+
+// Awaiting the technician: Waiting tab, then Reject · Accept under the details.
+// Tap the card for details, long-press it for history.
+function ReassignRow({ ticket, byLabel, byName, when, busy, onAccept, onReject, onOpen }) {
   return (
-    <TicketCard
-      badge={<DeviceBadge ticket={ticket} />}
-      refId={ticketRef(ticket)} title={splitDevice(ticket).model} subtitle={splitDevice(ticket).specs || null} subtitle2={splitDevice(ticket).color ? `Colour: ${splitDevice(ticket).color}` : null}
-      status="Waiting" statusColor="#FAA700" statusIcon={Clock}
-      date={fmtDate(when)} time={fmtTime(when)}
-      iconBubble
-      rows={[
-        [{ icon: Wrench, label: 'Issue', value: ticket.issueDescription || ticket.repairServicesSummary }, null],
+    <JobPictureCard
+      ticket={ticket}
+      tab="Waiting"
+      tabColor={C.orange}
+      refText={ticketRef(ticket)}
+      model={splitDevice(ticket).model}
+      lines={[
+        { text: shownText(ticket.customerName) },
+        { icon: Users, text: byName ? `${byLabel} ${byName}` : null },
+        { icon: Wrench, text: shownText(ticket.issueDescription) || shownText(ticket.repairServicesSummary) },
       ]}
-      aside={(
-        // Reject · Accept pills beside the issue. Tap the card for details,
-        // long-press it for history.
+      date={fmtDate(when)}
+      time={fmtTime(when)}
+      footer={(
         <View style={styles.cardActions}>
           <TouchableOpacity style={styles.rejectBtn} onPress={onReject} disabled={busy}
             activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Reject job">
-            <View style={styles.rejectDot}><X size={rs(12)} color={C.white} strokeWidth={3} /></View>
-            <Text style={styles.rejectText}>Job Reject</Text>
+            <View style={styles.rejectDot}><X size={rs(10)} color={C.white} strokeWidth={3} /></View>
+            <KText size={11.5} weight="700" color={C.red} numberOfLines={1}>Reject</KText>
           </TouchableOpacity>
           <TouchableOpacity style={styles.acceptBtn} onPress={onAccept} disabled={busy}
             activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Accept job">
             {busy ? <ActivityIndicator color={C.white} size="small" /> : (
               <>
-                <View style={styles.acceptDot}><Check size={rs(12)} color={C.green} strokeWidth={3} /></View>
-                <Text style={styles.acceptText}>Job Accept</Text>
+                <View style={styles.acceptDot}><Check size={rs(10)} color={C.green} strokeWidth={3} /></View>
+                <KText size={11.5} weight="700" color={C.white} numberOfLines={1}>Accept</KText>
               </>
             )}
           </TouchableOpacity>
         </View>
       )}
       onPress={onOpen}
-      onLongPress={onHistory}
     />
   );
 }
 
+// Tab label + colour from the assignment data.
 function statusPill(t) {
   if (isCancelled(t)) return { label: 'Cancelled', fg: C.red, bg: C.redTint, Icon: X };
-  if (isAccepted(t)) return { label: 'Accepted', fg: C.green, bg: C.greenTint, Icon: CircleCheck };
+  if (isAccepted(t)) return { label: 'Accepted', fg: '#609138', bg: C.greenTint, Icon: CircleCheck };
   return { label: 'Assigned', fg: C.blue, bg: C.blueTint, Icon: Clock };
 }
 
-function RecentRow({ ticket, byLabel, byName, assignedAt, acceptedAt, onPress, onLongPress }) {
+function RecentRow({ ticket, byLabel, byName, assignedAt, acceptedAt, onPress }) {
   const p = statusPill(ticket);
   // Time range = assigned → accepted when both fall on the same day.
   const range = fmtTime(assignedAt)
     ? (acceptedAt && sameDay(assignedAt, acceptedAt) ? `${fmtTime(assignedAt)} - ${fmtTime(acceptedAt)}` : fmtTime(assignedAt))
     : '';
   return (
-    <TicketCard
-      badge={<DeviceBadge ticket={ticket} />}
-      refId={ticketRef(ticket)} title={splitDevice(ticket).model} subtitle={splitDevice(ticket).specs || null} subtitle2={splitDevice(ticket).color ? `Colour: ${splitDevice(ticket).color}` : null}
-      status={p.label} statusColor={p.fg} statusIcon={p.Icon}
-      date={fmtDate(assignedAt)} time={range}
-      iconBubble
-      rows={[
-        [{ icon: Wrench, label: 'Issue', value: ticket.issueDescription || ticket.repairServicesSummary }, null],
+    <JobPictureCard
+      ticket={ticket}
+      tab={p.label}
+      tabColor={p.fg}
+      refText={ticketRef(ticket)}
+      model={splitDevice(ticket).model}
+      lines={[
+        { text: shownText(ticket.customerName) },
+        { icon: Users, text: byName ? `${byLabel} ${byName}` : null },
+        { icon: Wrench, text: shownText(ticket.issueDescription) || shownText(ticket.repairServicesSummary) },
       ]}
-      onPress={onPress} onLongPress={onLongPress}
+      date={fmtDate(assignedAt)}
+      time={range}
+      onPress={onPress}
     />
   );
 }
 
-function ReviewSheet({ ticket, busy, byName, info, onClose, onAccept, onReject, onOpen, onHistory }) {
+function ReviewSheet({ ticket, busy, byName, info, onClose, onAccept, onReject }) {
   const visible = !!ticket;
   const when = info?.assignedAt || ticket?.createdAt;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
+        <Pressable style={[styles.sheet, sheetWidth]} onPress={() => {}}>
           {ticket ? (
             <>
               <View style={styles.sheetHandle} />
@@ -769,14 +739,6 @@ function ReviewSheet({ ticket, busy, byName, info, onClose, onAccept, onReject, 
                   {busy ? <ActivityIndicator color={C.white} size="small" /> : <Text style={styles.sheetBtnText}>Accept</Text>}
                 </TouchableOpacity>
               </View>
-              <View style={styles.sheetLinks}>
-                <TouchableOpacity onPress={onOpen} style={styles.sheetLink} activeOpacity={0.8}>
-                  <Text style={styles.sheetLinkText}>View Details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={onHistory} style={styles.sheetLink} activeOpacity={0.8}>
-                  <Text style={styles.sheetLinkText}>History</Text>
-                </TouchableOpacity>
-              </View>
             </>
           ) : null}
         </Pressable>
@@ -795,13 +757,15 @@ const shadow = {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FFFFFF' },
+  searchWrap: { backgroundColor: C.white, paddingHorizontal: rs(14), paddingVertical: rs(10), borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  body: { flex: 1, flexDirection: 'row', backgroundColor: C.white },
   headerBar: { flexDirection: 'row', alignItems: 'center', gap: rs(10), backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', paddingHorizontal: rs(14), paddingVertical: rs(10) },
   headerBack: { width: rs(36), height: rs(36), borderRadius: rs(18), backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: rf(17), fontWeight: '800', color: '#1C3053', textAlign: 'center' },
 
   headerSub: { fontSize: rf(12), color: '#6B7280', marginTop: 1, textAlign: 'center' },
 
-  content: { paddingHorizontal: rs(12), paddingTop: 4, paddingBottom: 24 },
+  content: { paddingTop: rs(10), paddingLeft: rs(11), paddingRight: rs(9), paddingBottom: rs(24) },
   cardGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   cardCell: { width: '49%' },
 
@@ -828,7 +792,7 @@ const styles = StyleSheet.create({
   calGridRow: { flexDirection: 'row' },
   calRing: { position: 'absolute', top: 0, backgroundColor: '#035C6C' },
 
-  statRow: { flexDirection: 'row', gap: rs(4), marginBottom: rs(10), backgroundColor: '#FFFFFF', borderRadius: rs(16), borderWidth: 1, borderColor: '#E5E7EB', paddingVertical: rs(10), paddingHorizontal: rs(6) },
+  statRow: { flexDirection: 'row', gap: rs(4), marginBottom: rs(8), backgroundColor: '#FFFFFF', borderRadius: rs(14), borderWidth: 1, borderColor: '#E5E7EB', paddingVertical: rs(6), paddingHorizontal: rs(6) },
   statCard: {
     flex: 1, minWidth: 0, backgroundColor: C.white, borderRadius: 14, paddingHorizontal: 7, paddingTop: 7, paddingBottom: 8,
     borderWidth: 1, borderColor: 'transparent', overflow: 'hidden', ...shadow,
@@ -926,25 +890,22 @@ const styles = StyleSheet.create({
   sheetActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   sheetBtn: { flex: 1, borderRadius: 14, paddingVertical: 12, alignItems: 'center', justifyContent: 'center', minHeight: 46 },
   sheetBtnText: { color: C.white, fontSize: rf(13.5), fontWeight: '800' },
-  sheetLinks: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  sheetLink: { flex: 1, borderRadius: 14, paddingVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: C.border },
-  sheetLinkText: { color: C.ink, fontSize: rf(12.5), fontWeight: '700' },
-  cardActions: { flexDirection: 'row', gap: rs(8) },
+  cardActions: { flexDirection: 'row', gap: rs(6), marginTop: rs(6) },
   rejectBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(6),
-    backgroundColor: '#FDECEC', borderWidth: 1, borderColor: '#F9C9C7', borderRadius: rs(12),
-    paddingVertical: rs(6), paddingLeft: rs(6), paddingRight: rs(10),
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(5),
+    backgroundColor: '#FDECEC', borderWidth: 1, borderColor: '#F9C9C7', borderRadius: rs(10),
+    paddingVertical: rs(4), paddingLeft: rs(5), paddingRight: rs(8),
   },
-  rejectDot: { width: rs(22), height: rs(22), borderRadius: rs(11), backgroundColor: C.red, alignItems: 'center', justifyContent: 'center' },
-  rejectText: { color: C.red, fontSize: rf(12), fontWeight: '700' },
+  rejectDot: { width: rs(18), height: rs(18), borderRadius: rs(9), backgroundColor: C.red, alignItems: 'center', justifyContent: 'center' },
+  rejectText: { color: C.red, fontSize: rf(11), fontWeight: '700' },
   acceptBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6), minWidth: rs(84),
-    backgroundColor: C.green, borderRadius: rs(12),
-    paddingVertical: rs(6), paddingLeft: rs(6), paddingRight: rs(10),
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(5),
+    backgroundColor: C.green, borderRadius: rs(10),
+    paddingVertical: rs(4), paddingLeft: rs(5), paddingRight: rs(8),
     shadowColor: C.green, shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 3,
   },
-  acceptDot: { width: rs(22), height: rs(22), borderRadius: rs(11), backgroundColor: C.white, alignItems: 'center', justifyContent: 'center' },
-  acceptText: { color: C.white, fontSize: rf(12), fontWeight: '700' },
+  acceptDot: { width: rs(18), height: rs(18), borderRadius: rs(9), backgroundColor: C.white, alignItems: 'center', justifyContent: 'center' },
+  acceptText: { color: C.white, fontSize: rf(11), fontWeight: '700' },
 
   infoBox: { backgroundColor: C.white, borderRadius: 18, padding: 18 },
   infoHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },

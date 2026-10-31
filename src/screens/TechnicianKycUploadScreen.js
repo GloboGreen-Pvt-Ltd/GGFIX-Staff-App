@@ -10,6 +10,7 @@ import { saveMyKycDocuments } from '../api/technicianKyc';
 import { notify } from '../components/confirm';
 import { rf } from '../utils/responsive';
 import { useSecureScreen } from '../utils/secureScreen';
+import { userMessage } from '../utils/userMessages';
 
 const DOCS = [
   { key: 'aadharFront', title: 'Aadhar Card Front', required: true, group: 'identity' },
@@ -54,7 +55,7 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
       if (result.canceled || !result.assets?.[0]?.uri) return;
       setFiles((prev) => ({ ...prev, [key]: result.assets[0] }));
     } catch (e) {
-      notify('Could not pick image', e?.message || 'Please try again.', { preset: 'error' });
+      notify('Could not pick image', 'Please try again.', { type: 'error' });
     }
   };
 
@@ -89,7 +90,7 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
       if (!files.aadharFront) missing.push('Aadhar Card Front');
       if (!files.aadharBack)  missing.push('Aadhar Card Back');
       if (!files.pan)         missing.push('PAN Card');
-      notify('Required documents missing', `Please upload: ${missing.join(', ')}`);
+      notify('Required documents missing', `Please upload: ${missing.join(', ')}`, { type: 'warning' });
       return;
     }
     setSubmitting(true);
@@ -129,7 +130,7 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
           // eslint-disable-next-line no-console
           console.warn(`KYC upload failed for ${doc.title}:`, uploadErr?.message);
           failedTitles.push(doc.title);
-          failReason = failReason || uploadErr?.message;
+          failReason = failReason || userMessage(uploadErr, 'Please try again.');
         }
         // Only persist a real hosted URL. A device-local file:// path is
         // meaningless to the backend/admin and there is no retry queue, so a
@@ -142,8 +143,8 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
       if (failedTitles.length > 0) {
         notify(
           'Upload failed',
-          `Could not upload: ${failedTitles.join(', ')}.${failReason ? `\n${failReason}` : ' Please try again.'}`,
-          { preset: 'error', haptic: 'error' }
+          `Could not upload: ${failedTitles.join(', ')}. ${failReason || 'Please try again.'}`,
+          { type: 'error', haptic: 'error' }
         );
         return;
       }
@@ -151,9 +152,9 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
       await saveMyKycDocuments(payload);
 
       notify(
-        'Submitted',
-        'KYC documents submitted successfully. Admin will review them shortly.',
-        { preset: 'done' }
+        'KYC documents submitted',
+        'Admin will review them shortly.',
+        { type: 'success' }
       );
       // Land on the View screen (with Edit button) so the user sees what they
       // just uploaded; AccountTab sits underneath so back returns there instead
@@ -168,7 +169,7 @@ export default function TechnicianKycUploadScreen({ navigation, route }) {
         })
       );
     } catch (e) {
-      notify('Submit failed', e?.message || 'Please try again.', { preset: 'error', haptic: 'error' });
+      notify('Could not submit documents', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setSubmitting(false);
     }

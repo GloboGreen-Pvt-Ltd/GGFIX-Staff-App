@@ -126,14 +126,14 @@ export default function TechnicianKycViewScreen({ route, navigation }) {
                 document was REJECTED, so the employee is never left at a dead-end. */}
             {overallStatus === 'REJECTED' ? (
               <View style={styles.rejectBanner}>
-                <Ionicons name="alert-circle" size={16} color="#D93434" />
+                <Ionicons name="alert-circle" size={16} color="#F32C26" />
                 <Text style={styles.rejectBannerText}>
                   A document was rejected. Re-upload it below to resubmit your KYC for review.
                 </Text>
               </View>
             ) : (
               <View style={styles.lockBanner}>
-                <Ionicons name="lock-closed" size={16} color="#8A6700" />
+                <Ionicons name="lock-closed" size={16} color="#FAA700" />
                 <Text style={styles.lockBannerText}>
                   Your KYC documents are on file and managed by your shop. Contact your shop owner to make changes.
                 </Text>
@@ -240,14 +240,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#FDF6E0', borderRadius: 12, padding: 10, marginBottom: 10,
     borderWidth: 1, borderColor: '#F6DE8D',
   },
-  lockBannerText: { flex: 1, fontSize: rf(11.5), color: '#8A6700', fontWeight: '600', lineHeight: rlh(16) },
+  lockBannerText: { flex: 1, fontSize: rf(11.5), color: '#FAA700', fontWeight: '600', lineHeight: rlh(16) },
 
   rejectBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: '#FEECEC', borderRadius: 12, padding: 10, marginBottom: 10,
     borderWidth: 1, borderColor: '#FBD0D0',
   },
-  rejectBannerText: { flex: 1, fontSize: rf(11.5), color: '#C62E2E', fontWeight: '600', lineHeight: rlh(16) },
+  rejectBannerText: { flex: 1, fontSize: rf(11.5), color: '#F32C26', fontWeight: '600', lineHeight: rlh(16) },
   reuploadBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: '#F32C26', borderRadius: 999, paddingVertical: 10, marginTop: 12,

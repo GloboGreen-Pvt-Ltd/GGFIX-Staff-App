@@ -7,6 +7,7 @@ import { getPickupRepairEstimate, submitPickupRepairEstimate } from '../api/pick
 import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
 import { rf, rs } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
 // `key` is the estimate payload field; `slot` is the short name the media
 // endpoint uses as the S3 filename stem (Devicefiles/front-3f9c11ab.jpg), which
@@ -114,7 +115,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
         return { ...def, uri: url, remoteUrl: url };
       }));
     } catch (e) {
-      notify('Could not load estimate', e?.message || 'Please try again.');
+      notify('Could not load estimate', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -151,7 +152,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
       return next;
     });
     } catch (e) {
-      notify('Could not open gallery', e?.message || 'Please try again.');
+      notify('Could not open gallery', 'Please try again.', { type: 'error' });
     }
   };
 
@@ -166,11 +167,11 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
   const submit = async () => {
     const cleanedAmount = String(amount || '').replace(/[^0-9.]/g, '');
     if (!cleanedAmount || Number(cleanedAmount) <= 0) {
-      notify('Estimate required', 'Enter the estimated repair value.');
+      notify('Estimate required', 'Enter the estimated repair value.', { type: 'warning' });
       return;
     }
     if (!slots.some((slot) => slot.uri || slot.remoteUrl)) {
-      notify('Device image required', 'Upload at least one device image.');
+      notify('Device image required', 'Upload at least one device image.', { type: 'warning' });
       return;
     }
     setSubmitting(true);
@@ -190,7 +191,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
           slot: slot.slot,
         });
         const url = res?.url || res?.secure_url;
-        if (!url) throw new Error('Upload returned no URL');
+        if (!url) throw new Error('Upload failed. Please try again.');
         uploaded[slot.key] = url;
       }
       // Convert hours-from-now into ISO timestamps the backend expects.
@@ -212,10 +213,10 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
         customerApproval: customerApproved ? 'DONE' : 'PENDING',
         ...uploaded,
       });
-      notify('Estimate submitted', 'Repair estimate saved for this booking.');
+      notify('Estimate submitted', 'Repair estimate saved for this booking.', { type: 'success' });
       navigation.goBack();
     } catch (e) {
-      notify('Submit failed', e?.message || 'Could not save repair estimate.');
+      notify('Could not submit estimate', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       setSubmitting(false);
     }

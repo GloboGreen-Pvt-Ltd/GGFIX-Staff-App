@@ -1,5 +1,5 @@
 // Foreground half of the checkout SOS (see utils/checkoutAlarm.js for the
-// OS-scheduled notifications). While the app is open past 6:30 PM and the
+// OS-scheduled notifications). While the app is open past the duty end and the
 // technician is still checked in, this shows a blocking red alert and loops
 // the siren until they check out. "Snooze" mutes it for SNOOZE_MS only.
 import React, { useEffect, useRef, useState } from 'react';
@@ -58,7 +58,7 @@ export default function CheckoutSosAlarm({ onDuty, busy, onCheckOut }) {
           <Text style={{ fontSize: 40 }}>🚨</Text>
           <Text style={{ fontSize: 20, fontWeight: '800', color: '#F32C26', marginTop: 6 }}>SOS: Check-out pending</Text>
           <Text style={{ fontSize: 14, color: '#333', textAlign: 'center', marginTop: 8 }}>
-            It is past 6:30 PM and you have not checked out yet. Please check out now.
+            Your shift has ended and you have not checked out yet. Please check out now.
           </Text>
           <TouchableOpacity
             onPress={onCheckOut}

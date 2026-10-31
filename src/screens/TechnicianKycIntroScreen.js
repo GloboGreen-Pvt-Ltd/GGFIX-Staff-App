@@ -20,7 +20,7 @@ const BORDER = '#E5E7EB';
 
 const DOCS = [
   { key: 'aadhar', icon: 'id-card-outline', title: 'Aadhar Card', desc: 'Front & back — identity proof', color: '#035C6C', soft: '#E5F3F5' },
-  { key: 'pan',    icon: 'card-outline',    title: 'PAN Card',    desc: 'For tax verification',       color: '#8A6700', soft: '#FDF6E0' },
+  { key: 'pan',    icon: 'card-outline',    title: 'PAN Card',    desc: 'For tax verification',       color: '#FAA700', soft: '#FDF6E0' },
 ];
 
 const STEPS = [

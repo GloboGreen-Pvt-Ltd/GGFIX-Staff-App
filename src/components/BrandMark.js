@@ -3,7 +3,7 @@ import { Image, View } from 'react-native';
 import { Text } from './Typography';
 import { rf, rs } from '../utils/responsive';
 
-// Near G Fix logo roundel + "Near G Fix" wordmark + "BY GLOBO GREEN" byline, used on the
+// NearGFix logo roundel + "NearGFix" wordmark + "BY GLOBO GREEN" byline, used on the
 // light auth / gate screens. `services` adds the "A • B • C" line under it.
 export default function BrandMark({ size = 84, services, style }) {
   const s = rs(size);

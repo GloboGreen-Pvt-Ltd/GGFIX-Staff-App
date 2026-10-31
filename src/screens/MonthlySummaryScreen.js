@@ -18,9 +18,10 @@ import { selectSession } from '../store/authSlice';
 import { effectiveLateMinutes } from './DailyAttendanceScreen';
 import { rf, rlh, rs } from '../utils/responsive';
 import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
-import { BadgeIconTile, MonthPill } from '../components/MintKit';
+import { MonthPill, TILE_TONES } from '../components/MintKit';
+import { LeftVerticalSidebar, SidebarLayout, useSidebarWidth } from '../components/JobCardKit';
 
-// Screen palette (Near G Fix green + mint).
+// Screen palette (NearGFix green + mint).
 const C = {
   deep: '#035C6C',
   primary: '#035C6C',
@@ -51,12 +52,13 @@ const STATUS_COLORS = {
   WEEK_OFF: '#BDBDBD',
   HOLIDAY: '#035C6C',
 };
+// Tile colours — the app-wide TILE_TONES (Partner dashboard set).
 const RING_COLORS = {
-  present: '#609138',
-  late: '#FAA700',
-  permission: '#0788C9',
-  leaves: '#F32C26',
-  holidays: '#1C3053',
+  present: TILE_TONES.green,
+  late: TILE_TONES.orange,
+  permission: TILE_TONES.blue,
+  leaves: TILE_TONES.red,
+  holidays: TILE_TONES.navy,
 };
 
 function pad2(n) {
@@ -66,6 +68,7 @@ function pad2(n) {
 export default function MonthlySummaryScreen({ navigation }) {
   useHideNativeHeader(navigation);
   const { width: winW } = useWindowDimensions();
+  const sidebarW = useSidebarWidth();
   const { id: technicianId, failed: techIdFailed, retry: retryTechId } = useTechnicianIdState();
   const session = useSelector(selectSession);
   const dutyCheckIn = session?.defaultCheckIn || '09:30:00';
@@ -205,23 +208,27 @@ export default function MonthlySummaryScreen({ navigation }) {
     );
   }
 
-  // Layout maths: 5 KPI cards always share one row; widths come from the card's
-  // inner width so the fifth card never clips.
-  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(32);
-  const cardInnerW = contentW - rs(12) * 2 - 2;
-  const kpiGap = rs(8);
-  const kpiW = (cardInnerW - kpiGap * 4) / 5;
-  const ringSize = Math.min(kpiW - rs(10), rs(54));
-  // Month control sits top-right when there's room, under the title otherwise.
-  const monthInline = contentW >= 400;
+  // The KPI sidebar takes the left edge; the page uses the rest.
+  const contentW = Math.min(winW - sidebarW, MAX_CONTENT_WIDTH) - rs(20);
+  // The five monthly KPIs, one below the other in the left sidebar (summary
+  // only — they don't filter anything). Late Hrs is an hours label, so it
+  // sits under its label rather than in the count badge.
+  const sidebarItems = [
+    { key: 'present', label: 'Present', icon: UserRound, color: RING_COLORS.present, count: present, static: true },
+    { key: 'late', label: 'Late Hrs', icon: Clock3, color: RING_COLORS.late, sub: late, static: true },
+    { key: 'permission', label: 'Permission', icon: ClipboardList, color: RING_COLORS.permission, count: String(permission), static: true },
+    { key: 'leaves', label: 'Leaves', icon: CalendarDays, color: RING_COLORS.leaves, count: String(leaves), static: true },
+    { key: 'holidays', label: 'Holidays', icon: CalendarCheck, color: RING_COLORS.holidays, count: String(holidays), static: true },
+  ];
 
   const arrowBtn = { width: rs(28), height: rs(28), borderRadius: rs(14), backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' };
-  const monthControl = <MonthPill month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />;
+  const monthControl = <MonthPill compact month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <MintBackdrop />
       <MintScreenHeader title="Monthly Summary" navigation={navigation} />
+      <SidebarLayout sidebar={<LeftVerticalSidebar items={sidebarItems} />}>
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} colors={[C.deep]} tintColor={C.deep} />}
@@ -230,27 +237,18 @@ export default function MonthlySummaryScreen({ navigation }) {
         <View style={{ width: contentW }}>
           {/* Attendance Overview + month selector + KPI cards */}
           <View style={styles.card}>
-            <View style={styles.headerRow}>
-              <View style={styles.headerTitleWrap}>
-                <View style={styles.iconTile}>
-                  <ChartColumn size={rs(18)} color="#035C6C" strokeWidth={2.6} />
-                </View>
-                <Text style={styles.cardTitle} numberOfLines={1}>This Month</Text>
+            {/* "This Month" and the compact month selector on one line. */}
+            <View style={styles.headerTitleWrap}>
+              <View style={styles.iconTile}>
+                <ChartColumn size={rs(16)} color="#FFFFFF" strokeWidth={2.6} />
               </View>
+              <Text style={[styles.cardTitle, { flex: 1, marginRight: rs(6) }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>This Month</Text>
               {monthControl}
             </View>
 
             {loading && !data ? (
               <ActivityIndicator size="large" color={C.deep} style={{ marginVertical: rs(24) }} />
-            ) : (
-              <View style={[styles.statRow, { gap: kpiGap }]}>
-                <KpiCard width={kpiW} ring={ringSize} icon={UserRound} value={present} label="Present" color={RING_COLORS.present} bg="#D3E5C3" />
-                <KpiCard width={kpiW} ring={ringSize} icon={Clock3} value={late} label="Late Hrs" color={RING_COLORS.late} bg="#FFDCAE" />
-                <KpiCard width={kpiW} ring={ringSize} icon={ClipboardList} value={String(permission)} label="Permission" color={RING_COLORS.permission} bg="#DCCDFB" />
-                <KpiCard width={kpiW} ring={ringSize} icon={CalendarDays} value={String(leaves)} label="Leaves" color={RING_COLORS.leaves} bg="#FBCFCF" />
-                <KpiCard width={kpiW} ring={ringSize} icon={CalendarCheck} value={String(holidays)} label="Holidays" color={RING_COLORS.holidays} bg="#C3E2E7" />
-              </View>
-            )}
+            ) : null}
           </View>
 
           {/* Calendar + legend */}
@@ -306,12 +304,9 @@ export default function MonthlySummaryScreen({ navigation }) {
           )}
         </View>
       </ScrollView>
+      </SidebarLayout>
     </SafeAreaView>
   );
-}
-
-function KpiCard({ icon, value, label, color }) {
-  return <BadgeIconTile icon={icon} color={color} label={label} count={value} size={rs(42)} />;
 }
 
 const cardShadow = {
@@ -328,9 +323,9 @@ const styles = StyleSheet.create({
     padding: rs(10), ...cardShadow,
   },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitleWrap: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: rs(8) },
+  headerTitleWrap: { flexDirection: 'row', alignItems: 'center' },
   iconTile: {
-    width: rs(36), height: rs(36), borderRadius: rs(11), backgroundColor: C.mint,
+    width: rs(34), height: rs(34), borderRadius: rs(17), backgroundColor: '#035C6C',
     alignItems: 'center', justifyContent: 'center', marginRight: rs(9),
   },
   cardTitle: { fontSize: rf(16), fontWeight: '800', color: '#1C3053', lineHeight: rlh(20), flexShrink: 1 },
@@ -349,7 +344,7 @@ const styles = StyleSheet.create({
   monthStepBtn: { paddingHorizontal: rs(7), paddingVertical: rs(4) },
   monthPillSep: { width: 1, height: rs(14), backgroundColor: 'rgba(255,255,255,0.35)' },
 
-  statRow: { flexDirection: 'row', marginTop: rs(10) },
+  statRow: { marginTop: rs(10) },
   kpiCard: { alignItems: 'center', borderRadius: rs(14), borderWidth: 1, paddingTop: rs(8), paddingBottom: rs(7) },
   kpiRing: {
     borderWidth: 3, alignItems: 'center', justifyContent: 'center',

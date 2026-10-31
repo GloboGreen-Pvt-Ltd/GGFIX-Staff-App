@@ -5,7 +5,7 @@ import { Text as RNText, TextInput as RNTextInput, StyleSheet } from 'react-nati
 import { cssInterop } from 'nativewind';
 import { interFamily, snapFontSize } from '../theme/typography';
 
-function normalize(style) {
+function normalize(style, { input = false } = {}) {
   const flat = StyleSheet.flatten(style) || {};
   // Web: nativewind className styles arrive as compiled-CSS objects ($$css);
   // flattening those into inline numbers breaks react-native-web, so leave them.
@@ -14,7 +14,7 @@ function normalize(style) {
   // parent's size/weight/family — don't stamp defaults onto them.
   if (flat.fontSize == null && flat.fontWeight == null && flat.fontFamily == null) return style;
   const { fontWeight, fontFamily, fontSize, lineHeight, ...rest } = flat;
-  const size = snapFontSize(fontSize ?? 13);
+  const size = snapFontSize(fontSize ?? 13, { input });
   const out = { ...rest, fontFamily: fontFamily && !fontFamily.startsWith('Inter') ? fontFamily : interFamily(fontWeight), fontSize: size };
   // Keep line heights proportional when the size was snapped.
   if (lineHeight != null) out.lineHeight = fontSize ? Math.round(lineHeight * (size / fontSize)) : lineHeight;
@@ -27,7 +27,7 @@ export const Text = forwardRef(({ style, ...props }, ref) => (
 Text.displayName = 'Text';
 
 export const TextInput = forwardRef(({ style, ...props }, ref) => (
-  <RNTextInput ref={ref} {...props} style={normalize(style)} />
+  <RNTextInput ref={ref} {...props} style={normalize(style, { input: true })} />
 ));
 TextInput.displayName = 'TextInput';
 

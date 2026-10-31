@@ -12,6 +12,8 @@ import { rf, rlh, rs } from '../utils/responsive';
 import { normalizeIndianMobile } from '../utils/mobile';
 import { logProfileDebug } from '../utils/profileDebug';
 import BrandMark from '../components/BrandMark';
+import { notify } from '../components/confirm';
+import { userMessage } from '../utils/userMessages';
 
 /**
  * Employee sign-in: mobile number → OTP. Two steps live in this one screen
@@ -77,24 +79,15 @@ export default function LoginScreen({ onLogin }) {
    * adds nothing for them. Production shows a generic, non-revealing message.
    */
   const describeError = (e, fallback) => {
-    const msg = e?.message || fallback;
-    if (__DEV__) {
-      const isLocalhost = /localhost|127\.0\.0\.1/.test(String(msg));
-      if (!isLocalhost) return msg;
-      const urlMatch = String(msg).match(/URL:\s*(\S+)/i);
-      const triedUrl = urlMatch ? urlMatch[1] : '(unknown)';
-      return (
-        `Can't reach server (trying localhost). Tried: ${triedUrl}. ` +
-        `Current AUTH_BASE: ${AUTH_BASE}. Restart Expo with EXPO_PUBLIC_API_HOST=YOUR_PC_IP.`
-      );
+    // err.message is already a safe sentence (api/client); the localhost
+    // hint is for developers only.
+    if (__DEV__ && /localhost|127\.0\.0\.1/.test(String(e?.diagnostic || ''))) {
+      return `Can't reach server (trying localhost). Current AUTH_BASE: ${AUTH_BASE}. Restart Expo with EXPO_PUBLIC_API_HOST=YOUR_PC_IP.`;
     }
-    // Network/unreachable → generic connectivity message; auth failures → the
-    // server's own (non-topology) message so the user still gets useful
-    // feedback like "Invalid OTP".
-    const status = e?.status;
-    if (!status || status === 0) return "Can't reach the server. Check your connection and try again.";
-    return msg;
+    return userMessage(e, fallback);
   };
+  // "No account found…" from /auth/otp/send (and similar) → "Account not found".
+  const isNoAccount = (e) => /no account|account not found|not registered|user not found/i.test(String(e?.serverMessage || ''));
 
   const sendOtp = async ({ resend = false } = {}) => {
     setError(null);
@@ -111,8 +104,11 @@ export default function LoginScreen({ onLogin }) {
       setSeconds(RESEND_SECONDS);
       if (resend) setNote('A new code has been sent.');
       else setStep('OTP');
+      notify(resend ? 'New verification code sent' : 'Verification code sent', '', { type: 'success' });
     } catch (e) {
-      setError(describeError(e, 'Could not send the code.'));
+      const text = isNoAccount(e) ? 'Account not found' : describeError(e, 'Could not send the code.');
+      setError(text);
+      notify(text, '', { type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -144,9 +140,14 @@ export default function LoginScreen({ onLogin }) {
           keys: data ? Object.keys(data) : [],
         },
       });
+      // The code is the login here, so one toast covers "OTP verified" + "Logged in".
+      notify('Logged in successfully', '', { type: 'success' });
       onLogin(data);
     } catch (e) {
-      setError(describeError(e, 'Authentication failed'));
+      const wrongCode = e?.status === 400 || e?.status === 401;
+      const text = isNoAccount(e) ? 'Account not found' : wrongCode ? 'Invalid OTP. Please try again.' : describeError(e, 'Authentication failed');
+      setError(text);
+      notify(text, '', { type: 'error' });
       // Wrong code → wipe the boxes and re-focus so the retry is one action.
       // A network/server failure keeps the digits: they were probably right and
       // re-typing six of them to retry a dropped request is pure friction.
@@ -293,7 +294,7 @@ function MobileStep({ mobile, setMobile, loading, error, onSubmit, wide }) {
           Login with{'\n'}
           <Text style={{ color: GREEN }}>mobile number</Text>
         </Text>
-        <Text style={styles.sub}>Welcome to Near G Fix Employee App</Text>
+        <Text style={styles.sub}>Welcome to NearGFix Employee App</Text>
       </View>
 
       {/* Login card */}
@@ -334,7 +335,7 @@ function MobileStep({ mobile, setMobile, loading, error, onSubmit, wide }) {
       <View style={styles.features}>
         <Feature icon={CalendarCheck} bg={GREEN_TINT} fg={GREEN} label={'Mark\nattendance'} />
         <View style={styles.featureDivider} />
-        <Feature icon={Truck} bg={YELLOW_TINT} fg="#C99500" label={'Manage\npickups'} />
+        <Feature icon={Truck} bg={YELLOW_TINT} fg="#FAA700" label={'Manage\npickups'} />
         <View style={styles.featureDivider} />
         <Feature icon={ShieldCheck} bg={RED_TINT} fg={RED} label={'Trusted\n& secure'} />
       </View>
@@ -601,5 +602,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: rs(12),
     paddingVertical: rs(9),
   },
-  errorText: { fontSize: rf(12.5), lineHeight: rlh(17), color: '#C62828' },
+  errorText: { fontSize: rf(12.5), lineHeight: rlh(17), color: '#F32C26' },
 });

@@ -269,7 +269,7 @@ export default function PayslipScreen({ route }) {
     if (typeof window === 'undefined') return false;
     const w = window.open('', '_blank');
     if (!w) {
-      notify('Pop-up blocked', 'Allow pop-ups for this site to download/share the pay slip.', { preset: 'error' });
+      notify('Pop-up blocked', 'Allow pop-ups for this site to download/share the pay slip.', { type: 'warning' });
       return true;
     }
     w.document.open();
@@ -281,7 +281,7 @@ export default function PayslipScreen({ route }) {
 
   const onDownload = async () => {
     if (!data) {
-      notify('No payslip', 'There is no payslip to download for this month.');
+      notify('No payslip', 'There is no payslip to download for this month.', { type: 'info' });
       return;
     }
     setBusy('download');
@@ -293,12 +293,12 @@ export default function PayslipScreen({ route }) {
       }
       const Print = getPrintModule();
       if (!Print) {
-        notify('PDF module not installed', 'Run `npm install --legacy-peer-deps expo-print expo-sharing`, then restart Metro with `npx expo start --clear`.', { preset: 'error' });
+        notify('Download unavailable', 'PDF download is not available in this version of the app.', { type: 'error' });
         return;
       }
       await Print.printAsync({ html });
     } catch (e) {
-      notify('Could not open print dialog', e?.message || 'Please try again.', { preset: 'error' });
+      notify('Could not download pay slip', 'Please try again.', { type: 'error' });
     } finally {
       setBusy(null);
     }
@@ -306,7 +306,7 @@ export default function PayslipScreen({ route }) {
 
   const onShare = async () => {
     if (!data) {
-      notify('No payslip', 'There is no payslip to share for this month.');
+      notify('No payslip', 'There is no payslip to share for this month.', { type: 'info' });
       return;
     }
     setBusy('share');
@@ -319,13 +319,13 @@ export default function PayslipScreen({ route }) {
       const Print = getPrintModule();
       const Sharing = getSharingModule();
       if (!Print) {
-        notify('PDF module not installed', 'Run `npm install --legacy-peer-deps expo-print expo-sharing`, then restart Metro with `npx expo start --clear`.', { preset: 'error' });
+        notify('Download unavailable', 'PDF download is not available in this version of the app.', { type: 'error' });
         return;
       }
       const { uri } = await Print.printToFileAsync({ html, base64: false });
       const isAvailable = Sharing ? await Sharing.isAvailableAsync() : false;
       if (!isAvailable) {
-        notify('Sharing unavailable', `PDF saved to: ${uri}`);
+        notify('Sharing unavailable', 'The pay slip was saved on this device.', { type: 'info' });
         return;
       }
       await Sharing.shareAsync(uri, {
@@ -334,7 +334,7 @@ export default function PayslipScreen({ route }) {
         dialogTitle: `Pay Slip — ${MONTHS_FULL[month - 1]} ${year}`,
       });
     } catch (e) {
-      notify('Could not share', e?.message || 'Please try again.', { preset: 'error' });
+      notify('Could not share pay slip', 'Please try again.', { type: 'error' });
     } finally {
       setBusy(null);
     }
@@ -403,7 +403,7 @@ export default function PayslipScreen({ route }) {
                 <Text style={styles.attendanceLabel}>Present Days</Text>
               </View>
               <View style={[styles.attendanceTile, { backgroundColor: '#FDF6E0', borderColor: '#F6E7B4' }]}>
-                <Ionicons name="briefcase" size={14} color="#8A6700" />
+                <Ionicons name="briefcase" size={14} color="#FAA700" />
                 <Text style={styles.attendanceValue}>{data?.dailyWageDays ?? 0}</Text>
                 <Text style={styles.attendanceLabel}>Daily Wage Days</Text>
               </View>
@@ -423,7 +423,7 @@ export default function PayslipScreen({ route }) {
               <BreakdownRow
                 icon="time-outline"
                 iconBg="#FDF6E0"
-                iconColor="#8A6700"
+                iconColor="#FAA700"
                 label="Regular Wage"
                 sub="Daily-rate earnings"
                 value={formatRupee(data?.regularWage)}

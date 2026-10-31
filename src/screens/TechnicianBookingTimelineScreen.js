@@ -13,8 +13,9 @@ import {
   getCurrentPhaseLabel,
 } from './common/serviceHistoryPhases';
 import { rf, rs } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
-// Screen palette — Near G Fix green / red on light neutrals, the same set the
+// Screen palette — NearGFix green / red on light neutrals, the same set the
 // restyled Home and Ticket Detail screens use.
 const GREEN = '#035C6C';
 const GREEN_TINT = '#E5F3F5';
@@ -87,9 +88,7 @@ export default function TechnicianBookingTimelineScreen({ route }) {
     ]);
     if (t !== undefined) setTicket(t);
     if (ev !== undefined) setEvents(Array.isArray(ev) ? ev : (ev?.content ?? []));
-    setError(failure
-      ? `${failure.message || 'Failed to load history'}${failure.status ? ` (HTTP ${failure.status})` : ''}`
-      : null);
+    setError(failure ? userMessage(failure, 'Could not load history') : null);
   }, [ticketId]);
 
   useFocusEffect(useCallback(() => {

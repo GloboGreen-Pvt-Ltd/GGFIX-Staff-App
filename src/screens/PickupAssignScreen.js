@@ -11,6 +11,7 @@ import { readPickupPersonLocation } from '../utils/pickupLocation';
 import { rf, rlh, rs } from '../utils/responsive';
 import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
 import { MINT, MonthCard, MetricCard, SectionCard, EmptyState } from '../components/MintKit';
+import { isSafeText, userMessage } from '../utils/userMessages';
 
 const MAX_CONTENT_WIDTH = 720;
 const ORANGE = '#FAA700';
@@ -202,7 +203,7 @@ export default function PickupAssignScreen({ navigation }) {
             // can never satisfy the check — stop early instead of a pointless
             // round trip.
             notify('Location needed',
-              locErr?.message || 'Turn on location and try again to mark Reached Shop.');
+              userMessage(locErr, 'Turn on location and try again to mark Reached Shop.'), { type: 'warning' });
             return;
           }
           // Reached Customer: the backend ALLOWS this transition without GPS when
@@ -215,7 +216,7 @@ export default function PickupAssignScreen({ navigation }) {
       }
       const resp = await updatePickupStatus(booking.id, next.code, extras);
       if (resp?.message) {
-        notify('Status updated', resp.message);
+        notify('Status updated', isSafeText(resp.message) ? resp.message : '', { type: 'success' });
       }
       await load(true);
     } catch (e) {
@@ -228,15 +229,15 @@ export default function PickupAssignScreen({ navigation }) {
       const customerStep = next.action === 'reachedCustomer';
       if (code === 'OUT_OF_RADIUS') {
         notify(customerStep ? 'Not at customer yet' : 'Not at shop yet',
-          payload.message
-            || `You are ${payload.distanceMeters || '?'}m away. Please reach the ${customerStep ? 'customer address' : 'shop'} to continue.`);
+          (isSafeText(payload.message) ? payload.message : null)
+            || `You are ${payload.distanceMeters || '?'}m away. Please reach the ${customerStep ? 'customer address' : 'shop'} to continue.`, { type: 'error' });
       } else if (code === 'LOCATION_REQUIRED') {
-        notify('Location needed', payload.message || 'Enable location and try again.');
+        notify('Location needed', isSafeText(payload.message) ? payload.message : 'Enable location and try again.', { type: 'warning' });
       } else if (code === 'SHOP_LOCATION_MISSING') {
         notify('Shop location missing',
-          payload.message || 'Shop coordinates are not set. Ask the owner to update the shop profile.');
+          isSafeText(payload.message) ? payload.message : 'Shop coordinates are not set. Ask the owner to update the shop profile.', { type: 'error' });
       } else {
-        notify('Could not update', e?.message || 'Please try again.');
+        notify('Could not update status', userMessage(e, 'Please try again.'), { type: 'error' });
       }
     } finally {
       setAdvancingId(null);

@@ -1,5 +1,6 @@
 import { MASTER_BASE } from './config';
 import { getToken } from '../auth/session';
+import { friendlyApiMessage, logDiagnostic } from '../utils/userMessages';
 
 // Master-data-service lives on a different base than the auth/ticket clients,
 // so we issue requests against MASTER_BASE directly. Endpoints used by the
@@ -21,8 +22,12 @@ async function masterGet(path, { query } = {}) {
   let json;
   try { json = text ? JSON.parse(text) : null; } catch { json = null; }
   if (!res.ok) {
-    const err = new Error((json && (json.message || json.error)) || text || `HTTP ${res.status}`);
+    const serverMessage = (json && (json.message || json.error)) || text || '';
+    const err = new Error(friendlyApiMessage({ status: res.status, serverMessage, hadToken: !!token }));
     err.status = res.status;
+    err.serverMessage = serverMessage;
+    err.diagnostic = `GET ${url.pathname} → ${res.status}: ${String(serverMessage).slice(0, 300)}`;
+    logDiagnostic(err);
     throw err;
   }
   return json;

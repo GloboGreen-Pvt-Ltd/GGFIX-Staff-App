@@ -11,8 +11,10 @@ import {
   Keyboard as KeyboardIcon,
   Search,
 } from 'lucide-react-native';
+import { useSelector } from 'react-redux';
 import { ticketApi } from '../api/client';
 import { listMyTickets } from '../api/tickets';
+import { selectTechnicianId } from '../store/authSlice';
 import { ticketRef } from '../utils/ticketRef';
 import { rf, rs } from '../utils/responsive';
 import MintScreenHeader from '../components/MintScreenHeader';
@@ -45,7 +47,12 @@ function normalizeCode(raw) {
   return v.replace(/^#/, '').replace(/\s+/g, '').trim();
 }
 
-async function resolveTicket(raw) {
+// → { ticket, assignedToMe } or null. Only a ticket assigned to this employee
+// may be opened: first the employee's own assigned list; failing that, the
+// shop-wide lookups run only to tell "someone else's job" apart from "no such
+// ticket" (and to catch an own job past the list's page), with the assignee
+// checked against this employee's technician id. No id → treated as not mine.
+async function resolveTicket(raw, myTechId) {
   const value = normalizeCode(raw);
   if (!value) return null;
   const lc = value.toLowerCase();
@@ -57,26 +64,26 @@ async function resolveTicket(raw) {
   const own = myList.find((t) => String(t.trackingId || '').toLowerCase() === lc
     || ticketRef(t).replace(/^#/, '').toLowerCase() === lc
     || String(t.id || '').toLowerCase() === lc);
-  if (own) return own;
+  if (own) return { ticket: own, assignedToMe: true };
 
-  if (UUID_RE.test(value)) {
-    const byId = await ticketApi.get(`/tickets/${encodeURIComponent(value)}`).catch(() => null);
-    if (byId) return byId;
-  }
-
-  const page = await ticketApi.get('/tickets', { query: { q: value, size: 5 } }).catch(() => null);
-  const list = Array.isArray(page?.content) ? page.content : Array.isArray(page) ? page : [];
-  if (list.length) {
-    const exact = list.find((t) => String(t.trackingId || '').toLowerCase() === value.toLowerCase());
-    return exact || list[0];
-  }
-
-  // Last resort — some deployments encode the id even without dashes.
-  if (!UUID_RE.test(value)) {
-    const byRaw = await ticketApi.get(`/tickets/${value}`).catch(() => null);
-    if (byRaw) return byRaw;
-  }
-  return null;
+  const found = await (async () => {
+    if (UUID_RE.test(value)) {
+      const byId = await ticketApi.get(`/tickets/${encodeURIComponent(value)}`).catch(() => null);
+      if (byId) return byId;
+    }
+    const page = await ticketApi.get('/tickets', { query: { q: value, size: 5 } }).catch(() => null);
+    const list = Array.isArray(page?.content) ? page.content : Array.isArray(page) ? page : [];
+    if (list.length) {
+      const exact = list.find((t) => String(t.trackingId || '').toLowerCase() === lc);
+      return exact || list[0];
+    }
+    // Last resort — some deployments encode the id even without dashes.
+    if (!UUID_RE.test(value)) return ticketApi.get(`/tickets/${value}`).catch(() => null);
+    return null;
+  })();
+  if (!found) return null;
+  const assignedToMe = !!myTechId && String(found.assignedTechnicianId || '') === String(myTechId);
+  return { ticket: found, assignedToMe };
 }
 
 export default function ScanTicketQrScreen({ navigation }) {
@@ -84,6 +91,9 @@ export default function ScanTicketQrScreen({ navigation }) {
   const [scanned, setScanned] = useState(false);
   const [loading, setLoading] = useState(false);
   const [notFound, setNotFound] = useState(null); // holds the scanned value on miss
+  // The scanned value when it's a real job assigned to someone else.
+  const [notMine, setNotMine] = useState(null);
+  const myTechId = useSelector(selectTechnicianId);
   const handlingRef = useRef(false);
 
   useEffect(() => {
@@ -95,6 +105,7 @@ export default function ScanTicketQrScreen({ navigation }) {
     setScanned(false);
     setLoading(false);
     setNotFound(null);
+    setNotMine(null);
   };
 
   const [manualOpen, setManualOpen] = useState(Platform.OS === 'web');
@@ -106,11 +117,15 @@ export default function ScanTicketQrScreen({ navigation }) {
     setScanned(true);
     setLoading(true);
     try {
-      const t = await resolveTicket(data);
-      if (t?.id) {
+      const hit = await resolveTicket(data, myTechId);
+      if (hit?.ticket?.id && hit.assignedToMe) {
         // Open the ticket the technician just scanned. `replace` keeps the
         // scanner out of the back stack, so Back from the ticket returns Home.
-        navigation.replace('TechnicianTicketDetail', { ticketId: t.id });
+        navigation.replace('TechnicianTicketDetail', { ticketId: hit.ticket.id });
+        return;
+      }
+      if (hit?.ticket?.id) {
+        setNotMine(String(data || '').trim() || 'this job');
         return;
       }
       setNotFound(String(data || '').trim() || 'this code');
@@ -274,12 +289,23 @@ export default function ScanTicketQrScreen({ navigation }) {
           ) : (
             <View className="items-center px-6 py-8">
               <View className="w-14 h-14 rounded-full items-center justify-center mb-3" style={{ backgroundColor: '#FEE2E2' }}>
-                <AlertTriangle size={26} color="#B91C1C" />
+                <AlertTriangle size={26} color="#F32C26" />
               </View>
-              <Text className="text-gray-900 font-extrabold text-center" style={{ fontSize: rf(15) }}>No ticket found</Text>
-              <Text className="text-gray-500 text-center mt-1.5 leading-5" style={{ fontSize: rf(12) }}>
-                Couldn't match <Text className="font-extrabold text-gray-700">{notFound}</Text> to a ticket in this shop. Make sure it's a Near G Fix QR slip.
-              </Text>
+              {notMine ? (
+                <>
+                  <Text className="text-gray-900 font-extrabold text-center" style={{ fontSize: rf(15) }}>Not assigned to you</Text>
+                  <Text className="text-gray-500 text-center mt-1.5 leading-5" style={{ fontSize: rf(12) }}>
+                    <Text className="font-extrabold text-gray-700">{notMine}</Text> is assigned to another employee. You can only open jobs assigned to you.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text className="text-gray-900 font-extrabold text-center" style={{ fontSize: rf(15) }}>No ticket found</Text>
+                  <Text className="text-gray-500 text-center mt-1.5 leading-5" style={{ fontSize: rf(12) }}>
+                    Couldn't match <Text className="font-extrabold text-gray-700">{notFound}</Text> to a ticket in this shop. Make sure it's a NearGFix QR slip.
+                  </Text>
+                </>
+              )}
               <Pressable onPress={reset} className="mt-5 rounded-2xl py-3.5 px-8 flex-row items-center justify-center active:opacity-90" style={{ backgroundColor: GREEN }}>
                 <RotateCcw size={16} color="#fff" />
                 <Text className="text-white font-extrabold ml-2" style={{ fontSize: rf(14) }}>Try again</Text>

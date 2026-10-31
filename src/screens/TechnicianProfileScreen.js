@@ -25,12 +25,13 @@ import * as ImagePicker from 'expo-image-picker';
 import { ticketApi } from '../api/client';
 import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
-import { rf, rlh, rs } from '../utils/responsive';
+import { rf, rlh, rs, sheetWidth } from '../utils/responsive';
 import { logProfileDebug, isShopOwnerSession } from '../utils/profileDebug';
 import { applyProfileToSession } from '../auth/refreshProfile';
 import { selectSession } from '../store/authSlice';
 import { employeeIdFromSession } from '../utils/employeeId';
 import MintScreenHeader from '../components/MintScreenHeader';
+import { userMessage } from '../utils/userMessages';
 
 function formatTime(val) {
   if (val == null) return '—';
@@ -165,13 +166,14 @@ export default function TechnicianProfileScreen() {
         folder: `technicians/${techId}/avatar`,
       });
       const url = res?.url || res?.secure_url || null;
-      if (!url) throw new Error('Upload returned no URL');
+      if (!url) throw new Error('Upload failed. Please try again.');
       const updated = await ticketApi.patch('/technicians/me', { body: { photoUrl: url } });
       setProfile(updated);
       applyProfileToSession(dispatch, updated);
       setForm((p) => ({ ...p, photoUrl: url }));
+      notify('Profile photo updated', '', { type: 'success' });
     } catch (e) {
-      notify('Upload failed', e?.message ?? 'Could not update photo', { preset: 'error', haptic: 'error' });
+      notify('Could not update photo', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setUploadingPhoto(false);
     }
@@ -179,7 +181,7 @@ export default function TechnicianProfileScreen() {
 
   const handleSave = async () => {
     if (!form.name?.trim()) {
-      notify('Name required', 'Please enter your name before saving.', { preset: 'error' });
+      notify('Name required', 'Please enter your name before saving.', { type: 'warning' });
       return;
     }
     setSaving(true);
@@ -196,9 +198,9 @@ export default function TechnicianProfileScreen() {
       setProfile(updated);
       applyProfileToSession(dispatch, updated);
       setEditing(false);
-      notify('Profile updated', 'Your changes have been saved.', { preset: 'done' });
+      notify('Profile updated', '', { type: 'success' });
     } catch (e) {
-      notify('Error', e?.message ?? 'Failed to save', { preset: 'error', haptic: 'error' });
+      notify('Could not update profile', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setSaving(false);
     }
@@ -262,9 +264,7 @@ export default function TechnicianProfileScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.primary]} tintColor={COLORS.primary} />}
         >
           {/* Profile card */}
-          <View style={[styles.card, { overflow: 'hidden' }]}>
-            <View pointerEvents="none" style={{ position: 'absolute', top: -rs(60), right: -rs(40), width: rs(190), height: rs(190), borderRadius: rs(95), backgroundColor: '#D9ECEF', opacity: 0.5 }} />
-            <View pointerEvents="none" style={{ position: 'absolute', top: -rs(30), right: -rs(70), width: rs(150), height: rs(150), borderRadius: rs(75), backgroundColor: '#B9DCE2', opacity: 0.4 }} />
+          <View style={styles.card}>
             <View style={styles.profileRow}>
               <TouchableOpacity activeOpacity={0.85} onPress={() => setPhotoSheet(true)} disabled={uploadingPhoto} style={styles.avatarRing}>
                 {profile.photoUrl ? (
@@ -279,7 +279,7 @@ export default function TechnicianProfileScreen() {
                     {uploadingPhoto ? (
                       <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
-                      <Camera size={rs(12)} color="#FFFFFF" strokeWidth={2.4} />
+                      <Camera size={rs(10)} color="#FFFFFF" strokeWidth={2.4} />
                     )}
                   </View>
               </TouchableOpacity>
@@ -315,9 +315,9 @@ export default function TechnicianProfileScreen() {
           </View>
 
           {/* Personal information */}
-          <View style={{ marginTop: rs(4), marginBottom: rs(8), paddingHorizontal: 2 }}>
-            <Text style={{ fontSize: rf(20), fontWeight: '800', color: '#1C3053' }}>{editing ? 'Edit Details' : 'Personal Information'}</Text>
-            <View style={{ width: rs(28), height: 4, borderRadius: 2, backgroundColor: '#035C6C', marginTop: rs(4) }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: rs(2), marginBottom: rs(6), paddingHorizontal: 2 }}>
+            <View style={{ width: 3, height: rs(14), borderRadius: 2, backgroundColor: '#035C6C', marginRight: rs(7) }} />
+            <Text style={{ fontSize: rf(15), fontWeight: '800', color: '#1C3053' }}>{editing ? 'Edit Details' : 'Personal Information'}</Text>
           </View>
           <View style={styles.card}>
 
@@ -382,7 +382,7 @@ export default function TechnicianProfileScreen() {
       {/* Profile photo source picker */}
       <Modal visible={photoSheet} transparent animationType="slide" onRequestClose={() => setPhotoSheet(false)}>
         <Pressable style={styles.sheetBackdrop} onPress={() => setPhotoSheet(false)}>
-          <View style={styles.sheet} onStartShouldSetResponder={() => true}>
+          <View style={[styles.sheet, sheetWidth]} onStartShouldSetResponder={() => true}>
             <Text style={styles.sheetTitle}>Profile Photo</Text>
             <TouchableOpacity style={styles.sheetBtn} onPress={() => handlePickPhoto('camera')} activeOpacity={0.8}>
               <View style={[styles.sheetIcon, { backgroundColor: '#035C6C' }]}><Camera size={rs(18)} color="#FFFFFF" strokeWidth={2.2} /></View>
@@ -418,7 +418,7 @@ function StatItem({ Icon, value, label }) {
   return (
     <View style={styles.statItem}>
       <View style={styles.statIcon}>
-        <Icon size={rs(19)} color="#035C6C" />
+        <Icon size={rs(15)} color="#035C6C" />
       </View>
       <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{value}</Text>
       <Text style={styles.statLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
@@ -430,7 +430,7 @@ function InfoRow({ Icon, label, value, onPress, last }) {
   const body = (
     <View style={[styles.infoRow, !last && styles.infoRowDivider]}>
       <View style={styles.infoIcon}>
-        <Icon size={rs(19)} color="#035C6C" />
+        <Icon size={rs(15)} color="#035C6C" />
       </View>
       <View style={styles.infoBody}>
         <Text style={styles.infoLabel}>{label}</Text>
@@ -446,17 +446,17 @@ function InfoRow({ Icon, label, value, onPress, last }) {
   );
 }
 
-// Explains why the profile couldn't load, using the server's status/message.
+// Explains why the profile couldn't load, from the server's status (no raw server text).
 function ProfileLoadError({ error, onRetry }) {
   const status = error?.status;
   let title = "Couldn't load your profile";
   let body = 'Something went wrong while loading your details. Please try again.';
   if (status === 404 && error?.owner) {
     title = "This is the shop owner's login";
-    body = "Owner accounts don't have an employee profile, so there is nothing to show here. Sign in with the employee's own mobile number — or, to use the Staff App yourself, add yourself as an employee in the Near G Fix Partner app with your mobile number.";
+    body = "Owner accounts don't have an employee profile, so there is nothing to show here. Sign in with the employee's own mobile number — or, to use the Staff App yourself, add yourself as an employee in the NearGFix Partner app with your mobile number.";
   } else if (status === 404) {
     title = 'No employee profile yet';
-    body = 'Your login works, but no employee profile is linked to it. Ask your shop owner to add you as staff in the Near G Fix owner app using this same mobile number. Your details will then appear here and you can edit your name and photo.';
+    body = 'Your login works, but no employee profile is linked to it. Ask your shop owner to add you as staff in the NearGFix owner app using this same mobile number. Your details will then appear here and you can edit your name and photo.';
   } else if (status === 401 || status === 403) {
     title = 'Profile not available for this login';
     body = 'This account is not set up as a staff / technician profile for the shop, or the session has expired. Log out and log in again. If it still shows, ask your shop owner to add you as staff with this mobile number.';
@@ -472,11 +472,6 @@ function ProfileLoadError({ error, onRetry }) {
         </View>
         <Text style={{ fontSize: rf(16), fontWeight: '800', color: COLORS.text, marginTop: 12, textAlign: 'center' }}>{title}</Text>
         <Text style={{ fontSize: rf(13), lineHeight: rlh(19), color: COLORS.textMuted, marginTop: 8, textAlign: 'center' }}>{body}</Text>
-        {error?.message ? (
-          <Text style={{ fontSize: rf(11), color: '#A3A3A3', marginTop: 10, textAlign: 'center' }} numberOfLines={3}>
-            Server: {String(error.message).slice(0, 160)}{status ? ` (HTTP ${status})` : ''}
-          </Text>
-        ) : null}
         <TouchableOpacity
           onPress={onRetry}
           activeOpacity={0.85}
@@ -516,14 +511,14 @@ const styles = StyleSheet.create({
   sheetCancelText: { fontSize: rf(14), fontWeight: '700', color: '#F32C26' },
   safe: { flex: 1, backgroundColor: COLORS.background },
   loader: { flex: 1, justifyContent: 'center' },
-  content: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 28 },
+  content: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 24 },
 
   // Cards
   card: {
     backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 10,
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: '#F0F0F0',
     shadowColor: '#111111',
@@ -535,16 +530,16 @@ const styles = StyleSheet.create({
 
   // Profile row
   profileRow: { flexDirection: 'row', alignItems: 'center' },
-  avatarRing: { width: rs(84), height: rs(84), borderRadius: rs(42), borderWidth: 2.5, borderColor: '#FAA700', alignItems: 'center', justifyContent: 'center', marginRight: rs(14), backgroundColor: '#FFFFFF' },
-  avatar: { width: rs(74), height: rs(74), borderRadius: rs(37), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatarInitial: { fontSize: rf(30), fontWeight: '800', color: '#035C6C' },
+  avatarRing: { width: rs(62), height: rs(62), borderRadius: rs(31), borderWidth: 2, borderColor: '#FAA700', alignItems: 'center', justifyContent: 'center', marginRight: rs(12), backgroundColor: '#FFFFFF' },
+  avatar: { width: rs(54), height: rs(54), borderRadius: rs(27), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarInitial: { fontSize: rf(20), fontWeight: '800', color: '#035C6C' },
   cameraBadge: {
     position: 'absolute',
-    right: -1,
-    bottom: -1,
-    width: rs(22),
-    height: rs(22),
-    borderRadius: rs(11),
+    right: -2,
+    bottom: -2,
+    width: rs(19),
+    height: rs(19),
+    borderRadius: rs(10),
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -552,21 +547,21 @@ const styles = StyleSheet.create({
     borderColor: COLORS.card,
   },
   profileInfo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  name: { fontSize: rf(20), fontWeight: '800', color: '#111111' },
-  rolePill: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: '#E5F3F5', borderRadius: 999, paddingHorizontal: rs(10), paddingVertical: rs(3), marginTop: rs(6) },
-  roleDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#609138', marginRight: 6 },
-  rolePillText: { fontSize: rf(12), fontWeight: '700', color: '#035C6C' },
-  empRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: rs(8) },
-  empLabel: { fontSize: rf(12), color: '#6B7280', marginRight: 10 },
+  name: { fontSize: rf(16), fontWeight: '800', color: '#111111' },
+  rolePill: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', backgroundColor: '#E5F3F5', borderRadius: 999, paddingHorizontal: rs(8), paddingVertical: rs(2), marginTop: rs(4) },
+  roleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#609138', marginRight: 5 },
+  rolePillText: { fontSize: rf(11), fontWeight: '700', color: '#035C6C' },
+  empRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: rs(5) },
+  empLabel: { fontSize: rf(11), color: '#6B7280', marginRight: 8 },
   empValue: { fontSize: rf(13), color: '#111111', fontWeight: '800' },
 
   // Stats strip
   statsRow: { flexDirection: 'row', alignItems: 'center' },
   statItem: { flex: 1, alignItems: 'center', paddingHorizontal: 2 },
-  statIcon: { width: rs(38), height: rs(38), borderRadius: rs(10), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center', marginBottom: rs(6) },
-  statValue: { fontSize: rf(18), fontWeight: '800', color: '#111111' },
-  statLabel: { fontSize: rf(12), color: '#6B7280', marginTop: 1 },
-  statDivider: { width: 1, alignSelf: 'stretch', marginVertical: rs(8), backgroundColor: '#E5E7EB' },
+  statIcon: { width: rs(30), height: rs(30), borderRadius: rs(8), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center', marginBottom: rs(4) },
+  statValue: { fontSize: rf(14), fontWeight: '800', color: '#111111' },
+  statLabel: { fontSize: rf(11), color: '#6B7280', marginTop: 0 },
+  statDivider: { width: 1, alignSelf: 'stretch', marginVertical: rs(6), backgroundColor: '#E5E7EB' },
 
   // Personal info
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
@@ -580,12 +575,12 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   editPillText: { fontSize: rf(12), fontWeight: '700', color: COLORS.primaryDeep, marginLeft: 5 },
-  infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: rs(10) },
+  infoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: rs(7) },
   infoRowDivider: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  infoIcon: { width: rs(40), height: rs(40), borderRadius: rs(10), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center', marginRight: rs(12) },
+  infoIcon: { width: rs(30), height: rs(30), borderRadius: rs(8), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center', marginRight: rs(10) },
   infoBody: { flex: 1, marginRight: 6 },
-  infoLabel: { fontSize: rf(12), color: '#6B7280', marginBottom: 2 },
-  infoValue: { fontSize: rf(14.5), color: '#111111', fontWeight: '800' },
+  infoLabel: { fontSize: rf(11), color: '#6B7280', marginBottom: 1 },
+  infoValue: { fontSize: rf(13.5), color: '#111111', fontWeight: '700' },
 
   // Edit form
   label: { fontSize: rf(11), color: COLORS.textMuted, marginBottom: 4, marginTop: 6, fontWeight: '600' },

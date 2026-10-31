@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Modal, FlatList, ActivityIndicator } from 'react-native';
 import { Text } from './Typography';
-import { rf } from '../utils/responsive';
+import { rf, sheetWidth } from '../utils/responsive';
 
 export function ApiPicker({ label, items = [], loading, error, value, onSelect, placeholder = 'Select...', keyExtractor = (item) => item?.id, labelExtractor = (item) => item?.name ?? item?.label ?? String(item?.id) }) {
   const [open, setOpen] = useState(false);
@@ -25,7 +25,7 @@ export function ApiPicker({ label, items = [], loading, error, value, onSelect, 
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Modal visible={open} transparent animationType="slide">
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setOpen(false)}>
-          <View style={styles.modal}>
+          <View style={[styles.modal, sheetWidth]}>
             <FlatList
               data={items}
               keyExtractor={(item) => String(keyExtractor(item))}

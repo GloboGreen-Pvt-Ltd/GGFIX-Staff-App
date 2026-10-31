@@ -58,7 +58,7 @@ export default function UploadRepairImagesScreen({ route, navigation }) {
       return next;
     });
     } catch (e) {
-      notify('Could not open gallery', e?.message || 'Please try again.');
+      notify('Could not open gallery', 'Please try again.', { type: 'error' });
     }
   };
 
@@ -72,7 +72,7 @@ export default function UploadRepairImagesScreen({ route, navigation }) {
 
   const onContinue = () => {
     if (!slots.some((slot) => slot.uri || slot.remoteUrl)) {
-      notify('Device image required', 'Upload at least one device image to continue.');
+      notify('Device image required', 'Upload at least one device image to continue.', { type: 'warning' });
       return;
     }
     setBusy(true);

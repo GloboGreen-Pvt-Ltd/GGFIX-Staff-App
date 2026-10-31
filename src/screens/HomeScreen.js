@@ -39,19 +39,22 @@ import {
   checkOut as apiCheckOut,
 } from '../api/technician';
 import { listMyTickets, listTicketEvents } from '../api/tickets';
+import { loadRepairDone } from '../utils/repairDone';
 import { listTechnicianWorkStatuses } from '../api/master';
 import { effectiveLateMinutes } from './DailyAttendanceScreen';
 import { loadUnreadNotificationCount } from './NotificationsScreen';
 import { readCurrentLocation, haversineMeters, GEOFENCE_RADIUS_METERS } from '../utils/geo';
 import { useLogout } from '../auth/LogoutContext';
 import { notify } from '../components/confirm';
-import CheckoutSosAlarm from '../components/CheckoutSosAlarm';
+import { userMessage } from '../utils/userMessages';
+import CheckoutReminder from '../components/CheckoutReminder';
+import MyTasksShortcut from '../components/MyTasksShortcut';
 import { syncCheckoutAlarm, cancelCheckoutAlarm } from '../utils/checkoutAlarm';
 import { CalendarModal, parseISO, toISO } from '../components/DatePickerField';
 import { useBreak, formatMinutes } from '../utils/breakTracker';
-import { BadgeIconTile, MonthPill } from '../components/MintKit';
+import { BadgeIconTile, MonthPill, TILE_TONES } from '../components/MintKit';
 
-// Home-screen palette (Near G Fix green + mint). Scoped to this screen so the
+// Home-screen palette (NearGFix green + mint). Scoped to this screen so the
 // app-wide theme tokens other screens rely on stay untouched.
 const C = {
   // Brand palette
@@ -147,13 +150,13 @@ const TECHNICIAN_CAP_INDEX = EVENT_INDEX.REPAIR_COMPLETED;
 //                     (CREATED, IN_DIAGNOSIS, QUOTED, APPROVED, IN_REPAIR…).
 // CANCELLED tickets are excluded from all three.
 const TASK_FINAL_STATUSES = new Set(['DELIVERED', 'CANCELLED']);
-const TASK_COMPLETED_STATUSES = new Set(['READY', 'DELIVERED']);
+const TASK_COMPLETED_STATUSES = new Set(['READY', 'INVOICE_GENERATED', 'INVOICE_READY', 'DELIVERED_PROCESSING', 'DELIVERED']);
 const TASK_POLL_MS = 30000;
 function taskBucket(t) {
   const s = String(t?.status || '').toUpperCase();
   if (s === 'CANCELLED') return null;
   if (!t?.technicianAcceptedAt && !TASK_FINAL_STATUSES.has(s)) return 'assigned';
-  if (TASK_COMPLETED_STATUSES.has(s)) return 'completed';
+  if (TASK_COMPLETED_STATUSES.has(s) || t?.repairDone) return 'completed';
   return 'pending';
 }
 // Seen "Recent Assigned" ticket ids, stored per user so a shared device
@@ -369,6 +372,7 @@ export default function HomeScreen({ navigation }) {
   const brk = useBreak(userKey);
   const [seenAssigned, setSeenAssigned] = useState(null); // Set | null (not loaded yet)
   const [tasksLoaded, setTasksLoaded] = useState(false);
+  const [repairDoneById, setRepairDoneById] = useState({});
 
   const reloadTickets = useCallback(async () => {
     try {
@@ -377,6 +381,8 @@ export default function HomeScreen({ navigation }) {
       setTickets(items);
       setTasksLoaded(true);
       setErrors((s) => (s.tickets ? { ...s, tickets: undefined } : s));
+      // Repair Completed counts the job as done without waiting for the shop.
+      loadRepairDone(items).then(setRepairDoneById);
     } catch (e) {
       setErrors((s) => ({ ...s, tickets: e?.message || 'Could not load tasks' }));
     } finally {
@@ -401,14 +407,14 @@ export default function HomeScreen({ navigation }) {
     let pending = 0;
     let completed = 0;
     tickets.forEach((t) => {
-      const b = taskBucket(t);
+      const b = taskBucket(repairDoneById[t.id] ? { ...t, repairDone: true } : t);
       if (b === 'assigned') { if (t?.id != null) assignedIds.push(String(t.id)); }
       else if (b === 'pending') pending += 1;
       else if (b === 'completed') completed += 1;
     });
     const unseen = seenAssigned ? assignedIds.filter((id) => !seenAssigned.has(id)).length : 0;
     return { assigned: assignedIds.length, assignedIds, pending, completed, unseen };
-  }, [tickets, seenAssigned]);
+  }, [tickets, seenAssigned, repairDoneById]);
 
   const openRecentAssigned = () => {
     const ids = taskSummary.assignedIds;
@@ -425,7 +431,7 @@ export default function HomeScreen({ navigation }) {
   const hasCheckedOut = !!todayAttendance?.checkOutTime;
   const buttonMode = hasCheckedOut ? 'done' : hasCheckedIn ? 'out' : 'in';
 
-  // Keep the 6:30 PM checkout SOS notifications in step with today's punches.
+  // Keep the 6:30 PM check-out reminder in step with today's punches.
   useEffect(() => {
     if (todayAttendance) syncCheckoutAlarm(todayAttendance);
   }, [todayAttendance?.checkInTime, todayAttendance?.checkOutTime]);
@@ -455,23 +461,24 @@ export default function HomeScreen({ navigation }) {
         await cancelCheckoutAlarm();
         // After a successful check-out the shift is over — sign out back to the
         // login screen (per the attendance lifecycle).
-        notify('Checked out', 'Have a good day!', { preset: 'done', haptic: 'success' });
-        onLogout?.();
+        notify('Checked out', 'Have a good day!', { type: 'success', haptic: 'success' });
+        // quiet: this toast is the one confirmation (no "Logged out" on top).
+        onLogout?.({ quiet: true });
         return;
       }
-      notify('Checked in', 'You’re on duty.', { preset: 'done', haptic: 'success' });
+      notify('Checked in', 'You’re on duty.', { type: 'success', haptic: 'success' });
       reloadAttendance();
     } catch (e) {
       const code = e?.payload?.code;
       if (code === 'OUT_OF_RADIUS') {
-        notify('Too far from the shop', e?.message || 'Move within range to continue.', { preset: 'error', haptic: 'error' });
+        notify('Too far from the shop', userMessage(e, 'Move within range to continue.'), { type: 'error', haptic: 'error' });
       } else if (code === 'EARLY_CHECKOUT_BLOCKED') {
-        notify('Too early to check out', e?.message || 'You can check out only after your duty end time.', { preset: 'error', haptic: 'error' });
+        notify('Too early to check out', userMessage(e, 'You can check out only after your duty end time.'), { type: 'error', haptic: 'error' });
       } else if (code === 'LOCATION_REQUIRED') {
-        notify('Location needed', e?.message || 'Enable location and try again.', { preset: 'error', haptic: 'error' });
+        notify('Location needed', userMessage(e, 'Enable location and try again.'), { type: 'error', haptic: 'error' });
       } else {
         setErrors((s) => ({ ...s, checkin: e?.message }));
-        notify('Could not update attendance', e?.message || 'Please try again.', { preset: 'error' });
+        notify(isCheckout ? 'Could not check out' : 'Could not check in', userMessage(e, 'Please try again.'), { type: 'error' });
       }
     } finally {
       setCheckInBusy(false);
@@ -640,6 +647,11 @@ export default function HomeScreen({ navigation }) {
   const greeting = greetingFor(now);
   const onBreak = buttonMode === 'out' && brk.onBreak;
   const breakMin = brk.breakMinutes(now);
+  // Breaks are a phone-only log (utils/breakTracker): saved the moment it's tapped.
+  const toggleBreak = () => {
+    if (onBreak) { brk.endBreak(); notify('Break ended', '', { type: 'success' }); }
+    else { brk.startBreak(); notify('Break started', '', { type: 'success' }); }
+  };
   const statusText = onBreak ? 'On Break' : buttonMode === 'in' ? 'Not Checked In' : buttonMode === 'out' ? 'On Duty' : 'Completed';
   const statusColor = buttonMode === 'in' || onBreak ? '#FAA700' : '#609138';
 
@@ -666,8 +678,8 @@ export default function HomeScreen({ navigation }) {
   const perms = leaves.filter((l) => String(l.leaveType).toUpperCase() === 'PERMISSION');
   const pendingPerms = perms.filter((l) => !/APPROV|REJECT|CANCEL/i.test(String(l.status || ''))).length;
   const approvedPerms = perms.filter((l) => /APPROV/i.test(String(l.status || ''))).length;
-  const permTile = pendingPerms ? { bg: '#F32C26', fg: '#FFFFFF' }
-    : approvedPerms ? { bg: '#609138', fg: '#FFFFFF' } : null;
+  const permTile = pendingPerms ? { bg: TILE_TONES.red, fg: '#FFFFFF' }
+    : approvedPerms ? { bg: TILE_TONES.green, fg: '#FFFFFF' } : null;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.card }} edges={['top']}>
@@ -708,7 +720,7 @@ export default function HomeScreen({ navigation }) {
                 {now.getHours() >= 18 || now.getHours() < 5 ? <Moon size={rs(30)} color="#1C3053" strokeWidth={1.6} /> : <CloudSun size={rs(34)} color="#FAA700" strokeWidth={1.6} />}
               </View>
               <Text style={{ fontSize: rf(12), color: C.muted }} numberOfLines={1}>{greeting},</Text>
-              <Text style={{ fontSize: rf(14), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+              <Text style={{ fontSize: rf(13), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                 {displayName} 👋
               </Text>
               <View className="flex-row items-center" style={{ marginTop: rs(3) }}>
@@ -720,12 +732,10 @@ export default function HomeScreen({ navigation }) {
               flex: 1, minWidth: 0, backgroundColor: C.card, borderRadius: rs(12), borderWidth: 1, borderColor: C.border,
               paddingHorizontal: rs(10), paddingVertical: rs(6), overflow: 'hidden',
             }}>
-              <View pointerEvents="none" style={{ position: 'absolute', right: -rs(24), top: '50%', marginTop: -rs(22), width: rs(44), height: rs(44), borderRadius: rs(22), backgroundColor: '#E5F3F5' }} />
-              <View pointerEvents="none" style={{ position: 'absolute', right: -rs(10), top: '50%', marginTop: -rs(11), width: rs(22), height: rs(22), borderRadius: rs(11), backgroundColor: '#C3E2E7' }} />
               <MapPin size={rs(17)} color={C.green} fill={C.green} stroke="#FFFFFF" strokeWidth={1.6} />
               <View style={{ flex: 1, marginLeft: rs(8) }}>
                 <Text style={{ fontSize: rf(12), color: C.muted }}>Your Location</Text>
-                <Text style={{ fontSize: rf(14), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Globo Green</Text>
+                <Text style={{ fontSize: rf(13), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Globo Green</Text>
                 <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Cuddalore, Tamil Nadu</Text>
                 {geo.inRange != null ? (
                   <View className="flex-row items-center" style={{ marginTop: rs(3) }}>
@@ -741,7 +751,7 @@ export default function HomeScreen({ navigation }) {
 
           {/* 3. Check In / Check Out tiles */}
           <View className="flex-row" style={{
-            marginTop: rs(12), padding: rs(6), borderRadius: rs(18), backgroundColor: C.card,
+            marginTop: rs(8), padding: rs(4), borderRadius: rs(14), backgroundColor: C.card,
             borderWidth: 1, borderColor: C.border, ...shadow(0.06, 12, 4, 3),
           }}>
             <PunchTile
@@ -749,13 +759,13 @@ export default function HomeScreen({ navigation }) {
               sub={hasCheckedIn ? checkInLabel : geoBlocksCheckIn ? 'Out of range' : 'Tap to Check In'}
               busy={checkInBusy && buttonMode === 'in'} disabled={buttonMode !== 'in' || buttonDisabled} onPress={handleCheckInPress}
             />
-            <View style={{ width: 1, backgroundColor: C.border, marginVertical: rs(14), marginHorizontal: rs(4) }} />
+            <View style={{ width: 1, backgroundColor: C.border, marginVertical: rs(10), marginHorizontal: rs(4) }} />
             <PunchTile
               active={onBreak} icon={Coffee} accent="#FAA700" title={onBreak ? 'End Break' : 'Break'}
               sub={onBreak ? `On break · ${formatMinutes(breakMin)}` : breakMin > 0 ? `Taken ${formatMinutes(breakMin)}` : buttonMode === 'out' ? 'Tap to start' : 'After check-in'}
-              disabled={buttonMode !== 'out' || checkInBusy} onPress={onBreak ? brk.endBreak : brk.startBreak}
+              disabled={buttonMode !== 'out' || checkInBusy} onPress={toggleBreak}
             />
-            <View style={{ width: 1, backgroundColor: C.border, marginVertical: rs(14), marginHorizontal: rs(4) }} />
+            <View style={{ width: 1, backgroundColor: C.border, marginVertical: rs(10), marginHorizontal: rs(4) }} />
             <PunchTile
               active={buttonMode === 'out' && !onBreak} icon={LogOut} title={hasCheckedOut ? 'Checked Out' : 'Check Out'}
               sub={hasCheckedOut ? checkOutLabel : 'Tap to Check Out'}
@@ -765,7 +775,7 @@ export default function HomeScreen({ navigation }) {
 
           {/* Today's punches + duration + status (tap → Daily Attendance history) */}
           <TouchableOpacity activeOpacity={0.85} onPress={() => navigation.navigate('DailyAttendance')} className="flex-row" style={{
-            marginTop: rs(8), paddingVertical: rs(8), borderRadius: rs(14), backgroundColor: C.card,
+            marginTop: rs(6), paddingVertical: rs(6), borderRadius: rs(12), backgroundColor: C.card,
             borderWidth: 1, borderColor: C.border, ...shadow(0.04, 8, 2, 1),
           }}>
             <PunchStat icon={Clock} label="Check In" value={checkInLabel} />
@@ -775,34 +785,34 @@ export default function HomeScreen({ navigation }) {
               <View style={{ width: rs(10), height: rs(10), borderRadius: rs(5), backgroundColor: statusColor, marginVertical: rs(3) }} />
               <Text style={{ fontSize: rf(10), color: C.muted, marginTop: rs(2) }}>Status</Text>
               <View style={{ marginTop: rs(2), backgroundColor: `${statusColor}22`, borderRadius: rs(6), paddingHorizontal: rs(6), paddingVertical: rs(1) }}>
-                <Text style={{ fontSize: rf(10.5), fontWeight: '700', color: statusColor === '#FAA700' ? '#B87800' : statusColor }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{statusText}</Text>
+                <Text style={{ fontSize: rf(10.5), fontWeight: '700', color: statusColor === '#FAA700' ? '#FAA700' : statusColor }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{statusText}</Text>
               </View>
             </View>
           </TouchableOpacity>
 
           {/* 3b. Job Overview — counts per bucket; red dot = new unseen assignments */}
           <SectionTitle title="Job Overview" />
-          <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border, paddingVertical: rs(10), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
+          <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
             <TaskCountCard
-              icon={ClipboardList} fg="#035C6C" tint={C.redTint}
+              icon={ClipboardList} fg={TILE_TONES.blue} tint={C.redTint}
               label="Assigned"
               value={taskSummary.assigned} loading={!tasksLoaded && ticketsLoading}
               onPress={openRecentAssigned}
             />
             <TaskCountCard
-              icon={Briefcase} fg="#1C3053" tint={C.greenTint}
+              icon={Briefcase} fg={TILE_TONES.teal} tint={C.greenTint}
               label="All Jobs"
               value={tickets.length} loading={!tasksLoaded && ticketsLoading}
               onPress={() => navigation.navigate('TaskReport')}
             />
             <TaskCountCard
-              icon={Clock} fg="#FAA700" tint={C.yellowTint}
+              icon={Clock} fg={TILE_TONES.orange} tint={C.yellowTint}
               label="Pending"
               value={taskSummary.pending} loading={!tasksLoaded && ticketsLoading}
               onPress={() => navigation.navigate('TaskReport', { filter: 'Pending' })}
             />
             <TaskCountCard
-              icon={CircleCheck} fg="#609138" tint={C.greenTint}
+              icon={CircleCheck} fg={TILE_TONES.green} tint={C.greenTint}
               label="Completed"
               value={taskSummary.completed} loading={!tasksLoaded && ticketsLoading}
               onPress={() => navigation.navigate('TaskReport', { filter: 'Completed' })}
@@ -814,11 +824,14 @@ export default function HomeScreen({ navigation }) {
             </Text>
           ) : null}
 
+          {/* 3c. My Tasks — general shop tasks (separate from repair jobs) */}
+          <MyTasksShortcut navigation={navigation} />
+
           {/* 4. Quick Access — every category for this role, Partner-app tile grid */}
           <SectionTitle title="Quick Access" />
           <View style={{
-            backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: '#E8ECEF',
-            paddingTop: rs(12), paddingBottom: rs(4), paddingHorizontal: quickPad, ...shadow(0.05, 10, 3, 1),
+            backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: '#E8ECEF',
+            paddingTop: rs(8), paddingBottom: rs(2), paddingHorizontal: quickPad, ...shadow(0.05, 10, 3, 1),
           }}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
               {categories.map((c, i) => (
@@ -826,7 +839,7 @@ export default function HomeScreen({ navigation }) {
                   key={c.key}
                   item={c}
                   width={quickW}
-                  style={{ marginRight: i % quickCols === quickCols - 1 ? 0 : quickGap, marginBottom: rs(8) }}
+                  style={{ marginRight: i % quickCols === quickCols - 1 ? 0 : quickGap, marginBottom: rs(4) }}
                   tint={c.key === 'apply_permission' ? permTile : null}
                   onPress={() => navigation.navigate(c.route, c.params)}
                 />
@@ -836,24 +849,24 @@ export default function HomeScreen({ navigation }) {
 
           {/* 11–13. This Month */}
           <View style={{
-            marginTop: rs(12), backgroundColor: C.card, borderRadius: rs(20),
-            borderWidth: 1, borderColor: C.border, padding: rs(10), ...shadow(0.05, 10, 3, 2),
+            marginTop: rs(10), backgroundColor: C.card, borderRadius: rs(14),
+            borderWidth: 1, borderColor: C.border, padding: rs(8), ...shadow(0.05, 10, 3, 2),
           }}>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center flex-1" style={{ marginRight: rs(8) }}>
-                <View className="items-center justify-center" style={{ width: rs(36), height: rs(36), borderRadius: rs(10), backgroundColor: C.greenTint }}>
-                  <Calendar size={rs(18)} color={C.green} strokeWidth={2.2} />
+                <View className="items-center justify-center" style={{ width: rs(30), height: rs(30), borderRadius: rs(8), backgroundColor: C.greenTint }}>
+                  <Calendar size={rs(15)} color={C.green} strokeWidth={2.2} />
                 </View>
-                <Text className="font-extrabold" style={{ fontSize: rf(16), color: C.text, marginLeft: rs(8) }} numberOfLines={1}>This Month</Text>
+                <Text className="font-extrabold" style={{ fontSize: rf(14.5), color: C.text, marginLeft: rs(8) }} numberOfLines={1}>This Month</Text>
               </View>
               <MonthPill month={month} year={year} onChange={(m, y) => selectMonth(m, y)} />
             </View>
 
-            <View className="flex-row" style={{ marginTop: rs(8), gap: statGap }}>
-              <StatTile inline={statInline} bg={C.greenTint} fg="#609138" icon={Calendar} value={String(present)} label="Present" />
-              <StatTile inline={statInline} bg={C.yellowTint} fg="#FAA700" icon={Briefcase} value={String(leaveDays)} label="Leave" />
-              <StatTile inline={statInline} bg="#F2E1FA" fg="#0788C9" icon={ClipboardList} value={String(permission)} label="Permission" />
-              <StatTile inline={statInline} bg={C.redTint} fg="#F32C26" icon={Clock} value={String(lateHrs)} label="Late Hrs" />
+            <View className="flex-row" style={{ marginTop: rs(6), gap: statGap }}>
+              <StatTile inline={statInline} bg={C.greenTint} fg={TILE_TONES.green} icon={Calendar} value={String(present)} label="Present" />
+              <StatTile inline={statInline} bg={C.yellowTint} fg={TILE_TONES.orange} icon={Briefcase} value={String(leaveDays)} label="Leave" />
+              <StatTile inline={statInline} bg={C.greenTint} fg={TILE_TONES.blue} icon={ClipboardList} value={String(permission)} label="Permission" />
+              <StatTile inline={statInline} bg={C.redTint} fg={TILE_TONES.red} icon={Clock} value={String(lateHrs)} label="Late Hrs" />
             </View>
           </View>
         </View>
@@ -873,7 +886,7 @@ export default function HomeScreen({ navigation }) {
         accent={C.green}
         accentSoft={C.greenTint}
       />
-      <CheckoutSosAlarm onDuty={hasCheckedIn && !hasCheckedOut} busy={checkInBusy} onCheckOut={handleCheckInPress} />
+      <CheckoutReminder onDuty={hasCheckedIn && !hasCheckedOut} />
     </SafeAreaView>
   );
 }
@@ -889,8 +902,8 @@ function formatShortDay(date) {
 // Bold section heading (customer-app style, no "See all" — there's no list screen to open).
 function SectionTitle({ title, onViewAll }) {
   return (
-    <View className="flex-row items-center" style={{ marginTop: rs(14), marginBottom: rs(8) }}>
-      <Text style={{ flex: 1, fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>{title}</Text>
+    <View className="flex-row items-center" style={{ marginTop: rs(10), marginBottom: rs(6) }}>
+      <Text style={{ flex: 1, fontSize: rf(14.5), fontWeight: '800', color: '#1C3053' }}>{title}</Text>
       {onViewAll ? (
         <TouchableOpacity onPress={onViewAll} hitSlop={8} activeOpacity={0.7} className="flex-row items-center" style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text style={{ fontSize: rf(13), fontWeight: '600', color: C.green }}>View All</Text>
@@ -905,17 +918,17 @@ function SectionTitle({ title, onViewAll }) {
 // circle with a solid glyph and a two-line label underneath.
 function QuickTile({ item, width, style, onPress, tint }) {
   const t = { ...(QUICK_TILES[item.key] || QUICK_TILES.default), ...(tint || {}) };
-  const box = rs(44);
+  const box = rs(36);
   return (
     <TouchableOpacity
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={item.label.replace(/\n/g, ' ')}
       activeOpacity={0.75}
-      style={[{ width, alignItems: 'center', paddingVertical: rs(4) }, style]}
+      style={[{ width, alignItems: 'center', paddingVertical: rs(2) }, style]}
     >
       <View style={{ width: box, height: box, borderRadius: box / 2, backgroundColor: t.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <MaterialCommunityIcons name={t.icon} size={rs(23)} color={t.fg || QUICK_TILE_INK} />
+        <MaterialCommunityIcons name={t.icon} size={rs(19)} color={t.fg || QUICK_TILE_INK} />
         {t.badge ? (
           <View style={{
             position: 'absolute', top: -rs(4), right: -rs(4), minWidth: rs(18), height: rs(18), borderRadius: rs(9),
@@ -926,7 +939,7 @@ function QuickTile({ item, width, style, onPress, tint }) {
         ) : null}
       </View>
       <Text
-        style={{ fontSize: rf(12), lineHeight: rlh(16), minHeight: rlh(32), fontWeight: '600', color: C.text, textAlign: 'center', marginTop: rs(6), letterSpacing: -0.1 }}
+        style={{ fontSize: rf(11), lineHeight: rlh(14), minHeight: rlh(28), fontWeight: '600', color: C.text, textAlign: 'center', marginTop: rs(4), letterSpacing: -0.1 }}
         numberOfLines={2}
         adjustsFontSizeToFit
         minimumFontScale={0.8}
@@ -960,7 +973,7 @@ function HeaderButton({ icon: Icon, dot, plain, onPress }) {
 
 // Task Overview button: tinted circle icon with a red count badge (hidden at 0).
 function TaskCountCard({ icon, fg, label, value, loading, onPress }) {
-  return <BadgeIconTile icon={icon} color={fg} label={label} count={loading ? null : value} loading={loading} onPress={onPress} badgeRed size={rs(40)} />;
+  return <BadgeIconTile compact icon={icon} color={fg} label={label} count={loading ? null : value} loading={loading} onPress={onPress} badgeRed size={rs(32)} />;
 }
 
 // "Xh YYm" worked today: check-in → check-out (or now), minus phone-logged break minutes.
@@ -974,19 +987,19 @@ function workDuration(inTime, outTime, now, breakMin = 0) {
 
 // Big Check In / Check Out tile. The active one (the next punch) is the teal gradient.
 function PunchTile({ active, icon: Icon, title, sub, busy, disabled, onPress, accent }) {
-  const ring = rs(42);
+  const ring = rs(34);
   const body = (
     <>
       <View style={{
         width: ring, height: ring, borderRadius: ring / 2, alignItems: 'center', justifyContent: 'center',
         backgroundColor: active ? 'rgba(255,255,255,0.12)' : accent ? `${accent}22` : C.bg,
-        borderWidth: rs(3), borderColor: active ? 'rgba(255,255,255,0.25)' : '#FFFFFF',
+        borderWidth: rs(2), borderColor: active ? 'rgba(255,255,255,0.25)' : '#FFFFFF',
         ...(active ? {} : shadow(0.08, 6, 2, 2)),
       }}>
-        {busy ? <ActivityIndicator color="#FFFFFF" /> : <Icon size={rs(19)} color={active ? '#FFFFFF' : accent || C.green} strokeWidth={2} />}
+        {busy ? <ActivityIndicator color="#FFFFFF" /> : <Icon size={rs(16)} color={active ? '#FFFFFF' : accent || C.green} strokeWidth={2} />}
       </View>
-      <Text style={{ fontSize: rf(13), fontWeight: '800', color: active ? '#FFFFFF' : C.text, marginTop: rs(5) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{title}</Text>
-      <Text style={{ fontSize: rf(10), color: active ? 'rgba(255,255,255,0.85)' : C.muted, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{sub}</Text>
+      <Text style={{ fontSize: rf(12), fontWeight: '800', color: active ? '#FFFFFF' : C.text, marginTop: rs(3) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{title}</Text>
+      <Text style={{ fontSize: rf(9.5), color: active ? 'rgba(255,255,255,0.85)' : C.muted, marginTop: 0 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{sub}</Text>
     </>
   );
   return (
@@ -994,9 +1007,9 @@ function PunchTile({ active, icon: Icon, title, sub, busy, disabled, onPress, ac
                       style={{ flex: 1, borderRadius: rs(14), overflow: 'hidden', opacity: active && disabled && !busy ? 0.6 : 1 }}>
       {active ? (
         <LinearGradient colors={[C.green, '#024A57']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                        style={{ alignItems: 'center', paddingVertical: rs(8), paddingHorizontal: rs(4) }}>{body}</LinearGradient>
+                        style={{ alignItems: 'center', paddingVertical: rs(6), paddingHorizontal: rs(4) }}>{body}</LinearGradient>
       ) : (
-        <View style={{ alignItems: 'center', paddingVertical: rs(8), paddingHorizontal: rs(4) }}>{body}</View>
+        <View style={{ alignItems: 'center', paddingVertical: rs(6), paddingHorizontal: rs(4) }}>{body}</View>
       )}
     </TouchableOpacity>
   );
@@ -1005,9 +1018,9 @@ function PunchTile({ active, icon: Icon, title, sub, busy, disabled, onPress, ac
 function PunchStat({ icon: Icon, label, value, divider }) {
   return (
     <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: rs(2), ...(divider ? { borderLeftWidth: 1, borderLeftColor: C.border } : {}) }}>
-      <Icon size={rs(16)} color={C.green} />
-      <Text style={{ fontSize: rf(10), color: C.muted, marginTop: rs(2) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
-      <Text style={{ fontSize: rf(12), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{value}</Text>
+      <Icon size={rs(14)} color={C.green} />
+      <Text style={{ fontSize: rf(9.5), color: C.muted, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
+      <Text style={{ fontSize: rf(11.5), fontWeight: '800', color: C.text, marginTop: 0 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{value}</Text>
     </View>
   );
 }
@@ -1023,6 +1036,6 @@ function Avatar({ uri, name, size, dark }) {
 }
 
 function StatTile({ fg, icon, value, label }) {
-  return <BadgeIconTile icon={icon} color={fg} label={label} count={value} size={rs(40)} />;
+  return <BadgeIconTile compact icon={icon} color={fg} label={label} count={value} size={rs(32)} />;
 }
 

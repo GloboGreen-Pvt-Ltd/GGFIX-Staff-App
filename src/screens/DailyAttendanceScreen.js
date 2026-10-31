@@ -28,9 +28,12 @@ import { ticketApi } from '../api/client';
 import { useTechnicianIdState } from '../auth/useTechnicianId';
 import TechIdPending from '../components/TechIdPending';
 import { selectSession } from '../store/authSlice';
-import { rf, rs } from '../utils/responsive';
+import { rf, rs, sheetWidth } from '../utils/responsive';
 import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
-import { StatIconCard, MonthPill } from '../components/MintKit';
+import { MonthPill, TILE_TONES, solidGlyph } from '../components/MintKit';
+import { LeftVerticalSidebar, SidebarLayout, useSidebarWidth } from '../components/JobCardKit';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { userMessage } from '../utils/userMessages';
 
 // Screen palette.
 const C = {
@@ -52,10 +55,10 @@ const C = {
   absentBg: '#FDDCDC',
   // Distinct colour per status: leave = blue, late = orange, overtime/permission = purple, hours = teal.
   blue: '#0788C9',
-  softBlue: '#CCDCFB',
-  blueBorder: '#A2BDF5',
+  softBlue: '#D8ECF8',
+  blueBorder: '#9CCFEA',
   purple: '#1C3053',
-  softPurple: '#DCCDFB',
+  softPurple: '#E6F3FA',
   yellow: '#FAA700',
   softYellow: '#FFDCAE',
   yellowBorder: '#FBBE6E',
@@ -119,12 +122,24 @@ const MONTHS = [
 const DOW = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-// Visual config per day kind. "off" = week-off / holiday rows.
+// Visual config per day kind. "off" = week-off / holiday rows. Colours are the
+// app-wide TILE_TONES (Partner dashboard set); bg / border are their tints.
+// Filled icons for the stat tiles (Partner-app style); chips and day rows keep
+// KIND's outline icons.
+const STAT_ICONS = {
+  present: solidGlyph(MaterialCommunityIcons, 'account-check'),
+  late: solidGlyph(MaterialCommunityIcons, 'clock-alert'),
+  absent: solidGlyph(MaterialCommunityIcons, 'account-cancel'),
+  leave: solidGlyph(MaterialCommunityIcons, 'calendar-remove'),
+  work: solidGlyph(MaterialCommunityIcons, 'briefcase-clock'),
+  overtime: solidGlyph(MaterialCommunityIcons, 'lightning-bolt'),
+};
+
 const KIND = {
-  present: { label: 'Present', color: '#609138', bg: '#D3E5C3', border: '#AFCD94', icon: User, dot: '#609138' },
-  late: { label: 'Late', color: C.yellow, bg: C.softYellow, border: C.yellowBorder, icon: AlarmClock, dot: '#FAA700' },
-  absent: { label: 'Absent', color: C.red, bg: C.softRed, border: C.redBorder, icon: CircleX, dot: C.red },
-  leave: { label: 'Leave', color: C.blue, bg: C.softBlue, border: C.blueBorder, icon: FileText, dot: C.blue },
+  present: { label: 'Present', color: TILE_TONES.green, bg: `${TILE_TONES.green}1F`, border: `${TILE_TONES.green}55`, icon: User, dot: TILE_TONES.green },
+  late: { label: 'Late', color: TILE_TONES.orange, bg: `${TILE_TONES.orange}1F`, border: `${TILE_TONES.orange}55`, icon: AlarmClock, dot: TILE_TONES.orange },
+  absent: { label: 'Absent', color: TILE_TONES.red, bg: `${TILE_TONES.red}1F`, border: `${TILE_TONES.red}55`, icon: CircleX, dot: TILE_TONES.red },
+  leave: { label: 'Leave', color: TILE_TONES.blue, bg: `${TILE_TONES.blue}1F`, border: `${TILE_TONES.blue}55`, icon: FileText, dot: TILE_TONES.blue },
   off: { label: 'Week Off', color: C.muted, bg: C.softGrey, border: C.border, icon: Calendar, dot: C.faint },
 };
 const FILTERS = ['all', 'present', 'late', 'absent', 'leave'];
@@ -159,6 +174,7 @@ function classifyRecord(record, dutyCheckIn) {
 export default function DailyAttendanceScreen({ navigation }) {
   useHideNativeHeader(navigation);
   const { width: winW } = useWindowDimensions();
+  const sidebarW = useSidebarWidth();
   const { id: technicianId, failed: techIdFailed, retry: retryTechId } = useTechnicianIdState();
   const session = useSelector(selectSession);
   const dutyCheckIn = session?.defaultCheckIn || DEFAULT_DUTY_CHECK_IN;
@@ -198,7 +214,7 @@ export default function DailyAttendanceScreen({ navigation }) {
     } catch (e) {
       if (id !== reqId.current) return;
       if (!isRefresh) setData(null);
-      setError(e?.message || 'Could not load attendance.');
+      setError(userMessage(e, 'Could not load attendance.'));
     } finally {
       if (id === reqId.current) {
         setLoading(false);
@@ -326,8 +342,9 @@ export default function DailyAttendanceScreen({ navigation }) {
     setDetailDay(d);
   };
 
-  const contentW = Math.min(winW, MAX_CONTENT_WIDTH);
-  const innerW = contentW - rs(32);
+  // The status sidebar takes the left edge; the page uses the rest.
+  const contentW = Math.min(winW - sidebarW, MAX_CONTENT_WIDTH);
+  const innerW = contentW - rs(20);
 
   const header = <MintScreenHeader title="Daily Attendance" navigation={navigation} />;
 
@@ -342,12 +359,25 @@ export default function DailyAttendanceScreen({ navigation }) {
   }
 
   const monthLabel = `${MONTHS[month - 1]} ${year}`;
+  // Left sidebar: the four statuses filter the records (tap again for all);
+  // Work Hrs / Overtime only show the month's totals.
+  const sidebarItems = [
+    { key: 'present', label: 'Present', icon: STAT_ICONS.present, color: KIND.present.color, count: stats.present },
+    { key: 'late', label: 'Late', icon: STAT_ICONS.late, color: KIND.late.color, count: stats.late },
+    { key: 'absent', label: 'Absent', icon: STAT_ICONS.absent, color: KIND.absent.color, count: stats.absent },
+    { key: 'leave', label: 'Leave', icon: STAT_ICONS.leave, color: KIND.leave.color, count: stats.leave },
+    { key: 'work', label: 'Work Hrs', icon: STAT_ICONS.work, color: TILE_TONES.teal, sub: fmtShortHM(stats.workTotal), static: true },
+    { key: 'overtime', label: 'Overtime', icon: STAT_ICONS.overtime, color: TILE_TONES.navy, sub: shiftMinutes ? fmtShortHM(stats.otTotal) : '—', static: true },
+  ];
   const visibleRows = expanded ? listDays : listDays.slice(0, DEFAULT_VISIBLE_ROWS);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <MintBackdrop />
       {header}
+      <SidebarLayout
+        sidebar={<LeftVerticalSidebar items={sidebarItems} active={filter} onPick={(k) => applyFilter(filter === k ? 'all' : k, true)} />}
+      >
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.content}
@@ -359,10 +389,10 @@ export default function DailyAttendanceScreen({ navigation }) {
           <View style={styles.card}>
             <View style={styles.rowCenter}>
               <View style={styles.monthIconTile}>
-                <Calendar size={rs(18)} color={C.green} strokeWidth={2.2} />
+                <Calendar size={rs(14)} color="#FFFFFF" strokeWidth={2.2} />
               </View>
-              <Text style={[styles.monthTitle, { flex: 1, marginLeft: rs(10) }]} numberOfLines={1}>This Month</Text>
-              <MonthPill month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
+              <Text style={[styles.monthTitle, { flex: 1, marginHorizontal: rs(6) }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>This Month</Text>
+              <MonthPill compact month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
             </View>
           </View>
 
@@ -382,52 +412,12 @@ export default function DailyAttendanceScreen({ navigation }) {
             </View>
           ) : (
             <>
-              {/* Stats 3×2 */}
-              <View style={[styles.card, styles.statsGrid]}>
-                <StatTile kind="present" value={stats.present} label="Present" caption={stats.pct(stats.present)}
-                          captionColor={C.text} active={filter === 'present'} onPress={() => applyFilter('present', true)} />
-                <StatTile kind="late" value={stats.late} label="Late" caption={stats.pct(stats.late)}
-                          captionColor={C.text} active={filter === 'late'} onPress={() => applyFilter('late', true)} />
-                <StatTile kind="absent" value={stats.absent} label="Absent" caption={stats.pct(stats.absent)}
-                          captionColor={C.text} active={filter === 'absent'} onPress={() => applyFilter('absent', true)} />
-                <StatTile kind="leave" value={stats.leave} label="Leave" caption={stats.pct(stats.leave)}
-                          captionColor={C.text} active={filter === 'leave'} onPress={() => applyFilter('leave', true)} />
-                <StatTile icon={Clock} color={C.teal} bg={C.softTeal} border={C.tealBorder}
-                          value={fmtHM(stats.workTotal) || '0h'} label="Working Hrs"
-                          caption={stats.workedDays ? `Avg. ${fmtHM(stats.workAvg, true)}/day` : 'No hours yet'} captionColor={C.text} />
-                <StatTile icon={Zap} color="#1C3053" bg={C.softPurple} border="#C1AAF5"
-                          value={shiftMinutes ? (fmtHM(stats.otTotal) || '0m') : '—'} label="Overtime"
-                          caption={shiftMinutes ? (stats.workedDays ? `Avg. ${fmtHM(stats.otAvg, true) || '0m'}/day` : 'No hours yet') : 'Shift not set'}
-                          captionColor={C.text} />
-              </View>
-
-              {/* Filter chips */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow} style={{ marginBottom: rs(10) }}>
-                {FILTERS.map((f) => {
-                  const active = filter === f;
-                  if (f === 'all') {
-                    return (
-                      <TouchableOpacity key={f} onPress={() => applyFilter('all')} style={[styles.chip, active ? styles.chipAllActive : styles.chipAll]} accessibilityRole="button" accessibilityState={{ selected: active }}>
-                        <Text style={[styles.chipText, { color: active ? '#FFFFFF' : C.green }]}>All</Text>
-                      </TouchableOpacity>
-                    );
-                  }
-                  const k = KIND[f];
-                  const Icon = k.icon;
-                  return (
-                    <TouchableOpacity
-                      key={f}
-                      onPress={() => applyFilter(active ? 'all' : f)}
-                      style={[styles.chip, { backgroundColor: active ? k.color : k.bg, borderColor: active ? k.color : k.border }]}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: active }}
-                    >
-                      <Icon size={rs(14)} color={active ? '#FFFFFF' : k.color} strokeWidth={2.2} />
-                      <Text style={[styles.chipText, { color: active ? "#FFFFFF" : C.text }]}>{k.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+              {filter !== 'all' ? (
+                <TouchableOpacity onPress={() => applyFilter('all')} style={styles.clearChip} accessibilityRole="button" accessibilityLabel="Show all days">
+                  <Text style={styles.clearChipText}>Showing {KIND[filter].label.toLowerCase()} days</Text>
+                  <CircleX size={rs(13)} color={C.green} strokeWidth={2.2} />
+                </TouchableOpacity>
+              ) : null}
 
               {/* Records */}
               <View onLayout={(e) => { recordsY.current = e.nativeEvent.layout.y; }}>
@@ -455,6 +445,7 @@ export default function DailyAttendanceScreen({ navigation }) {
           )}
         </View>
       </ScrollView>
+      </SidebarLayout>
 
       <DayDetailsModal
         d={detailDay}
@@ -481,15 +472,6 @@ function RoundBtn({ onPress, label, children, size = rs(34) }) {
   );
 }
 
-function StatTile({ kind, icon, color, value, label, onPress, active }) {
-  const k = kind ? KIND[kind] : null;
-  return (
-    <View style={styles.statCell}>
-      <StatIconCard icon={icon || k.icon} color={color || k.color} label={label} value={value} active={active} onPress={onPress} />
-    </View>
-  );
-}
-
 function MiniTile({ icon: Icon, value, label, color, bg, valueColor }) {
   return (
     <View style={[styles.mini, { backgroundColor: bg }]}>
@@ -511,17 +493,21 @@ function RecordRow({ d, dutyCheckIn, onPress }) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.75} style={[styles.recordCard, { borderLeftColor: k.color }]} accessibilityRole="button" accessibilityLabel={`${formatDateLabel(d)} ${k.label}`}>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <View style={[styles.rowCenter, { flexWrap: 'wrap', gap: rs(5), marginBottom: rs(8) }]}>
-          <Text style={{ flex: 1, fontSize: rf(14), fontWeight: '800', color: C.text }} numberOfLines={1}>
+        <View style={[styles.rowCenter, { flexWrap: 'wrap', gap: rs(5), marginBottom: rs(5) }]}>
+          <Text style={{ flex: 1, fontSize: rf(13), fontWeight: '800', color: C.text }} numberOfLines={1}>
             {DOW[d.dow]}, {pad2(d.day)} {MONTHS_SHORT[d.month - 1]}
           </Text>
           <View style={[styles.statusPill, { backgroundColor: k.bg }]}>
-            <PillIcon size={rs(12)} color={k.color} strokeWidth={2.4} />
+            <View style={[styles.pillDot, { backgroundColor: k.color }]}>
+              <PillIcon size={rs(9)} color="#FFFFFF" strokeWidth={2.8} />
+            </View>
             <Text style={[styles.statusPillText, { color: C.text }]}>{d.kind === 'off' ? offLabel : k.label}</Text>
           </View>
           {isPermission ? (
             <View style={[styles.statusPill, { backgroundColor: C.softPurple }]}>
-              <Timer size={rs(12)} color={C.purple} strokeWidth={2.4} />
+              <View style={[styles.pillDot, { backgroundColor: C.purple }]}>
+                <Timer size={rs(9)} color="#FFFFFF" strokeWidth={2.8} />
+              </View>
               <Text style={[styles.statusPillText, { color: C.text }]}>Permission</Text>
             </View>
           ) : null}
@@ -534,10 +520,10 @@ function RecordRow({ d, dutyCheckIn, onPress }) {
           </Text>
         ) : (
           <View style={styles.miniRow}>
-            <MiniTile icon={LogIn} color={C.green} bg={C.softMint} value={formatTime12(r?.checkInTime)} label="Check In" valueColor={C.text} />
-            <MiniTile icon={LogOut} color={C.green} bg={C.softMint} value={formatTime12(r?.checkOutTime)} label="Check Out" />
-            <MiniTile icon={Clock} color={C.teal} bg={C.softTeal} value={formatWorkingHours(r?.workingHours)} label="Working Hrs" />
-            <MiniTile icon={ClockAlert} color={late ? C.yellow : C.green} bg={late ? C.softYellow : C.softMint}
+            <MiniTile icon={LogIn} color="#609138" bg="#E8F5E9" value={formatTime12(r?.checkInTime)} label="Check In" valueColor={C.text} />
+            <MiniTile icon={LogOut} color="#F32C26" bg="#FDEBEC" value={formatTime12(r?.checkOutTime)} label="Check Out" />
+            <MiniTile icon={Clock} color="#035C6C" bg="#DDF2F4" value={formatWorkingHours(r?.workingHours)} label="Working Hrs" />
+            <MiniTile icon={ClockAlert} color="#FAA700" bg="#FFF0D5"
                       value={late ? fmtHM(lateMin) : '—'} label="Late Hrs" valueColor={C.text} />
           </View>
         )}
@@ -572,7 +558,7 @@ function DayDetailsModal({ d, dutyCheckIn, dutyCheckOut, shiftMinutes, onClose }
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={() => {}}>
+        <Pressable style={[styles.sheet, sheetWidth]} onPress={() => {}}>
           {d ? (
             <>
               <View style={styles.sheetHandle} />
@@ -624,6 +610,13 @@ function prettyLeaveType(t) {
 }
 
 // Minutes → "162h 30m" / "9h 02m" (padMin) / "45m".
+// Short hours for a stat button's count badge: "12h", "45m", "0m".
+function fmtShortHM(minutes) {
+  if (!minutes || minutes <= 0) return '0m';
+  const h = Math.floor(minutes / 60);
+  return h ? `${h}h` : `${Math.round(minutes)}m`;
+}
+
 function fmtHM(minutes, padMin = false) {
   if (!minutes || minutes <= 0) return '';
   const h = Math.floor(minutes / 60);
@@ -665,7 +658,7 @@ function formatDateLabel(d) {
 }
 
 const cardShadow = {
-  shadowColor: '#111111', shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2,
+  shadowColor: '#111111', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 1,
 };
 
 const styles = StyleSheet.create({
@@ -675,7 +668,7 @@ const styles = StyleSheet.create({
 
   card: {
     backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: C.border,
-    padding: rs(12), marginBottom: rs(10), ...cardShadow,
+    padding: rs(8), marginBottom: rs(8), ...cardShadow,
   },
   stateCard: { alignItems: 'center', paddingVertical: rs(24), gap: rs(8) },
   stateText: { fontSize: rf(13), color: C.muted, textAlign: 'center' },
@@ -687,10 +680,10 @@ const styles = StyleSheet.create({
 
   // This Month
   monthIconTile: {
-    width: rs(40), height: rs(40), borderRadius: rs(12), backgroundColor: C.mint,
+    width: rs(28), height: rs(28), borderRadius: rs(14), backgroundColor: C.green,
     alignItems: 'center', justifyContent: 'center',
   },
-  monthTitle: { fontSize: rf(16), fontWeight: '800', color: C.text },
+  monthTitle: { fontSize: rf(14.5), fontWeight: '800', color: C.text },
   monthSubtitle: { fontSize: rf(12), color: C.muted, marginTop: 1 },
   roundBtn: {
     backgroundColor: C.card, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', ...cardShadow,
@@ -704,8 +697,11 @@ const styles = StyleSheet.create({
 
   // Stats
   // Three equal columns via percentages — never wraps to two per row.
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: rs(8), padding: rs(10) },
-  statCell: { width: '32%' },
+  clearChip: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: rs(6), marginBottom: rs(8),
+    backgroundColor: C.mint, borderRadius: 999, paddingHorizontal: rs(10), paddingVertical: rs(4),
+  },
+  clearChipText: { fontSize: rf(11.5), fontWeight: '700', color: C.green },
   statTile: { borderRadius: rs(14), borderWidth: 1, paddingVertical: rs(10), paddingHorizontal: rs(8), alignItems: 'center', minHeight: rs(70), justifyContent: 'center' },
   statTop: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center' },
   statIcon: {
@@ -719,20 +715,20 @@ const styles = StyleSheet.create({
   // Chips
   chipsRow: { gap: rs(8), paddingVertical: rs(2), paddingRight: rs(4) },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(6), borderRadius: 999, borderWidth: 1,
-    paddingHorizontal: rs(16), paddingVertical: rs(8),
+    flexDirection: 'row', alignItems: 'center', gap: rs(5), borderRadius: 999, borderWidth: 1,
+    paddingHorizontal: rs(12), paddingVertical: rs(5),
   },
   chipAll: { backgroundColor: C.mint, borderColor: C.mintBorder },
-  chipAllActive: { backgroundColor: C.green, borderColor: C.green, paddingHorizontal: rs(22) },
-  chipText: { fontSize: rf(13), fontWeight: '700' },
+  chipAllActive: { backgroundColor: C.green, borderColor: C.green, paddingHorizontal: rs(16) },
+  chipText: { fontSize: rf(12), fontWeight: '700' },
 
   // Records
-  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: rs(8), marginTop: rs(2), gap: rs(8) },
-  sectionTitle: { fontSize: rf(16), fontWeight: '800', color: C.text, flexShrink: 1 },
-  seeAll: { fontSize: rf(13), fontWeight: '700', color: C.green },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: rs(6), marginTop: rs(2), gap: rs(8) },
+  sectionTitle: { fontSize: rf(14.5), fontWeight: '800', color: C.text, flexShrink: 1 },
+  seeAll: { fontSize: rf(12), fontWeight: '700', color: C.green },
   recordCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(12),
-    borderWidth: 1, borderColor: C.border, borderLeftWidth: rs(3), paddingVertical: rs(6), paddingHorizontal: rs(7), marginBottom: rs(6), ...cardShadow,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(14),
+    borderWidth: 1, borderColor: C.border, borderLeftWidth: rs(3), paddingVertical: rs(5), paddingHorizontal: rs(7), marginBottom: rs(5), ...cardShadow,
   },
   dateBlock: {
     width: rs(36), alignItems: 'center', justifyContent: 'center', borderRadius: rs(9),
@@ -743,14 +739,15 @@ const styles = StyleSheet.create({
   dateMon: { fontSize: rf(10), color: C.muted },
   statusPill: {
     flexDirection: 'row', alignItems: 'center', gap: rs(4), alignSelf: 'flex-start',
-    paddingHorizontal: rs(7), paddingVertical: rs(1), borderRadius: 999,
+    paddingLeft: rs(2), paddingRight: rs(8), paddingVertical: rs(2), borderRadius: 999,
   },
-  statusPillText: { fontSize: rf(11.5), fontWeight: '700' },
-  rowNote: { fontSize: rf(12), color: C.muted },
-  miniRow: { flexDirection: 'row', gap: rs(3) },
-  mini: { flex: 1, minWidth: 0, borderRadius: rs(8), paddingHorizontal: rs(4), paddingVertical: rs(4) },
-  miniValue: { fontSize: rf(12.5), fontWeight: '800', marginTop: rs(1) },
-  miniLabel: { fontSize: rf(9.5), color: C.muted, marginTop: 1 },
+  pillDot: { width: rs(16), height: rs(16), borderRadius: rs(8), alignItems: 'center', justifyContent: 'center' },
+  statusPillText: { fontSize: rf(10.5), fontWeight: '700' },
+  rowNote: { fontSize: rf(11.5), color: C.muted },
+  miniRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: rs(4) },
+  mini: { width: '49%', minWidth: 0, borderRadius: rs(8), paddingHorizontal: rs(6), paddingVertical: rs(4) },
+  miniValue: { fontSize: rf(11.5), fontWeight: '800', marginTop: 0 },
+  miniLabel: { fontSize: rf(9), color: C.muted, marginTop: 0 },
 
   // Calendar
   calNav: { width: rs(26), height: rs(26), alignItems: 'center', justifyContent: 'center' },

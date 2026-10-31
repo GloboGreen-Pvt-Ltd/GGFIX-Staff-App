@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { getPickupRepairEstimate } from '../api/pickups';
 import { normalizeDeviceImageUrl } from '../utils/images';
 import { rf, rs } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
 // Pickup-side Estimate Details. Visual language mirrors the shop-owner
 // "Booking Details" screen (cards stacked vertically: device hero with a
@@ -119,14 +120,14 @@ function buildPrefillLock(booking) {
 function statusBadge(status) {
   const s = String(status || '').toUpperCase();
   if (s === 'PICKUP_PERSON_ASSIGNED' || s === 'PICKUP_ASSIGNED' || s === 'PICKUP_REASSIGNED') {
-    return { label: 'Assigned', bg: '#FEF3C7', fg: '#92400E' };
+    return { label: 'Assigned', bg: '#FEF3C7', fg: '#FAA700' };
   }
   if (s === 'PICKUP_ON_THE_WAY') return { label: 'On The Way', bg: '#DBEAFE', fg: '#1C3053' };
-  if (s === 'REPAIR_ESTIMATE_PROCESSING') return { label: 'In Diagnosis', bg: '#FEF3C7', fg: '#92400E' };
+  if (s === 'REPAIR_ESTIMATE_PROCESSING') return { label: 'In Diagnosis', bg: '#FEF3C7', fg: '#FAA700' };
   if (s === 'DEVICE_PICKED_UP' || s === 'PICKED_UP') return { label: 'Picked Up', bg: '#E0E7FF', fg: '#035C6C' };
   if (s === 'REACHED_SHOP') return { label: 'Reached Shop', bg: '#DCFCE7', fg: '#609138' };
   if (s === 'RECEIVED_AT_SHOP') return { label: 'Received', bg: '#DCFCE7', fg: '#609138' };
-  if (s === 'CANCELLED') return { label: 'Cancelled', bg: '#FEE2E2', fg: '#991B1B' };
+  if (s === 'CANCELLED') return { label: 'Cancelled', bg: '#FEE2E2', fg: '#F32C26' };
   if (!s) return null;
   return { label: s.replace(/_/g, ' '), bg: '#E5E7EB', fg: '#374151' };
 }
@@ -146,7 +147,7 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
       const fresh = await getPickupRepairEstimate(bookingId);
       setData((prev) => ({ ...(prev || {}), ...(fresh || {}) }));
     } catch (e) {
-      setError(e?.message || 'Could not load estimate');
+      setError(userMessage(e, 'Could not load estimate'));
     } finally {
       setLoading(false);
     }

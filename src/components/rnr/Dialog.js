@@ -3,12 +3,13 @@ import { Modal, Pressable, View } from 'react-native';
 import { Text } from '../Typography';
 import { Ionicons } from '@expo/vector-icons';
 import { cn } from './cn';
+import { sheetWidth } from '../../utils/responsive';
 
 export function Dialog({ open, onClose, children, className }) {
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable className="flex-1 bg-black/50 justify-center px-6" onPress={onClose}>
-        <Pressable className={cn('bg-card rounded-2xl p-6', className)} onPress={(e) => e.stopPropagation()}>
+        <Pressable className={cn('bg-card rounded-2xl p-6', className)} style={sheetWidth} onPress={(e) => e.stopPropagation()}>
           {children}
         </Pressable>
       </Pressable>

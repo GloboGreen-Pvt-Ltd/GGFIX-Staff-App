@@ -10,7 +10,7 @@ import {
   listBrands, listModelsForBrand,
   listRepairCategories, listRepairServices,
 } from '../api/master';
-import { rf } from '../utils/responsive';
+import { rf, sheetWidth } from '../utils/responsive';
 import { openExternalUrl } from '../utils/safeLink';
 import ImageViewerModal from '../components/ImageViewerModal';
 
@@ -295,7 +295,7 @@ function PickerModal({ visible, title, options, onPick, onClose }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.4)' }}>
-        <View className="bg-card rounded-t-2xl p-4" style={{ maxHeight: '70%' }}>
+        <View className="bg-card rounded-t-2xl p-4" style={[{ maxHeight: '70%' }, sheetWidth]}>
           <View className="flex-row items-center justify-between mb-3">
             <Text style={{ fontSize: rf(16), fontWeight: '800', color: '#1C3053' }}>{title}</Text>
             <TouchableOpacity onPress={onClose} hitSlop={8}>

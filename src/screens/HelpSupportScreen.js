@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TouchableOpacity, ScrollView, Linking, Alert, Platform } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Linking } from 'react-native';
 import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
@@ -31,7 +31,7 @@ export default function HelpSupportScreen({ navigation }) {
   const employeeId = employeeIdFromSession(session);
   const shopId = session?.shopId || '—';
   // Prefilled so support knows who's writing without asking.
-  const intro = `Hi Near G Fix team, I need help.\n\nName: ${name}\nEmployee ID: ${employeeId || '—'}\nShop ID: ${shopId}\n\n`;
+  const intro = `Hi NearGFix team, I need help.\n\nName: ${name}\nEmployee ID: ${employeeId || '—'}\nShop ID: ${shopId}\n\n`;
 
   const open = async (url, fallback) => {
     try {
@@ -40,13 +40,11 @@ export default function HelpSupportScreen({ navigation }) {
       if (fallback) {
         try { await Linking.openURL(fallback); return; } catch { /* fall through */ }
       }
-      notify('Could not open', 'No app available to handle this action.');
+      notify('Could not open', 'No app available to handle this action.', { type: 'error' });
     }
   };
 
-  const comingSoon = (label) => (Platform.OS === 'web'
-    ? notify(label, 'This section is coming soon.')
-    : Alert.alert(label, 'This section is coming soon.'));
+  const comingSoon = (label) => notify(label, 'This section is coming soon.', { type: 'info' });
 
   const call = () => open(`tel:${SUPPORT_PHONE}`);
   const whatsapp = () => {
@@ -63,7 +61,7 @@ export default function HelpSupportScreen({ navigation }) {
       {/* Header */}
       <MintScreenHeader title="Help & Support" navigation={navigation} />
       <Text style={{ fontSize: rf(12), color: C.muted, textAlign: 'center', marginTop: -rs(4), marginBottom: rs(4), paddingHorizontal: rs(16) }}>
-        Talk to the Near G Fix team
+        Talk to the NearGFix team
       </Text>
 
       <ScrollView contentContainerStyle={{ padding: rs(16), paddingTop: rs(6), paddingBottom: rs(32) }} showsVerticalScrollIndicator={false}>

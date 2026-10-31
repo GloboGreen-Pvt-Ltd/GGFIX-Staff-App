@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   BriefcaseBusiness,
   BriefcaseMedical,
+  Check,
   ChevronRight,
   CircleCheck,
   Clock,
@@ -15,14 +16,16 @@ import {
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { applyEmployeeLeave } from '../api/technician';
+import { LeftVerticalSidebar, SidebarLayout, useSidebarWidth } from '../components/JobCardKit';
 import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
 import TimePickerField, { to12h } from '../components/TimePickerField';
 import DatePickerField from '../components/DatePickerField';
 import MintScreenHeader, { useHideNativeHeader } from '../components/MintScreenHeader';
 import { rf, rlh, rs } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
-// Design tokens (Near G Fix green + mint).
+// Design tokens (NearGFix green + mint).
 const C = {
   green: '#035C6C',
   red: '#F32C26',
@@ -52,8 +55,8 @@ const MAX_CONTENT_WIDTH = 720;
 const TYPE_LOOK = {
   PERSONAL:    { icon: UserRound,         soft: C.greenTint,  fg: C.green,  strong: C.green,  onStrong: '#FFFFFF' },
   MEDICAL:     { icon: BriefcaseMedical,  soft: C.redTint,    fg: C.red,    strong: C.red,    onStrong: '#FFFFFF' },
-  OFFICIAL:    { icon: BriefcaseBusiness, soft: C.surface,    fg: C.ink,    strong: C.ink,    onStrong: '#FFFFFF' },
-  SHORT_LEAVE: { icon: PersonStanding,    soft: C.yellowTint, fg: C.yellow, strong: C.yellow, onStrong: C.ink },
+  OFFICIAL:    { icon: BriefcaseBusiness, soft: '#E6F3FA',    fg: '#0788C9', strong: '#0788C9', onStrong: '#FFFFFF' },
+  SHORT_LEAVE: { icon: PersonStanding,    soft: C.yellowTint, fg: C.yellow, strong: C.yellow, onStrong: '#FFFFFF' },
 };
 
 // A Permission is stored as a same-day leave with leaveType='PERMISSION' (the
@@ -66,7 +69,7 @@ const PERMISSION_TYPES = [
   { value: 'PERSONAL',    label: 'Personal',                 icon: 'person-outline',    color: '#035C6C', soft: '#EFF6FF' },
   { value: 'MEDICAL',     label: 'Medical',                  icon: 'medkit-outline',    color: '#F32C26', soft: '#FFF1F2' },
   { value: 'OFFICIAL',    label: 'Official',                 icon: 'briefcase-outline', color: '#035C6C', soft: '#F0FDFA' },
-  { value: 'SHORT_LEAVE', label: 'Short Leave / Early Going', icon: 'walk-outline',      color: '#1C3053', soft: '#F5F3FF' },
+  { value: 'SHORT_LEAVE', label: 'Short Leave / Early Going', icon: 'walk-outline',      color: '#1C3053', soft: '#E6F3FA' },
 ];
 
 function toISO(date) {
@@ -115,6 +118,7 @@ function Field({ label, hint, last, children }) {
 export default function PermissionApplyScreen({ navigation }) {
   useHideNativeHeader(navigation);
   const { width: winW } = useWindowDimensions();
+  const sidebarW = useSidebarWidth();
   const today = toISO(new Date());
   const [permType, setPermType] = useState('PERSONAL');
   const [date, setDate] = useState(today);
@@ -148,7 +152,7 @@ export default function PermissionApplyScreen({ navigation }) {
       });
       setAttachment({ uri: asset.uri, url: res?.url, name: asset.fileName || 'Proof.jpg' });
     } catch (e) {
-      notify('Upload failed', e?.message ?? 'Could not upload attachment', { preset: 'error', haptic: 'error' });
+      notify('Could not upload attachment', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setUploading(false);
     }
@@ -176,7 +180,7 @@ export default function PermissionApplyScreen({ navigation }) {
 
   const handleSubmit = async () => {
     const err = validate();
-    if (err) { notify('Check the form', err); return; }
+    if (err) { notify('Check the form', err, { type: 'warning' }); return; }
     setSaving(true);
     try {
       await applyEmployeeLeave({
@@ -187,64 +191,47 @@ export default function PermissionApplyScreen({ navigation }) {
         reason: composedReason(),
         attachmentUrl: attachment?.url || null,
       });
-      notify('Permission request submitted', 'Sent to the owner for approval. You can check out early once it is approved.', { preset: 'done' });
+      notify('Permission request submitted', 'Sent to the owner for approval.', { type: 'success' });
       navigation.goBack();
     } catch (e) {
-      notify('Could not submit', e?.message ?? 'Failed to submit permission request', { preset: 'error', haptic: 'error' });
+      notify('Could not submit permission request', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setSaving(false);
     }
   };
 
   // Two-column type grid sized from the actual content width (capped on tablets).
-  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(32);
-  const typeGap = rs(10);
-  const typeW = (contentW - typeGap) / 2;
+  // The permission type sidebar takes the left edge; the form uses the rest.
+  const contentW = Math.min(winW - sidebarW, MAX_CONTENT_WIDTH) - rs(20);
+  // Permission types, one below the other in the left sidebar; the form on
+  // the right is for the selected one.
+  const sidebarItems = PERMISSION_TYPES.map((t) => {
+    const look = TYPE_LOOK[t.value] || TYPE_LOOK.PERSONAL;
+    return { key: t.value, label: t.label.split(' / ')[0], icon: look.icon, color: look.fg };
+  });
+  const selType = PERMISSION_TYPES.find((t) => t.value === permType);
+  const selLook = TYPE_LOOK[permType] || TYPE_LOOK.PERSONAL;
+  const SelIcon = selLook.icon;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <MintScreenHeader title="Apply for Permission" navigation={navigation} />
+      <SidebarLayout sidebar={<LeftVerticalSidebar items={sidebarItems} active={permType} onPick={setPermType} />}>
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <View style={{ width: contentW }}>
-          {/* Info card */}
-          <View style={styles.header}>
-            <View style={styles.headerIcon}>
-              <Clock size={rs(22)} color={C.green} strokeWidth={2.2} />
+          {/* Selected permission type — change it in the sidebar */}
+          <View style={[styles.selectedType, { borderColor: selLook.fg }]}>
+            <View style={[styles.typeIcon, { backgroundColor: selLook.fg }]}>
+              <SelIcon size={rs(16)} color="#FFFFFF" strokeWidth={2.2} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.subtitle}>
-                Short, same-day permission (e.g. early going). Once approved, you can check out before your duty end time.
-              </Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.selectedHint}>Permission type</Text>
+              <Text style={[styles.selectedName, { color: selLook.fg }]} numberOfLines={1}>{selType?.label || 'Choose a type'}</Text>
             </View>
-          </View>
-
-          {/* Permission type */}
-          <SectionLabel text="Permission Type" />
-          <View style={[styles.typeGrid, { gap: typeGap }]}>
-            {PERMISSION_TYPES.map((t) => {
-              const active = permType === t.value;
-              const look = TYPE_LOOK[t.value] || TYPE_LOOK.PERSONAL;
-              const Icon = look.icon;
-              return (
-                <Pressable
-                  key={t.value}
-                  onPress={() => setPermType(t.value)}
-                  style={[styles.typeChip, active && styles.typeChipActive]}
-                  android_ripple={{ color: C.greenTint }}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: active }}
-                >
-                  <View style={[styles.typeIcon, { backgroundColor: active ? look.strong : look.soft }]}>
-                    <Icon size={rs(17)} color={active ? look.onStrong : look.fg} strokeWidth={2.2} />
-                  </View>
-                  <Text style={styles.typeLabel} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.8}>{t.label.replace(' / ', '\n')}</Text>
-                </Pressable>
-              );
-            })}
           </View>
 
           {/* When */}
@@ -337,6 +324,7 @@ export default function PermissionApplyScreen({ navigation }) {
 
         </View>
       </ScrollView>
+      </SidebarLayout>
     </SafeAreaView>
   );
 }
@@ -356,7 +344,7 @@ const styles = StyleSheet.create({
     paddingVertical: rs(9), paddingHorizontal: rs(12), ...cardShadow,
   },
   headerIcon: {
-    width: rs(42), height: rs(42), borderRadius: rs(21), backgroundColor: C.greenTint,
+    width: rs(40), height: rs(40), borderRadius: rs(20), backgroundColor: C.green,
     alignItems: 'center', justifyContent: 'center',
   },
   subtitle: { fontSize: rf(12), color: '#6B7280', lineHeight: rlh(16) },
@@ -379,7 +367,17 @@ const styles = StyleSheet.create({
   },
   typeChipActive: { borderColor: C.green, backgroundColor: C.greenSoft },
   typeIcon: { width: rs(34), height: rs(34), borderRadius: rs(17), alignItems: 'center', justifyContent: 'center' },
+  typeTick: {
+    position: 'absolute', top: rs(5), right: rs(5), width: rs(18), height: rs(18), borderRadius: rs(9),
+    backgroundColor: '#FFFFFF', borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
+  },
   typeLabel: { fontSize: rf(11), fontWeight: '700', color: TEXT, lineHeight: rlh(14), textAlign: 'center' },
+  selectedType: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(9), backgroundColor: CARD, borderRadius: rs(14),
+    borderWidth: 1, paddingVertical: rs(7), paddingHorizontal: rs(10), marginTop: rs(10), ...cardShadow,
+  },
+  selectedHint: { fontSize: rf(10.5), color: MUTED, fontWeight: '600' },
+  selectedName: { fontSize: rf(13.5), fontWeight: '800' },
   radioOff: { width: rs(20), height: rs(20), borderRadius: rs(10), borderWidth: 2, borderColor: '#E5E7EB' },
   radioOn: {
     width: rs(22), height: rs(22), borderRadius: rs(11), backgroundColor: C.green,

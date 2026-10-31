@@ -9,6 +9,7 @@ import { submitPickupRepairEstimate } from '../api/pickups';
 import { normalizeDeviceImageUrl } from '../utils/images';
 import { rf } from '../utils/responsive';
 import { useImeiApplies } from '../utils/imeiPolicy';
+import { userMessage } from '../utils/userMessages';
 
 function trackingId(booking, params) {
   return params?.trackingId
@@ -73,8 +74,8 @@ export default function PickupServiceBookingDevicesListScreen({ navigation, rout
   const showImei = useImeiApplies(params);
 
   const submit = async () => {
-    if (!bookingId) { notify('Missing', 'Booking is required'); return; }
-    if (!services.length) { notify('Missing services', 'Select at least one repair service.'); return; }
+    if (!bookingId) { notify('Missing', 'Booking is required', { type: 'warning' }); return; }
+    if (!services.length) { notify('Missing services', 'Select at least one repair service.', { type: 'warning' }); return; }
     setSubmitting(true);
     try {
       // Translate the multi-step flow's locally-shaped state into the keys
@@ -139,12 +140,12 @@ export default function PickupServiceBookingDevicesListScreen({ navigation, rout
         customerApproval: customerApprovalValue,
       };
       await submitPickupRepairEstimate(bookingId, body);
-      notify('Estimate submitted', 'Repair estimate saved for this booking.');
+      notify('Estimate submitted', 'Repair estimate saved for this booking.', { type: 'success' });
       // Return to the pickup list (was popToTop → Home, which stranded the
       // pickup person and forced them to re-navigate Tasks → Pickup).
       navigation.navigate('PickupAssign');
     } catch (e) {
-      notify('Submit failed', e?.message || 'Could not save repair estimate.');
+      notify('Could not submit estimate', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       setSubmitting(false);
     }

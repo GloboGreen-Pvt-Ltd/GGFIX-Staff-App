@@ -19,10 +19,12 @@ import {
 } from 'lucide-react-native';
 import { getEmployeeLeaveRequests } from '../api/technician';
 import { useTechnicianId } from '../auth/useTechnicianId';
-import { rf, rs } from '../utils/responsive';
-import { BadgeIconTile, MonthPill } from '../components/MintKit';
+import { rf, rs, sheetWidth } from '../utils/responsive';
+import { MonthPill, TILE_TONES } from '../components/MintKit';
+import { LeftVerticalSidebar, SidebarLayout, useSidebarWidth } from '../components/JobCardKit';
 import MintScreenHeader, { useHideNativeHeader } from '../components/MintScreenHeader';
 import { notify } from '../components/confirm';
+import { userMessage } from '../utils/userMessages';
 
 const MAX_CONTENT_WIDTH = 720;
 
@@ -36,14 +38,14 @@ const C = {
   faint: '#9CA3AF',
   bg: '#F3F4F6',
   white: '#FFFFFF',
-  border: '#EEF0F2',
+  border: '#E5E7EB',
 };
 
 // Presentation only: per-status colours (icon tint, soft bg, pill text).
 const STATUS_THEME = {
-  APPROVED:   { label: 'Approved',   fg: C.green,  soft: '#E5F3F5', text: C.green,   icon: Check },
-  PROCESSING: { label: 'Processing', fg: C.yellow, soft: '#FEF5DC', text: '#C58E00', icon: Clock3 },
-  REJECTED:   { label: 'Rejected',   fg: C.red,    soft: '#FEE9E9', text: C.red,     icon: X },
+  APPROVED:   { label: 'Approved',   fg: '#609138', soft: '#EEF4E9', text: '#609138', icon: Check },
+  PROCESSING: { label: 'Pending',    fg: C.yellow,  soft: '#FFF6E0', text: '#FAA700', icon: Clock3 },
+  REJECTED:   { label: 'Rejected',   fg: C.red,     soft: '#FEECEC', text: C.red,     icon: X },
   CANCELLED:  { label: 'Cancelled',  fg: C.faint,  soft: '#F3F4F6', text: C.muted,   icon: Ban },
 };
 
@@ -60,10 +62,10 @@ const LEAVE_TYPE_LABELS = {
 // Leave-balance tiles. The backend has no entitlement/balance endpoint, so the
 // tiles show real approved days USED this year per leave type.
 const BALANCE_TILES = [
-  { type: 'CASUAL_LEAVE',    label: 'Casual Leave',    icon: TreePalm,         fg: '#035C6C', soft: '#EAF8ED', tile: '#C3E2E7' },
-  { type: 'SICK_LEAVE',      label: 'Sick Leave',      icon: BriefcaseMedical, fg: '#0788C9', soft: '#E3EFFE', tile: '#CCDCFB' },
-  { type: 'EMERGENCY_LEAVE', label: 'Emergency Leave', icon: CalendarDays,     fg: '#1C3053', soft: '#EEE8FE', tile: '#DCCDFB' },
-  { type: 'HALF_DAY',        label: 'Half Day',        icon: Ban,              fg: '#FAA700', soft: '#FEEBDD', tile: '#FFDCAE' },
+  { type: 'CASUAL_LEAVE',    label: 'Casual Leave',    icon: TreePalm,         fg: TILE_TONES.teal,  soft: '#EAF8ED', tile: '#C3E2E7' },
+  { type: 'SICK_LEAVE',      label: 'Sick Leave',      icon: BriefcaseMedical, fg: TILE_TONES.blue,  soft: '#E3EFFE', tile: '#CCDCFB' },
+  { type: 'EMERGENCY_LEAVE', label: 'Emergency Leave', icon: CalendarDays,     fg: TILE_TONES.red,   soft: '#FEECEC', tile: '#FBD0D0' },
+  { type: 'HALF_DAY',        label: 'Half Day',        icon: Ban,              fg: TILE_TONES.orange, soft: '#FEEBDD', tile: '#FFDCAE' },
 ];
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -141,6 +143,7 @@ export default function LeaveReportScreen({ navigation, route }) {
   const keep = (arr) => arr.filter((l) => (String(l.leaveType).toUpperCase() === 'PERMISSION') === (onlyType === 'PERMISSION'));
   useHideNativeHeader(navigation);
   const { width: winW } = useWindowDimensions();
+  const sidebarW = useSidebarWidth();
   const technicianId = useTechnicianId();
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -172,8 +175,8 @@ export default function LeaveReportScreen({ navigation, route }) {
       setError(null);
     } else {
       setList([]);
-      setError(monthRes.reason?.message || 'Could not load leave requests');
-      if (isRefresh) notify('Could not refresh', monthRes.reason?.message ?? 'Please try again', { preset: 'error', haptic: 'error' });
+      setError(userMessage(monthRes.reason, 'Could not load leave requests'));
+      if (isRefresh) notify('Could not refresh', userMessage(monthRes.reason, 'Please try again.'), { type: 'error', haptic: 'error' });
     }
     setAllLeaves(allRes.status === 'fulfilled' && Array.isArray(allRes.value) ? keep(allRes.value) : null);
     setLoading(false);
@@ -246,7 +249,15 @@ export default function LeaveReportScreen({ navigation, route }) {
     scrollRef.current?.scrollTo({ y: Math.max(0, prevY.current - rs(8)), animated: true });
   };
 
-  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(32);
+  // The status sidebar takes the left edge; the page uses the rest.
+  const contentW = Math.min(winW - sidebarW, MAX_CONTENT_WIDTH) - rs(20);
+  // Status filters, one below the other in the left sidebar.
+  const sidebarItems = [
+    { key: 'All', label: 'All', icon: CalendarDays, color: TILE_TONES.teal, count: counts.Leave },
+    { key: 'Processing', label: 'Pending', icon: Clock3, color: TILE_TONES.orange, count: counts.Processing },
+    { key: 'Approved', label: 'Approved', icon: Check, color: TILE_TONES.green, count: counts.Approved },
+    { key: 'Rejected', label: 'Rejected', icon: X, color: TILE_TONES.red, count: counts.Rejected },
+  ];
   const tileGap = rs(8);
   const tileW = (contentW - tileGap * 3) / 4;
   const compact = contentW < 400;
@@ -260,6 +271,7 @@ export default function LeaveReportScreen({ navigation, route }) {
       {!technicianId ? (
         <View style={styles.center}><ActivityIndicator color={C.green} /></View>
       ) : (
+        <SidebarLayout sidebar={<LeftVerticalSidebar items={sidebarItems} active={filter} onPick={onStatPress} />}>
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={styles.content}
@@ -268,33 +280,40 @@ export default function LeaveReportScreen({ navigation, route }) {
         >
           <View style={{ width: contentW }}>
             {/* This Month */}
-            <View style={[styles.card, { flexDirection: 'row', alignItems: 'center', padding: rs(10) }]}>
-              <View style={{ width: rs(36), height: rs(36), borderRadius: rs(10), backgroundColor: C.greenSoft || '#E5F3F5', alignItems: 'center', justifyContent: 'center' }}>
-                <CalendarDays size={rs(18)} color={C.green} strokeWidth={2.2} />
+            <View style={[styles.card, { flexDirection: 'row', alignItems: 'center', padding: rs(8) }]}>
+              <View style={{ width: rs(28), height: rs(28), borderRadius: rs(14), backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}>
+                <CalendarDays size={rs(14)} color="#FFFFFF" strokeWidth={2.2} />
               </View>
-              <Text style={[styles.monthTitle, { flex: 1, marginLeft: rs(10) }]} numberOfLines={1}>{isCurrentMonth ? 'This Month' : 'Selected Month'}</Text>
-              <MonthPill month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
+              <Text style={[styles.monthTitle, { flex: 1, marginHorizontal: rs(6) }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                {isCurrentMonth ? 'This Month' : 'Selected Month'}
+              </Text>
+              <MonthPill compact month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
             </View>
 
-            {/* Stat cards */}
-            <View style={styles.statRow}>
-              <StatCard icon={CalendarDays} color="#0788C9" soft="#CCDCFB" value={counts.Leave} label={onlyType ? 'Total' : 'Total Leave'} active={filter === 'All'} onPress={() => onStatPress('All')} />
-              <StatCard icon={Clock3} color="#FAA700" soft="#FFDCAE" value={counts.Processing} label="Processing" active={filter === 'Processing'} onPress={() => onStatPress('Processing')} />
-              <StatCard icon={X} color="#F32C26" soft="#FBCFCF" value={counts.Rejected} label="Rejected" active={filter === 'Rejected'} onPress={() => onStatPress('Rejected')} />
-              <StatCard icon={Check} color="#609138" soft="#D3E5C3" value={counts.Approved} label="Approved" active={filter === 'Approved'} onPress={() => onStatPress('Approved')} />
-            </View>
 
 {!onlyType ? (
             <>
             {/* Leave Balance */}
             <View style={[styles.card, styles.section]}>
               <SectionHeader title={`Leave Balance · ${year}`} action="View Details" onAction={() => setBalanceOpen(true)} />
-              <View style={[styles.balanceGrid, { gap: rs(6) }]}>
-                {BALANCE_TILES.map((t) => {
+              <View style={{ marginTop: rs(4) }}>
+                {BALANCE_TILES.map((t, idx) => {
                   const b = balance?.[t.type];
+                  const Icon = t.icon;
                   return (
-                    <BadgeIconTile key={t.type} icon={t.icon} color={t.fg} label={t.label.replace(' Leave', '')}
-                      count={b ? fmtNum(b.used) : 0} onPress={() => setBalanceOpen(true)} size={rs(42)} />
+                    <TouchableOpacity
+                      key={t.type}
+                      onPress={() => setBalanceOpen(true)}
+                      activeOpacity={0.8}
+                      accessibilityLabel={`${t.label}: ${b ? fmtNum(b.used) : 0} days used`}
+                      style={[styles.balanceRow, idx > 0 && styles.balanceRowLine]}
+                    >
+                      <View style={[styles.balanceIcon, { backgroundColor: t.fg }]}>
+                        <Icon size={rs(13)} color="#FFFFFF" strokeWidth={2.3} />
+                      </View>
+                      <Text style={styles.balanceLabel} numberOfLines={1}>{t.label}</Text>
+                      <Text style={[styles.balanceValue, { color: t.fg }]} numberOfLines={1}>{b ? fmtNum(b.used) : 0} used</Text>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
@@ -336,6 +355,7 @@ export default function LeaveReportScreen({ navigation, route }) {
             ) : null}
           </View>
         </ScrollView>
+        </SidebarLayout>
       )}
 
       <LeaveDetailsModal item={selected} onClose={() => setSelected(null)} />
@@ -369,9 +389,6 @@ function SectionHeader({ title, action, onAction }) {
   );
 }
 
-function StatCard({ icon, color, value, label, active, onPress }) {
-  return <BadgeIconTile icon={icon} color={color} label={label} count={value ?? 0} active={active} onPress={onPress} size={rs(36)} />;
-}
 
 function StatusPill({ status }) {
   const k = statusKey(status);
@@ -403,8 +420,8 @@ function LeaveRow({ item, onPress, compact, fullReason }) {
   // style (wrapping under each other on narrow phones); reason below.
   return (
     <TouchableOpacity style={[styles.row, { alignItems: 'flex-start' }, compact && { paddingVertical: rs(7), marginBottom: rs(6) }]} onPress={onPress} activeOpacity={0.85}>
-      <View style={[styles.rowIcon, { backgroundColor: th.soft }, compact && { width: rs(32), height: rs(32), borderRadius: rs(16) }]}>
-        <CalendarDays size={rs(compact ? 16 : 20)} color={th.fg} strokeWidth={2.2} />
+      <View style={[styles.rowIcon, { backgroundColor: th.fg }, compact && { width: rs(30), height: rs(30), borderRadius: rs(15) }]}>
+        <CalendarDays size={rs(compact ? 14 : 17)} color="#FFFFFF" strokeWidth={2.2} />
       </View>
       <View style={styles.rowBody}>
         <Text style={styles.rowType} numberOfLines={1}>{typeLabel}</Text>
@@ -445,7 +462,7 @@ function Sheet({ open, onClose, title, children }) {
     <Modal visible={open} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.sheetRoot}>
         <Pressable style={styles.sheetBackdrop} onPress={onClose} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, sheetWidth]}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>{title}</Text>
@@ -509,7 +526,7 @@ function LeaveDetailsModal({ item, onClose }) {
             <TouchableOpacity
               style={styles.attachBtn}
               activeOpacity={0.85}
-              onPress={() => Linking.openURL(item.attachmentUrl).catch(() => notify('Could not open attachment', '', { preset: 'error' }))}
+              onPress={() => Linking.openURL(item.attachmentUrl).catch(() => notify('Could not open attachment', '', { type: 'error' }))}
             >
               <Paperclip size={rs(16)} color={C.green} strokeWidth={2.2} />
               <Text style={styles.attachText}>View attachment</Text>
@@ -537,7 +554,7 @@ function BalanceModal({ open, onClose, balance, year }) {
               <Text style={styles.usageType}>{LEAVE_TYPE_LABELS[t]}</Text>
               <View style={styles.usageCols}>
                 <UsageCell label="Used" value={t === 'PERMISSION' ? `${b.count}` : fmtNum(b.used)} color={C.green} />
-                <UsageCell label="Pending" value={fmtNum(b.pending)} color="#C58E00" />
+                <UsageCell label="Pending" value={fmtNum(b.pending)} color="#FAA700" />
                 <UsageCell label="Requests" value={String(b.count)} color={C.ink} />
               </View>
             </View>
@@ -560,7 +577,7 @@ function UsageCell({ label, value, color }) {
 /* ---------------------------------------------------------------- styles */
 
 const shadow = {
-  shadowColor: '#111111', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
+  shadowColor: '#111111', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 1,
 };
 
 const styles = StyleSheet.create({
@@ -568,7 +585,7 @@ const styles = StyleSheet.create({
   content: { alignItems: 'center', paddingTop: rs(4), paddingBottom: rs(24) },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
-  card: { backgroundColor: C.white, borderRadius: rs(14), padding: rs(11), ...shadow },
+  card: { backgroundColor: C.white, borderRadius: rs(16), borderWidth: 1, borderColor: C.border, padding: rs(11), ...shadow },
   section: { marginTop: rs(10) },
 
   monthCard: { overflow: 'hidden', paddingVertical: rs(11) },
@@ -583,7 +600,7 @@ const styles = StyleSheet.create({
   monthPillText: { fontSize: rf(14), fontWeight: '800', color: C.greenDeep, flexShrink: 1 },
   illus: { position: 'absolute', right: rs(4), top: rs(10) },
 
-  statRow: { flexDirection: 'row', gap: rs(4), marginTop: rs(8), backgroundColor: '#FFFFFF', borderRadius: rs(16), borderWidth: 1, borderColor: '#E5E7EB', paddingVertical: rs(10), paddingHorizontal: rs(6) },
+  statRow: { marginTop: rs(10) },
   lrArrow: { width: rs(28), height: rs(28), borderRadius: rs(14), backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
   statCard: {
     flex: 1, minWidth: 0, alignItems: 'center', borderRadius: rs(12), borderWidth: 1,
@@ -620,6 +637,11 @@ const styles = StyleSheet.create({
   actionPillText: { fontSize: rf(12), fontWeight: '600', color: C.ink },
 
   balanceGrid: { flexDirection: 'row', gap: rs(8) },
+  balanceRow: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingVertical: rs(6) },
+  balanceRowLine: { borderTopWidth: 1, borderTopColor: C.border },
+  balanceIcon: { width: rs(26), height: rs(26), borderRadius: rs(13), alignItems: 'center', justifyContent: 'center' },
+  balanceLabel: { flex: 1, fontSize: rf(12.5), fontWeight: '600', color: C.ink },
+  balanceValue: { fontSize: rf(12), fontWeight: '800' },
   balanceGridWrap: { flexWrap: 'wrap', justifyContent: 'space-between', rowGap: rs(8), gap: 0 },
   balanceTile: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(7), borderRadius: rs(12),

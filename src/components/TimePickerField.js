@@ -3,7 +3,7 @@ import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-n
 import { pk } from './DatePickerField';
 import { Text } from './Typography';
 import { Ionicons } from '@expo/vector-icons';
-import { rf } from '../utils/responsive';
+import { rf, sheetWidth } from '../utils/responsive';
 
 // A JS-only wheel time picker (Hour · Minute · AM/PM) with a Cancel/Save modal —
 // mirrors the native "Select time" spinner without pulling in a native module,
@@ -60,7 +60,7 @@ function WheelModal({ visible, initial, onCancel, onSave, accent, title }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <Pressable style={pk.backdrop} onPress={onCancel}>
-        <View style={pk.sheet} onStartShouldSetResponder={() => true}>
+        <View style={[pk.sheet, sheetWidth]} onStartShouldSetResponder={() => true}>
           {visible ? <ClockBody initial={initial} onCancel={onCancel} onSave={onSave} accent={accent} title={title} /> : null}
         </View>
       </Pressable>

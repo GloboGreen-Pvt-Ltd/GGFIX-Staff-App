@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   BriefcaseMedical,
   CalendarDays,
+  Check,
   ChevronRight,
   CircleAlert,
   CircleCheck,
@@ -19,14 +20,16 @@ import {
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { applyEmployeeLeave } from '../api/technician';
+import { LeftVerticalSidebar, SidebarLayout, useSidebarWidth } from '../components/JobCardKit';
 import { uploadMedia } from '../api/media';
 import { notify } from '../components/confirm';
 import TimePickerField, { to12h } from '../components/TimePickerField';
 import DatePickerField from '../components/DatePickerField';
 import MintScreenHeader, { useHideNativeHeader } from '../components/MintScreenHeader';
 import { rf, rlh, rs } from '../utils/responsive';
+import { userMessage } from '../utils/userMessages';
 
-// Design tokens (Near G Fix green + mint) — same system as Apply for Permission.
+// Design tokens (NearGFix green + mint) — same system as Apply for Permission.
 const C = {
   green: '#035C6C',
   red: '#F32C26',
@@ -55,8 +58,8 @@ const MAX_CONTENT_WIDTH = 720;
 const TYPE_LOOK = {
   CASUAL_LEAVE:    { icon: Coffee,           soft: C.greenTint,  fg: C.green,  strong: C.green,  onStrong: '#FFFFFF' },
   SICK_LEAVE:      { icon: BriefcaseMedical, soft: C.redTint,    fg: C.red,    strong: C.red,    onStrong: '#FFFFFF' },
-  EMERGENCY_LEAVE: { icon: CircleAlert,      soft: C.yellowTint, fg: C.yellow, strong: C.yellow, onStrong: C.ink },
-  HALF_DAY:        { icon: Contrast,         soft: C.surface,    fg: C.ink,    strong: C.ink,    onStrong: '#FFFFFF' },
+  EMERGENCY_LEAVE: { icon: CircleAlert,      soft: C.yellowTint, fg: C.yellow, strong: C.yellow, onStrong: '#FFFFFF' },
+  HALF_DAY:        { icon: Contrast,         soft: '#E8EBF0',    fg: '#1C3053', strong: '#1C3053', onStrong: '#FFFFFF' },
 };
 
 // Whitelist mirrors ALLOWED_LEAVE_TYPES on the backend. Order is the order shown
@@ -67,7 +70,7 @@ const LEAVE_TYPES = [
   { value: 'CASUAL_LEAVE',    label: 'Casual',    icon: 'cafe-outline',         color: '#035C6C', soft: '#EFF6FF' },
   { value: 'SICK_LEAVE',      label: 'Sick',      icon: 'medkit-outline',       color: '#F32C26', soft: '#FFF1F2' },
   { value: 'EMERGENCY_LEAVE', label: 'Emergency', icon: 'alert-circle-outline', color: '#FAA700', soft: '#FFF7ED' },
-  { value: 'HALF_DAY',        label: 'Half Day',  icon: 'contrast-outline',     color: '#1C3053', soft: '#F5F3FF' },
+  { value: 'HALF_DAY',        label: 'Half Day',  icon: 'contrast-outline',     color: '#1C3053', soft: '#E6F3FA' },
 ];
 
 function toISO(date) {
@@ -124,6 +127,7 @@ function Field({ label, hint, children }) {
 export default function TechnicianApplyLeaveScreen({ navigation }) {
   useHideNativeHeader(navigation);
   const { width: winW } = useWindowDimensions();
+  const sidebarW = useSidebarWidth();
   const today = toISO(new Date());
   const [leaveType, setLeaveType] = useState('CASUAL_LEAVE');
   const [startDate, setStartDate] = useState(today);
@@ -197,7 +201,7 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
       });
       setAttachment({ uri: asset.uri, url: res?.url, name: asset.fileName || 'Proof.jpg' });
     } catch (e) {
-      notify('Upload failed', e?.message ?? 'Could not upload attachment', { preset: 'error', haptic: 'error' });
+      notify('Could not upload attachment', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setUploading(false);
     }
@@ -231,7 +235,7 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
 
   const handleSubmit = async () => {
     const err = validate();
-    if (err) { notify('Check the form', err); return; }
+    if (err) { notify('Check the form', err, { type: 'warning' }); return; }
     setSaving(true);
     try {
       await applyEmployeeLeave({
@@ -242,10 +246,10 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
         reason: composedReason(),
         attachmentUrl: attachment?.url || null,
       });
-      notify('Leave request submitted', 'Your leave request has been sent to the owner for review.', { preset: 'done' });
+      notify('Leave request submitted', 'Sent to the owner for review.', { type: 'success' });
       navigation.goBack();
     } catch (e) {
-      notify('Could not submit', e?.message ?? 'Failed to submit leave request', { preset: 'error', haptic: 'error' });
+      notify('Could not submit leave request', userMessage(e, 'Please try again.'), { type: 'error', haptic: 'error' });
     } finally {
       setSaving(false);
     }
@@ -258,56 +262,37 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
   const durationValid = totalDays > 0;
 
   // Two-column type grid sized from the actual content width (capped on tablets).
-  const contentW = Math.min(winW, MAX_CONTENT_WIDTH) - rs(28);
-  const typeGap = rs(8);
-  const typeW = (contentW - typeGap) / 2;
+  // The leave type sidebar takes the left edge; the form uses the rest.
+  const contentW = Math.min(winW - sidebarW, MAX_CONTENT_WIDTH) - rs(20);
+  // Leave types, one below the other in the left sidebar; the form on
+  // the right is for the selected one.
+  const sidebarItems = LEAVE_TYPES.map((t) => {
+    const look = TYPE_LOOK[t.value] || TYPE_LOOK.CASUAL_LEAVE;
+    return { key: t.value, label: t.label.split(' / ')[0], icon: look.icon, color: look.fg };
+  });
+  const selType = LEAVE_TYPES.find((t) => t.value === leaveType);
+  const selLook = TYPE_LOOK[leaveType] || TYPE_LOOK.CASUAL_LEAVE;
+  const SelIcon = selLook.icon;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <MintScreenHeader title="Apply for leave" navigation={navigation} />
+      <SidebarLayout sidebar={<LeftVerticalSidebar items={sidebarItems} active={leaveType} onPick={pickLeaveType} />}>
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <View style={{ width: contentW }}>
-          {/* Info card */}
-          <View style={styles.header}>
-            <View pointerEvents="none" style={styles.headerLeaves}>
-              <Leaf size={rs(46)} color="#E5F3F5" fill="#E5F3F5" strokeWidth={1.2} style={{ transform: [{ rotate: '-20deg' }] }} />
-              <Leaf size={rs(34)} color="#E5F3F5" fill="#E5F3F5" strokeWidth={1.2} style={{ marginLeft: -rs(22), marginTop: rs(18), transform: [{ rotate: '25deg' }] }} />
+          {/* Selected leave type — change it in the sidebar */}
+          <View style={[styles.selectedType, { borderColor: selLook.fg }]}>
+            <View style={[styles.typeIcon, { backgroundColor: selLook.fg }]}>
+              <SelIcon size={rs(16)} color="#FFFFFF" strokeWidth={2.2} />
             </View>
-            <View style={styles.headerIcon}>
-              <CalendarDays size={rs(22)} color={C.green} strokeWidth={2.2} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.selectedHint}>Leave type</Text>
+              <Text style={[styles.selectedName, { color: selLook.fg }]} numberOfLines={1}>{selType?.label || 'Choose a type'}</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.subtitle}>Request time off — your manager will review and approve it.</Text>
-            </View>
-          </View>
-
-          {/* Leave type */}
-          <SectionLabel text="Leave Type" />
-          <View style={[styles.typeGrid, { gap: typeGap }]}>
-            {LEAVE_TYPES.map((t) => {
-              const active = leaveType === t.value;
-              const look = TYPE_LOOK[t.value] || TYPE_LOOK.CASUAL_LEAVE;
-              const Icon = look.icon;
-              return (
-                <Pressable
-                  key={t.value}
-                  onPress={() => pickLeaveType(t.value)}
-                  style={[styles.typeChip, active && styles.typeChipActive]}
-                  android_ripple={{ color: C.greenTint }}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: active }}
-                >
-                  <View style={[styles.typeIcon, { backgroundColor: active ? look.strong : look.soft }]}>
-                    <Icon size={rs(17)} color={active ? look.onStrong : look.fg} strokeWidth={2.2} />
-                  </View>
-                  <Text style={styles.typeLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t.label}</Text>
-                </Pressable>
-              );
-            })}
           </View>
 
           {/* Duration */}
@@ -436,6 +421,7 @@ export default function TechnicianApplyLeaveScreen({ navigation }) {
           </View>
         </View>
       </ScrollView>
+      </SidebarLayout>
     </SafeAreaView>
   );
 }
@@ -456,7 +442,7 @@ const styles = StyleSheet.create({
   },
   headerLeaves: { position: 'absolute', right: -rs(6), bottom: -rs(12), flexDirection: 'row' },
   headerIcon: {
-    width: rs(42), height: rs(42), borderRadius: rs(12), backgroundColor: C.greenTint,
+    width: rs(40), height: rs(40), borderRadius: rs(20), backgroundColor: C.green,
     alignItems: 'center', justifyContent: 'center',
   },
   subtitle: { fontSize: rf(12), color: '#6B7280', lineHeight: rlh(16) },
@@ -480,7 +466,17 @@ const styles = StyleSheet.create({
   },
   typeChipActive: { borderColor: C.green, backgroundColor: C.greenSoft },
   typeIcon: { width: rs(36), height: rs(36), borderRadius: rs(18), alignItems: 'center', justifyContent: 'center' },
+  typeTick: {
+    position: 'absolute', top: rs(5), right: rs(5), width: rs(18), height: rs(18), borderRadius: rs(9),
+    backgroundColor: '#FFFFFF', borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
+  },
   typeLabel: { fontSize: rf(12), fontWeight: '700', color: TEXT, textAlign: 'center' },
+  selectedType: {
+    flexDirection: 'row', alignItems: 'center', gap: rs(9), backgroundColor: CARD, borderRadius: rs(14),
+    borderWidth: 1, paddingVertical: rs(7), paddingHorizontal: rs(10), marginTop: rs(10), ...cardShadow,
+  },
+  selectedHint: { fontSize: rf(10.5), color: MUTED, fontWeight: '600' },
+  selectedName: { fontSize: rf(13.5), fontWeight: '800' },
   radioOff: { width: rs(20), height: rs(20), borderRadius: rs(10), borderWidth: 2, borderColor: '#E5E7EB' },
   radioOn: {
     width: rs(22), height: rs(22), borderRadius: rs(11), backgroundColor: C.green,

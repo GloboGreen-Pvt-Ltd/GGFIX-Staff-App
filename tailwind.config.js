@@ -8,38 +8,45 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Brand palette (NearGFix): Primary Teal #035C6C · Navy #1C3053 ·
+        // Bright Blue #0788C9 · Green #609138 · Orange #FAA700 · Red #F32C26 ·
+        // White #FFFFFF · Light Gray #F3F4F6 · Black #111111. Shade scales are
+        // tints / shades of the brand teal.
         primary: {
           DEFAULT: '#035C6C',
-          light: '#035C6C',
+          light: '#E5F3F5',
           dark: '#024A57',
-          50: '#EEF2FF',
-          100: '#E0E7FF',
-          200: '#C7D2FE',
-          300: '#A5B4FC',
-          400: '#818CF8',
-          500: '#6366F1',
-          600: '#4F46E5',
-          700: '#4338CA',
-          800: '#3730A3',
-          900: '#312E81',
+          50: '#E5F3F5',
+          100: '#CCE7EB',
+          200: '#99CFD8',
+          300: '#66B7C4',
+          400: '#339FB1',
+          500: '#0A7B8E',
+          600: '#035C6C',
+          700: '#024A57',
+          800: '#023942',
+          900: '#01272E',
         },
+        // Links, secondary buttons and interactive icons.
         secondary: {
-          DEFAULT: '#035C6C',
-          light: '#3B82F6',
-          dark: '#1D4ED8',
+          DEFAULT: '#0788C9',
+          light: '#E6F3FA',
+          dark: '#06699B',
         },
+        navy: '#1C3053',
         background: '#FFFFFF',
         card: '#FFFFFF',
+        surface: '#F3F4F6',
         text: {
           DEFAULT: '#111111',
           muted: '#6B7280',
         },
         border: '#E5E7EB',
         success: '#609138',
-        warning: '#F59E0B',
-        danger: '#EF4444',
-        error: '#EF4444',
-        info: '#0EA5E9',
+        warning: '#FAA700',
+        danger: '#F32C26',
+        error: '#F32C26',
+        info: '#0788C9',
       },
       fontFamily: {
         sans: ['System'],

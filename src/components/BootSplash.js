@@ -11,7 +11,7 @@ import { rf, rs } from '../utils/responsive';
 /**
  * Employee-app boot screen, shown by RootNavigator while the stored session is
  * restored. Visuals only — it owns no session, timer or navigation logic.
- * Layout follows the Near G Fix brand splash: a deep-green header that curves into
+ * Layout follows the NearGFix brand splash: a deep-green header that curves into
  * a light page, device hero art across the curve, tagline, progress and a
  * trust row. Device art comes from the CDN so it can change without a release.
  */

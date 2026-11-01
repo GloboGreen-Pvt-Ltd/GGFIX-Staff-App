@@ -332,7 +332,7 @@ export function JobPictureCard({
       <View style={s.rule} />
 
       <View style={s.info}>
-        <KText size={11.5} weight="800" color={KIT.teal} lh={15.5} numberOfLines={1}>{refText}</KText>
+        <KText size={11.5} weight="800" color={KIT.teal} lh={15.5} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{refText}</KText>
         <KText size={12.5} weight="800" color={KIT.ink} lh={17} style={{ marginTop: rs(1) }}>{model}</KText>
         {shown.map((l, i) => {
           const Icon = l.icon;
@@ -347,14 +347,14 @@ export function JobPictureCard({
         })}
         {date || time ? (
           <View style={s.dateRow}>
-            <KText size={12.5} color={KIT.muted} lh={17.5} numberOfLines={1} style={s.shrink}>{date}</KText>
+            <KText size={12.5} color={KIT.muted} lh={17.5} numberOfLines={time ? 1 : 2} style={s.shrink}>{date}</KText>
             <KText size={12.5} color={KIT.muted} lh={17.5} numberOfLines={1} style={s.shrink}>{time}</KText>
           </View>
         ) : null}
         {pill ? (
           <TouchableOpacity onPress={pill.onPress || onPress} activeOpacity={0.8} accessibilityLabel={`${pill.text}, open job`} style={s.pill}>
             <Clock size={rs(13)} color={KIT.teal} strokeWidth={2.3} />
-            <KText size={12.5} weight="700" color={KIT.teal} numberOfLines={1} style={{ flexShrink: 1 }}>{pill.text}</KText>
+            <KText size={12.5} weight="700" color={KIT.teal} numberOfLines={2} style={{ flexShrink: 1 }}>{pill.text}</KText>
             <ChevronRight size={rs(14)} color={KIT.teal} strokeWidth={2.4} />
           </TouchableOpacity>
         ) : null}

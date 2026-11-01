@@ -174,7 +174,7 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
   // booking via params, so passing it once seeds the entire flow.
   const goEditEstimate = () => {
     if (!bookingId) return;
-    navigation.navigate('PickupSelectBrand', {
+    navigation.navigate('PickupDeviceDetails', {
       booking,
       bookingId,
       // Seed the wizard with the booking's current taxonomy so each screen

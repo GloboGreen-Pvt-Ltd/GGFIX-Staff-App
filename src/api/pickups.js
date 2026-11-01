@@ -16,10 +16,24 @@ function unwrap(list) {
 // skipAuthExpiry: defensive — a 401 here MUST NOT kick the user back to
 // Login. Same precedent as getTodayAttendance and getRepairBooking.
 export async function listMyAssignedPickups(status) {
-  return unwrap(await ticketApi.get('/technicians/me/pickup-bookings', {
+  const rows = unwrap(await ticketApi.get('/technicians/me/pickup-bookings', {
     query: status ? { status } : undefined,
     skipAuthExpiry: true,
   }));
+  // The server joins address parts that can repeat ("…, Tamil Nadu, Tamil
+  // Nadu"); every screen (and Directions) gets the cleaned text.
+  return rows.map((b) => (b?.pickupAddressText ? { ...b, pickupAddressText: cleanAddress(b.pickupAddressText) } : b));
+}
+
+// Drop repeated comma-separated parts (case / spacing insensitive), keeping order.
+export function cleanAddress(text) {
+  const seen = new Set();
+  return String(text).split(',').map((p) => p.trim()).filter((p) => {
+    const k = p.toLowerCase().replace(/\s+/g, ' ');
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).join(', ');
 }
 
 // Advance a pickup booking one step. Backend validates the transition order

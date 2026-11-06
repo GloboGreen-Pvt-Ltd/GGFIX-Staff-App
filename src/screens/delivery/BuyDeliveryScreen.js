@@ -1,16 +1,19 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Platform, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, CheckSquare, MapPin, Phone, Square, Store, X } from 'lucide-react-native';
+import { Camera, CheckCircle2, CheckSquare, MapPin, Navigation, Phone, Square, Store, X } from 'lucide-react-native';
 import { confirm, notify } from '../../components/confirm';
 import { uploadMedia } from '../../api/media';
-import { DELIVERY_STATUS, deliveryAction, getDelivery } from '../../api/buyDeliveries';
+import { DELIVERY_STATUS, DELIVERY_TABS, deliveryAction, getDelivery, listMyDeliveries } from '../../api/buyDeliveries';
 import { Button, Card, Loader, Page, SC, SK, apiError, money } from './deliveryKit';
 
 const FAILABLE = ['ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY'];
 const when = (t) => (t ? new Date(t).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '');
 const MUTED = '#606E87';
+// Server enforces >= 1 photo (FixedPriceOrderService.savePhotos); the app asks for 2.
+const MIN_PHOTOS = 2;
+const PENDING = DELIVERY_TABS.filter((t) => t.key !== 'HISTORY').flatMap((t) => t.statuses);
 
 // One assigned Buy order: accept → verify at shop + pickup photo → start
 // delivery → collect exact COD + customer OTP + delivery photo → delivered.
@@ -28,6 +31,10 @@ export default function BuyDeliveryScreen({ navigation, route }) {
   const [reason, setReason] = useState('');
   const [imei, setImei] = useState('');
   const [failOpen, setFailOpen] = useState(false);
+  const [journey, setJourney] = useState(false);
+  const [shown, setShown] = useState(false);
+  const [done, setDone] = useState(null);
+  const [nextBusy, setNextBusy] = useState(false);
   const lock = useRef(false);
   const seq = useRef(0);
 
@@ -38,6 +45,11 @@ export default function BuyDeliveryScreen({ navigation, route }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // New stage → fresh proof photos (pickup photos must not count for delivery).
+  const stage = o?.status;
+  useEffect(() => { setPhotos([]); }, [stage]);
+  useEffect(() => { setJourney(false); setShown(false); setDone(null); }, [id]);
+
   const run = async (action, body, ok) => {
     if (lock.current) return;
     lock.current = true;
@@ -47,8 +59,10 @@ export default function BuyDeliveryScreen({ navigation, route }) {
       setPhotos([]); setOtp(''); setAmount(''); setPayRef(''); setFailOpen(false);
       notify(ok, '', { type: 'success' });
       if (action === 'decline') { navigation.goBack(); return; }
+      if (action === 'deliver') { setDone({ orderNumber: o?.orderNumber, productTitle: o?.productTitle }); }
       await load();
     } catch (e) {
+      if (action === 'pickup' || action === 'deliver') setPhotos([]);
       notify('Not saved', apiError(e, 'Please try again.'), { type: 'error' });
     } finally { lock.current = false; setBusy(''); }
   };
@@ -78,6 +92,36 @@ export default function BuyDeliveryScreen({ navigation, route }) {
       notify('Could not open the camera', apiError(e, 'Please try again.'), { type: 'error' });
     }
   };
+
+  const viewNext = async () => {
+    setNextBusy(true);
+    try {
+      const all = await listMyDeliveries();
+      const next = (all || []).find((x) => x.id !== id && PENDING.includes(x.status));
+      if (next) navigation.replace('BuyDelivery', { id: next.id });
+      else navigation.goBack();
+    } catch { navigation.goBack(); }
+    finally { setNextBusy(false); }
+  };
+
+  if (done) {
+    return (
+      <Page title="Task Completed" navigation={navigation}>
+        <View style={{ padding: 14 }}>
+          <Card>
+            <View style={{ alignItems: 'center', paddingVertical: 18 }}>
+              <CheckCircle2 size={48} color={SC.green} />
+              <Text style={{ marginTop: 10, fontSize: 18, fontWeight: '800', color: SK.ink }}>Task Completed</Text>
+              <Text style={{ marginTop: 6, fontSize: 13, color: MUTED }}>{done.orderNumber}</Text>
+              <Text style={{ marginTop: 2, fontSize: 14, fontWeight: '700', color: SK.ink, textAlign: 'center' }}>{done.productTitle || 'Product'}</Text>
+            </View>
+            <Button title="View Next Task" loading={nextBusy} disabled={nextBusy} onPress={viewNext} />
+            <Button title="Back to list" variant="outline" style={{ marginTop: 8 }} onPress={() => navigation.goBack()} />
+          </Card>
+        </View>
+      </Page>
+    );
+  }
 
   if (!o) {
     return (
@@ -189,7 +233,16 @@ ${o.shopAddress}` : ''}</Text>
           </Card>
         ) : null}
 
-        {s === 'ACCEPTED' ? (
+        {s === 'ACCEPTED' && !journey ? (
+          <Card title="Start journey to shop">
+            <Text style={{ fontSize: 13, color: MUTED }}>{o.shopName || 'Your shop'}{o.shopAddress ? ` · ${o.shopAddress}` : ''}</Text>
+            {o.shopAddress ? <Button title="Navigate" Icon={MapPin} variant="outline" style={{ marginTop: 10 }}
+              onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.shopAddress)}`).catch(() => {})} /> : null}
+            <Button title="Start Journey" Icon={Navigation} style={{ marginTop: 8 }} onPress={() => setJourney(true)} />
+          </Card>
+        ) : null}
+
+        {s === 'ACCEPTED' && journey ? (
           <Card title="At shop — verify & pick up">
             {CHECKS.map(([k, label]) => (
               <Pressable key={k} onPress={() => setChecks((c) => ({ ...c, [k]: !c[k] }))} accessibilityRole="checkbox" accessibilityState={{ checked: !!checks[k] }}
@@ -199,8 +252,8 @@ ${o.shopAddress}` : ''}</Text>
               </Pressable>
             ))}
             {input({ placeholder: o.productImeiRequired ? 'IMEI on the device (required)' : 'IMEI / serial (optional)', value: imei, autoCapitalize: 'characters', onChangeText: (t) => setImei(t.replace(/\s/g, '')) })}
-            {photoBlock('Pickup photo (min 1)')}
-            <Button title="Confirm Pickup" loading={busy === 'pickup'} disabled={!!busy || !verified || !urls.length || uploading || (o.productImeiRequired && !imei)} style={{ marginTop: 12 }}
+            {photoBlock(`Pickup photos (min ${MIN_PHOTOS})`)}
+            <Button title="Confirm Pickup" loading={busy === 'pickup'} disabled={!!busy || !verified || urls.length < MIN_PHOTOS || uploading || (o.productImeiRequired && !imei)} style={{ marginTop: 12 }}
               onPress={() => run('pickup', { productVerified: true, imei: imei || undefined, photos: urls }, 'Pickup confirmed')} />
           </Card>
         ) : null}
@@ -217,9 +270,14 @@ ${o.shopAddress}` : ''}</Text>
             {input({ placeholder: `Amount collected (${o.totalAmount})`, keyboardType: 'number-pad', value: amount, onChangeText: (t) => setAmount(t.replace(/[^\d.]/g, '')) })}
             {input({ placeholder: 'Customer OTP', keyboardType: 'number-pad', maxLength: 4, value: otp, onChangeText: (t) => setOtp(t.replace(/\D/g, '')) })}
             {input({ placeholder: 'Payment note (optional)', value: payRef, onChangeText: setPayRef })}
-            {photoBlock('Delivery proof photo (min 1)')}
+            {photoBlock(`Delivery proof photos (min ${MIN_PHOTOS})`)}
+            <Pressable onPress={() => setShown((v) => !v)} accessibilityRole="checkbox" accessibilityState={{ checked: shown }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, marginTop: 6 }}>
+              {shown ? <CheckSquare size={20} color={SC.green} /> : <Square size={20} color={MUTED} />}
+              <Text style={{ fontSize: 13, color: SK.ink }}>Product shown & verified with the customer</Text>
+            </Pressable>
             <Button title="Complete Delivery" variant="success" loading={busy === 'deliver'}
-              disabled={!!busy || !amount || otp.length !== 4 || !urls.length || uploading} style={{ marginTop: 12 }}
+              disabled={!!busy || !amount || otp.length !== 4 || urls.length < MIN_PHOTOS || uploading || !shown} style={{ marginTop: 12 }}
               onPress={() => run('deliver', { amountCollected: amount, otp, paymentRef: payRef.trim() || undefined, photos: urls }, 'Delivery completed')} />
           </Card>
         ) : null}

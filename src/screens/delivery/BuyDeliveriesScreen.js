@@ -10,7 +10,7 @@ import { Card, Page, SC, SK, apiError, money } from './deliveryKit';
 export default function BuyDeliveriesScreen({ navigation }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState('NEW');
+  const [tab, setTab] = useState('PICKUP');
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
@@ -35,7 +35,12 @@ export default function BuyDeliveriesScreen({ navigation }) {
             return (
               <Pressable key={t.key} onPress={() => setTab(t.key)} accessibilityRole="tab" accessibilityState={{ selected: on }}
                 style={{ flex: 1, paddingVertical: 9, borderRadius: 12, alignItems: 'center', backgroundColor: on ? SK.teal : SK.tealSoft }}>
-                <Text style={{ fontSize: 12.5, fontWeight: '700', color: on ? '#FFFFFF' : SK.teal }}>{t.label} ({counts[t.key] || 0})</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: on ? '#FFFFFF' : SK.teal }}>{t.label}</Text>
+                  <View style={{ minWidth: 20, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10, alignItems: 'center', backgroundColor: on ? '#FFFFFF' : SK.teal }}>
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: on ? SK.teal : '#FFFFFF' }}>{counts[t.key] || 0}</Text>
+                  </View>
+                </View>
               </Pressable>
             );
           })}
@@ -52,7 +57,7 @@ export default function BuyDeliveriesScreen({ navigation }) {
           <Card>
             <View style={{ alignItems: 'center', paddingVertical: 18 }}>
               <Package size={28} color={SK.teal} />
-              <Text style={{ marginTop: 8, color: '#606E87', fontSize: 13 }}>No {tab === 'HISTORY' ? 'past' : tab === 'NEW' ? 'new' : 'active'} deliveries.</Text>
+              <Text style={{ marginTop: 8, color: '#606E87', fontSize: 13 }}>No {tab === 'HISTORY' ? 'past deliveries' : tab === 'PICKUP' ? 'pickups pending' : 'deliveries in progress'}.</Text>
             </View>
           </Card>
         ) : null}

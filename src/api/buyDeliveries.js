@@ -20,8 +20,8 @@ export const DELIVERY_STATUS = {
 };
 
 export const DELIVERY_TABS = [
-  { key: 'NEW', label: 'New', statuses: ['ASSIGNED'] },
-  { key: 'ACTIVE', label: 'Active', statuses: ['ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY'] },
+  { key: 'PICKUP', label: 'Pickup', statuses: ['ASSIGNED', 'ACCEPTED'] },
+  { key: 'DELIVERY', label: 'Delivery', statuses: ['PICKED_UP', 'OUT_FOR_DELIVERY'] },
   { key: 'HISTORY', label: 'History', statuses: ['DELIVERED', 'DELIVERY_FAILED', 'RETURNED', 'CANCELLED', 'REJECTED', 'COMPLETED', 'CONFIRMED', 'PLACED'] },
 ];
 

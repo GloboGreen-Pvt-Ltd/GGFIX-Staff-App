@@ -33,4 +33,4 @@ export const getDelivery = (id) => marketplaceApi.get(`/staff/buy-orders/${id}`)
 //  deliver { amountCollected, otp, paymentRef?, photos: [url…] (≥1) }
 //  fail    { reason }
 export const deliveryAction = (id, action, body = {}) =>
-  marketplaceApi.post(`/staff/buy-orders/${id}/${action}`, body);
+  marketplaceApi.post(`/staff/buy-orders/${id}/${action}`, { body });

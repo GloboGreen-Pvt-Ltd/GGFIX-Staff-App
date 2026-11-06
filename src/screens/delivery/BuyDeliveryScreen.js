@@ -2,11 +2,11 @@ import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Linking, Platform, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { Camera, CheckSquare, MapPin, Phone, Square, X } from 'lucide-react-native';
+import { Camera, CheckSquare, MapPin, Phone, Square, Store, X } from 'lucide-react-native';
 import { confirm, notify } from '../../components/confirm';
 import { uploadMedia } from '../../api/media';
 import { DELIVERY_STATUS, deliveryAction, getDelivery } from '../../api/buyDeliveries';
-import { SC, SK, SellButton, SellCard, SellLoader, SellPage, money, sellError } from '../sell/sellKit';
+import { Button, Card, Loader, Page, SC, SK, apiError, money } from './deliveryKit';
 
 const FAILABLE = ['ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY'];
 const when = (t) => (t ? new Date(t).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '');
@@ -26,13 +26,14 @@ export default function BuyDeliveryScreen({ navigation, route }) {
   const [otp, setOtp] = useState('');
   const [payRef, setPayRef] = useState('');
   const [reason, setReason] = useState('');
+  const [imei, setImei] = useState('');
   const [failOpen, setFailOpen] = useState(false);
   const lock = useRef(false);
   const seq = useRef(0);
 
   const load = useCallback(async () => {
     try { setO(await getDelivery(id)); setError(''); }
-    catch (e) { setError(sellError(e, 'Could not load this delivery.')); }
+    catch (e) { setError(apiError(e, 'Could not load this delivery.')); }
   }, [id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -48,7 +49,7 @@ export default function BuyDeliveryScreen({ navigation, route }) {
       if (action === 'decline') { navigation.goBack(); return; }
       await load();
     } catch (e) {
-      notify('Not saved', sellError(e, 'Please try again.'), { type: 'error' });
+      notify('Not saved', apiError(e, 'Please try again.'), { type: 'error' });
     } finally { lock.current = false; setBusy(''); }
   };
 
@@ -71,23 +72,23 @@ export default function BuyDeliveryScreen({ navigation, route }) {
         if (!url) notify('Photo not uploaded', 'Please take it again.', { type: 'error' });
       } catch (e) {
         setPhotos((all) => all.filter((x) => x.key !== key));
-        notify('Photo not uploaded', sellError(e, 'Please take it again.'), { type: 'error' });
+        notify('Photo not uploaded', apiError(e, 'Please take it again.'), { type: 'error' });
       }
     } catch (e) {
-      notify('Could not open the camera', sellError(e, 'Please try again.'), { type: 'error' });
+      notify('Could not open the camera', apiError(e, 'Please try again.'), { type: 'error' });
     }
   };
 
   if (!o) {
     return (
-      <SellPage title="Delivery" navigation={navigation}>
+      <Page title="Delivery" navigation={navigation}>
         {error ? (
           <View style={{ padding: 16 }}>
             <Text style={{ color: SC.red }}>{error}</Text>
-            <SellButton title="Retry" onPress={load} style={{ marginTop: 12 }} />
+            <Button title="Retry" onPress={load} style={{ marginTop: 12 }} />
           </View>
-        ) : <SellLoader />}
-      </SellPage>
+        ) : <Loader />}
+      </Page>
     );
   }
 
@@ -134,9 +135,9 @@ export default function BuyDeliveryScreen({ navigation, route }) {
   );
 
   return (
-    <SellPage title="Delivery Task" subtitle={o.orderNumber} navigation={navigation}>
+    <Page title="Delivery Task" subtitle={o.orderNumber} navigation={navigation}>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 32 }} refreshControl={<RefreshControl refreshing={false} onRefresh={load} />} keyboardShouldPersistTaps="handled">
-        <SellCard>
+        <Card>
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <View style={{ width: 60, height: 60, borderRadius: 12, backgroundColor: SK.tealSoft, overflow: 'hidden' }}>
               {o.productImage ? <Image source={{ uri: o.productImage }} style={{ width: '100%', height: '100%' }} resizeMode="contain" /> : null}
@@ -148,32 +149,48 @@ export default function BuyDeliveryScreen({ navigation, route }) {
               <Text style={{ fontSize: 12, fontWeight: '700', color: s === 'DELIVERY_FAILED' ? SC.red : SC.green, marginTop: 4 }}>{DELIVERY_STATUS[s] || s}</Text>
             </View>
           </View>
-        </SellCard>
+        </Card>
 
-        <SellCard title="Customer">
+        {['ASSIGNED', 'ACCEPTED'].includes(s) ? (
+          <Card title="Pickup from shop">
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
+              <Store size={16} color={SK.teal} />
+              <Text style={{ flex: 1, fontSize: 13, color: SK.ink }}>{o.shopName || 'Your shop'}{o.shopAddress ? `
+${o.shopAddress}` : ''}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+              {o.shopAddress ? <Button title="Navigate" Icon={MapPin} variant="outline" style={{ flex: 1 }}
+                onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.shopAddress)}`).catch(() => {})} /> : null}
+              {o.shopPhone ? <Button title="Call Shop" Icon={Phone} variant="outline" style={{ flex: 1 }}
+                onPress={() => Linking.openURL(`tel:${o.shopPhone}`).catch(() => {})} /> : null}
+            </View>
+          </Card>
+        ) : null}
+
+        <Card title={o.customerName ? `Customer · ${o.customerName}` : 'Customer'}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
             <MapPin size={16} color={SK.teal} />
             <Text style={{ flex: 1, fontSize: 13, color: SK.ink }}>{addr || '—'}</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-            {addr ? <SellButton title="Navigate" Icon={MapPin} variant="outline" style={{ flex: 1 }}
+            {addr ? <Button title="Navigate" Icon={MapPin} variant="outline" style={{ flex: 1 }}
               onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`).catch(() => {})} /> : null}
-            {o.customerPhone ? <SellButton title="Call" Icon={Phone} variant="outline" style={{ flex: 1 }}
+            {o.customerPhone ? <Button title="Call" Icon={Phone} variant="outline" style={{ flex: 1 }}
               onPress={() => Linking.openURL(`tel:${o.customerPhone}`).catch(() => {})} /> : null}
           </View>
-        </SellCard>
+        </Card>
 
         {s === 'ASSIGNED' ? (
-          <SellCard title="New assignment">
+          <Card title="New assignment">
             <Text style={{ fontSize: 13, color: MUTED }}>Collect this product from your shop and deliver it to the customer.</Text>
-            <SellButton title="Accept" variant="success" loading={busy === 'accept'} disabled={!!busy} style={{ marginTop: 10 }} onPress={() => run('accept', {}, 'Delivery accepted')} />
-            <SellButton title="Decline" variant="danger" disabled={!!busy} loading={busy === 'decline'} style={{ marginTop: 8 }}
+            <Button title="Accept" variant="success" loading={busy === 'accept'} disabled={!!busy} style={{ marginTop: 10 }} onPress={() => run('accept', {}, 'Delivery accepted')} />
+            <Button title="Decline" variant="danger" disabled={!!busy} loading={busy === 'decline'} style={{ marginTop: 8 }}
               onPress={async () => { if (await confirm({ title: 'Decline delivery?', message: 'The shop will reassign it.', confirmText: 'Decline', destructive: true })) run('decline', {}, 'Declined'); }} />
-          </SellCard>
+          </Card>
         ) : null}
 
         {s === 'ACCEPTED' ? (
-          <SellCard title="At shop — verify & pick up">
+          <Card title="At shop — verify & pick up">
             {CHECKS.map(([k, label]) => (
               <Pressable key={k} onPress={() => setChecks((c) => ({ ...c, [k]: !c[k] }))} accessibilityRole="checkbox" accessibilityState={{ checked: !!checks[k] }}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7 }}>
@@ -181,50 +198,51 @@ export default function BuyDeliveryScreen({ navigation, route }) {
                 <Text style={{ fontSize: 13, color: SK.ink }}>{label}</Text>
               </Pressable>
             ))}
+            {input({ placeholder: o.productImeiRequired ? 'IMEI on the device (required)' : 'IMEI / serial (optional)', value: imei, autoCapitalize: 'characters', onChangeText: (t) => setImei(t.replace(/\s/g, '')) })}
             {photoBlock('Pickup photo (min 1)')}
-            <SellButton title="Confirm Pickup" loading={busy === 'pickup'} disabled={!!busy || !verified || !urls.length || uploading} style={{ marginTop: 12 }}
-              onPress={() => run('pickup', { productVerified: true, photos: urls }, 'Pickup confirmed')} />
-          </SellCard>
+            <Button title="Confirm Pickup" loading={busy === 'pickup'} disabled={!!busy || !verified || !urls.length || uploading || (o.productImeiRequired && !imei)} style={{ marginTop: 12 }}
+              onPress={() => run('pickup', { productVerified: true, imei: imei || undefined, photos: urls }, 'Pickup confirmed')} />
+          </Card>
         ) : null}
 
         {s === 'PICKED_UP' ? (
-          <SellCard title="Ready to deliver">
-            <SellButton title="Start Delivery" loading={busy === 'start-delivery'} disabled={!!busy} onPress={() => run('start-delivery', {}, 'Delivery started')} />
-          </SellCard>
+          <Card title="Ready to deliver">
+            <Button title="Start Delivery" loading={busy === 'start-delivery'} disabled={!!busy} onPress={() => run('start-delivery', {}, 'Delivery started')} />
+          </Card>
         ) : null}
 
         {s === 'OUT_FOR_DELIVERY' ? (
-          <SellCard title="At customer — payment & handover">
+          <Card title="At customer — payment & handover">
             <Text style={{ fontSize: 13, color: MUTED }}>Collect exactly {money(o.totalAmount)} in cash, then enter the customer's 4-digit order OTP.</Text>
             {input({ placeholder: `Amount collected (${o.totalAmount})`, keyboardType: 'number-pad', value: amount, onChangeText: (t) => setAmount(t.replace(/[^\d.]/g, '')) })}
             {input({ placeholder: 'Customer OTP', keyboardType: 'number-pad', maxLength: 4, value: otp, onChangeText: (t) => setOtp(t.replace(/\D/g, '')) })}
             {input({ placeholder: 'Payment note (optional)', value: payRef, onChangeText: setPayRef })}
             {photoBlock('Delivery proof photo (min 1)')}
-            <SellButton title="Complete Delivery" variant="success" loading={busy === 'deliver'}
+            <Button title="Complete Delivery" variant="success" loading={busy === 'deliver'}
               disabled={!!busy || !amount || otp.length !== 4 || !urls.length || uploading} style={{ marginTop: 12 }}
               onPress={() => run('deliver', { amountCollected: amount, otp, paymentRef: payRef.trim() || undefined, photos: urls }, 'Delivery completed')} />
-          </SellCard>
+          </Card>
         ) : null}
 
         {FAILABLE.includes(s) ? (
-          <SellCard>
+          <Card>
             {failOpen ? (
               <>
                 {input({ placeholder: 'Reason (e.g. customer not reachable)', value: reason, onChangeText: setReason })}
-                <SellButton title="Mark Delivery Failed" variant="danger" loading={busy === 'fail'} disabled={!!busy || !reason.trim()} style={{ marginTop: 10 }}
+                <Button title="Mark Delivery Failed" variant="danger" loading={busy === 'fail'} disabled={!!busy || !reason.trim()} style={{ marginTop: 10 }}
                   onPress={() => run('fail', { reason: reason.trim() }, 'Marked as failed')} />
               </>
-            ) : <SellButton title="Report a problem" variant="outline" onPress={() => setFailOpen(true)} />}
-          </SellCard>
+            ) : <Button title="Report a problem" variant="outline" onPress={() => setFailOpen(true)} />}
+          </Card>
         ) : null}
 
         {s === 'DELIVERY_FAILED' ? (
-          <SellCard title="Return to shop">
+          <Card title="Return to shop">
             <Text style={{ fontSize: 13, color: MUTED }}>Bring the product back to the shop. The owner marks it received and may reassign the delivery.</Text>
-          </SellCard>
+          </Card>
         ) : null}
 
-        <SellCard title="Timeline">
+        <Card title="Timeline">
           {(o.events || []).map((e, i) => (
             <View key={i} style={{ flexDirection: 'row', gap: 8, paddingVertical: 5 }}>
               <View style={{ width: 9, height: 9, borderRadius: 5, marginTop: 5, backgroundColor: i === o.events.length - 1 ? SK.teal : SC.green }} />
@@ -234,8 +252,8 @@ export default function BuyDeliveryScreen({ navigation, route }) {
               </View>
             </View>
           ))}
-        </SellCard>
+        </Card>
       </ScrollView>
-    </SellPage>
+    </Page>
   );
 }

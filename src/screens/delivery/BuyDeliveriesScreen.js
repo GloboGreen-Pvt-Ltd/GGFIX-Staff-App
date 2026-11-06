@@ -3,7 +3,7 @@ import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, Text, 
 import { useFocusEffect } from '@react-navigation/native';
 import { MapPin, Package, Store, Truck } from 'lucide-react-native';
 import { DELIVERY_STATUS, DELIVERY_TABS, listMyDeliveries } from '../../api/buyDeliveries';
-import { SC, SK, SellCard, SellPage, money, sellError } from '../sell/sellKit';
+import { Card, Page, SC, SK, apiError, money } from './deliveryKit';
 
 // My Assignments — fixed-price Buy orders this employee picks up from the shop
 // and delivers. Counts come from the server list; only own orders are returned.
@@ -15,7 +15,7 @@ export default function BuyDeliveriesScreen({ navigation }) {
 
   const load = useCallback(async () => {
     try { setRows(await listMyDeliveries()); setError(''); }
-    catch (e) { setError(sellError(e, 'Could not load your assignments.')); }
+    catch (e) { setError(apiError(e, 'Could not load your assignments.')); }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
@@ -24,7 +24,7 @@ export default function BuyDeliveriesScreen({ navigation }) {
   const shown = (rows || []).filter((o) => DELIVERY_TABS.find((t) => t.key === tab).statuses.includes(o.status));
 
   return (
-    <SellPage title="My Deliveries" subtitle="Shop pickup → customer delivery" navigation={navigation}>
+    <Page title="My Deliveries" subtitle="Shop pickup → customer delivery" navigation={navigation}>
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 24 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} />}
@@ -43,23 +43,23 @@ export default function BuyDeliveriesScreen({ navigation }) {
 
         {rows === null && !error ? <ActivityIndicator color={SK.teal} style={{ marginTop: 40 }} /> : null}
         {error ? (
-          <SellCard>
+          <Card>
             <Text style={{ color: SC.red, fontSize: 13 }}>{error}</Text>
             <Pressable onPress={load} style={{ marginTop: 8 }} accessibilityRole="button"><Text style={{ color: SK.teal, fontWeight: '700' }}>Retry</Text></Pressable>
-          </SellCard>
+          </Card>
         ) : null}
         {rows && !error && !shown.length ? (
-          <SellCard>
+          <Card>
             <View style={{ alignItems: 'center', paddingVertical: 18 }}>
               <Package size={28} color={SK.teal} />
               <Text style={{ marginTop: 8, color: '#606E87', fontSize: 13 }}>No {tab === 'HISTORY' ? 'past' : tab === 'NEW' ? 'new' : 'active'} deliveries.</Text>
             </View>
-          </SellCard>
+          </Card>
         ) : null}
 
         {shown.map((o) => (
           <Pressable key={o.id} onPress={() => navigation.navigate('BuyDelivery', { id: o.id })} accessibilityRole="button">
-            <SellCard>
+            <Card>
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 <View style={{ width: 54, height: 54, borderRadius: 12, backgroundColor: SK.tealSoft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                   {o.productImage ? <Image source={{ uri: o.productImage }} style={{ width: '100%', height: '100%' }} resizeMode="contain" /> : <Package size={22} color={SK.teal} />}
@@ -77,10 +77,10 @@ export default function BuyDeliveriesScreen({ navigation }) {
                   </View>
                 </View>
               </View>
-            </SellCard>
+            </Card>
           </Pressable>
         ))}
       </ScrollView>
-    </SellPage>
+    </Page>
   );
 }

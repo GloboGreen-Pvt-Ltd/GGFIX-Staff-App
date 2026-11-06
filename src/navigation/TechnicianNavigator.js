@@ -27,6 +27,8 @@ const TAB_FOR_ROUTE = {
   TaskReport: 'Tasks',
   PickupAssign: 'Tasks',
   PickupDetails: 'Tasks',
+  BuyDeliveries: 'Tasks',
+  BuyDelivery: 'Tasks',
   PickupCalendar: 'Tasks',
   PickupRecords: 'Tasks',
   PickupReport: 'Tasks',
@@ -83,6 +85,8 @@ const HIDE_BOTTOM_TAB_ROUTES = new Set([
   'PermissionApply',
   // Pickup Details has its own action bar (next step / Unable to Pickup).
   'PickupDetails',
+  'BuyDeliveries',
+  'BuyDelivery',
   'PickupDeviceDetails',
   'PickupDevicesRepair',
   'PickupSelectBrand',

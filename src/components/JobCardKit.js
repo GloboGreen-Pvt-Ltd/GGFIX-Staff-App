@@ -294,12 +294,17 @@ export function DevicePhoto({ ticket, tone = KIT.teal }) {
   });
   const [src, setSrc] = useState(direct);
   const [failed, setFailed] = useState(false);
+  // Follow the data: a card first drawn without an image (preview row, a
+  // timed-out load) or with one that failed picks up the image once a
+  // refresh brings it — the card stays mounted under the same key.
   useEffect(() => {
-    if (direct) return undefined;
+    setFailed(false);
+    if (direct) { setSrc(direct); return undefined; }
+    setSrc(null);
     let alive = true;
     modelImageFor(ticket).then((x) => { if (alive) setSrc(x); });
     return () => { alive = false; };
-  }, [ticket.id, ticket.brandId, ticket.modelId]);
+  }, [ticket.id, ticket.brandId, ticket.modelId, direct]);
   return src && !failed
     ? <Image source={{ uri: src }} style={s.picImg} resizeMode="contain" onError={() => setFailed(true)} />
     : <DevIcon size={rs(28)} color={tone} strokeWidth={1.8} />;
@@ -312,17 +317,20 @@ export function DevicePhoto({ ticket, tone = KIT.teal }) {
 // number, device (wraps), then `lines` (only the ones with a value), date |
 // time, and an optional phase pill or `footer` (e.g. Accept / Reject).
 //   lines: [{ icon?, text }] — no icon renders as a plain muted line (customer).
+// compact: smaller picture column and 12px detail lines (My Pickups cards).
 export function JobPictureCard({
-  ticket, tab, tabColor, refText, model, lines = [], date, time, pill, footer, onPress, onLongPress,
+  ticket, tab, tabColor, refText, model, lines = [], date, time, pill, footer, onPress, onLongPress, compact = false,
 }) {
   const shown = lines.filter((l) => l && l.text);
+  const fs = compact ? 12 : 12.5;
+  const lh = compact ? 16.5 : 17.5;
   return (
     <TouchableOpacity onPress={onPress} onLongPress={onLongPress} activeOpacity={0.9} style={s.card}>
-      <View style={s.picCol}>
+      <View style={[s.picCol, compact && s.picColCompact]}>
         <View style={[s.tab, { backgroundColor: tabColor }]}>
           <KText size={11} weight="800" color={KIT.white} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{tab}</KText>
         </View>
-        <View style={s.picBox}>
+        <View style={[s.picBox, compact && s.picBoxCompact]}>
           <DevicePhoto ticket={ticket} tone={tabColor} />
         </View>
         <TouchableOpacity onPress={onPress} hitSlop={4} activeOpacity={0.7} accessibilityLabel="View job" style={s.viewPill}>
@@ -332,29 +340,29 @@ export function JobPictureCard({
       <View style={s.rule} />
 
       <View style={s.info}>
-        <KText size={11.5} weight="800" color={KIT.teal} lh={15.5} numberOfLines={1}>{refText}</KText>
+        <KText size={11.5} weight="800" color={KIT.teal} lh={15.5} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{refText}</KText>
         <KText size={12.5} weight="800" color={KIT.ink} lh={17} style={{ marginTop: rs(1) }}>{model}</KText>
         {shown.map((l, i) => {
           const Icon = l.icon;
           return Icon ? (
             <View key={i} style={s.line}>
               <Icon size={rs(13)} color={KIT.muted} strokeWidth={2} />
-              <KText size={12.5} color={KIT.muted} lh={17.5} numberOfLines={1} style={s.flex}>{l.text}</KText>
+              <KText size={fs} color={KIT.muted} lh={lh} numberOfLines={1} style={s.flex}>{l.text}</KText>
             </View>
           ) : (
-            <KText key={i} size={12.5} color={KIT.muted} lh={17.5} numberOfLines={1} style={s.lineTop}>{l.text}</KText>
+            <KText key={i} size={fs} color={KIT.muted} lh={lh} numberOfLines={1} style={s.lineTop}>{l.text}</KText>
           );
         })}
         {date || time ? (
           <View style={s.dateRow}>
-            <KText size={12.5} color={KIT.muted} lh={17.5} numberOfLines={1} style={s.shrink}>{date}</KText>
-            <KText size={12.5} color={KIT.muted} lh={17.5} numberOfLines={1} style={s.shrink}>{time}</KText>
+            <KText size={fs} color={KIT.muted} lh={lh} numberOfLines={time ? 1 : 2} style={s.shrink}>{date}</KText>
+            <KText size={fs} color={KIT.muted} lh={lh} numberOfLines={1} style={s.shrink}>{time}</KText>
           </View>
         ) : null}
         {pill ? (
           <TouchableOpacity onPress={pill.onPress || onPress} activeOpacity={0.8} accessibilityLabel={`${pill.text}, open job`} style={s.pill}>
             <Clock size={rs(13)} color={KIT.teal} strokeWidth={2.3} />
-            <KText size={12.5} weight="700" color={KIT.teal} numberOfLines={1} style={{ flexShrink: 1 }}>{pill.text}</KText>
+            <KText size={fs} weight="700" color={KIT.teal} numberOfLines={2} style={{ flexShrink: 1 }}>{pill.text}</KText>
             <ChevronRight size={rs(14)} color={KIT.teal} strokeWidth={2.4} />
           </TouchableOpacity>
         ) : null}
@@ -414,6 +422,8 @@ const s = StyleSheet.create({
   },
   // Grows with the card; the photo fills it (contained, never cropped).
   picBox: { flex: 1, minHeight: rs(76), marginTop: rs(5), paddingHorizontal: rs(10), alignItems: 'center', justifyContent: 'center' },
+  picColCompact: { width: '30%', maxWidth: rs(104) },
+  picBoxCompact: { minHeight: rs(58), paddingHorizontal: rs(8) },
   picImg: { flex: 1, alignSelf: 'stretch', width: undefined, height: undefined },
   viewPill: {
     alignSelf: 'flex-end', marginRight: rs(9), marginTop: rs(5), paddingHorizontal: rs(13), paddingVertical: rs(2),

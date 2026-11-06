@@ -115,6 +115,52 @@ export async function notifyNow(title, body) {
   }
 }
 
+// ── Pickup reminders ─────────────────────────────────────────────────────
+// 30 and 15 minutes before each assigned pickup's slot, on the same lazy
+// expo-notifications setup (no-op in Expo Go / web). Re-synced from the
+// pickup list, so a reassigned / started / cancelled pickup drops its reminders.
+const PICKUP_KIND = 'pickup-reminder';
+const PICKUP_CHANNEL_ID = 'pickup-reminder-v1';
+const PICKUP_LEADS = [30, 15];
+
+/** pickups: [{ id, startAt: Date, title, body }] — replaces every pickup reminder. */
+export async function syncPickupReminders(pickups) {
+  if (!load()) return;
+  try {
+    const all = await Notifications.getAllScheduledNotificationsAsync();
+    await Promise.all(all
+      .filter((n) => n?.content?.data?.kind === PICKUP_KIND)
+      .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)));
+    const now = Date.now();
+    const due = [];
+    (pickups || []).forEach((p) => {
+      if (!(p?.startAt instanceof Date)) return;
+      PICKUP_LEADS.forEach((lead) => {
+        const at = new Date(p.startAt.getTime() - lead * 60000);
+        if (at.getTime() > now) due.push({ p, lead, at });
+      });
+    });
+    if (!due.length || !(await ensurePermission())) return;
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync(PICKUP_CHANNEL_ID, {
+        name: 'Pickup reminders',
+        importance: Notifications.AndroidImportance.HIGH,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      });
+    }
+    // Soonest first; the OS caps pending alarms, so keep it to the next 40.
+    due.sort((a, b) => a.at - b.at);
+    for (const { p, lead, at } of due.slice(0, 40)) {
+      await Notifications.scheduleNotificationAsync({
+        content: { title: `Pickup in ${lead} min · ${p.title}`, body: p.body, data: { kind: PICKUP_KIND, bookingId: p.id } },
+        trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at, channelId: PICKUP_CHANNEL_ID },
+      });
+    }
+  } catch (e) {
+    console.warn('[pickupReminders] schedule failed', e?.message);
+  }
+}
+
 /** True when it's past today's checkout alarm time. */
 export function isPastCheckoutAlarm(now = new Date()) {
   const t = new Date(now);

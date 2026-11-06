@@ -22,7 +22,7 @@ import { rf, rs } from '../utils/responsive';
 import { notify } from '../components/confirm';
 import { ticketRef } from '../utils/ticketRef';
 import { SearchBar } from '../components/rnr';
-import { JobHeader, JobRail, MonthBar, JobPictureCard } from '../components/JobCardKit';
+import { JobHeader, JobRail, JobPictureCard } from '../components/JobCardKit';
 
 const FILTERS = ['All', 'In Process', 'Pending', 'Completed'];
 
@@ -312,8 +312,6 @@ export default function JobReportScreen({ navigation, route }) {
 
   const scrollRef = useRef(null);
   const [showSearch, setShowSearch] = useState(false);
-  // Month shown in the month bar; the list and counts cover that month.
-  const [month, setMonth] = useState(() => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() }; });
   const [listWidth, setListWidth] = useState(0);
 
   // silent: background poll — no spinner, and a failed poll keeps the list.
@@ -366,8 +364,6 @@ export default function JobReportScreen({ navigation, route }) {
   useEffect(() => {
     if (!FILTERS.includes(routeFilter)) return;
     setFilter(routeFilter);
-    const d = new Date();
-    setMonth({ y: d.getFullYear(), m: d.getMonth() });
     scrollRef.current?.scrollTo?.({ y: 0, animated: false });
   }, [routeFilter, routeFilterAt]);
 
@@ -389,23 +385,15 @@ export default function JobReportScreen({ navigation, route }) {
     [list, flagsById, technicianId],
   );
 
-  // Newest first. Without a search: the picked month (by last update, else
-  // creation). A search looks across every month by ref, device, customer,
-  // phone or issue.
+  // Newest first (by last update, else creation), every job — no month
+  // filter. A search matches ref, device, customer, phone or issue.
   const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
     const sorted = [...jobs].sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-    if (!q) {
-      return sorted.filter((t) => {
-        const at = t.updatedAt || t.createdAt;
-        if (!at) return true;
-        const d = new Date(at);
-        return d.getFullYear() === month.y && d.getMonth() === month.m;
-      });
-    }
+    if (!q) return sorted;
     return sorted.filter((t) => [ticketRef(t), deviceName(t), t.customerName, t.customerPhone, issueText(t)]
       .some((v) => v && String(v).toLowerCase().includes(q)));
-  }, [jobs, query, month]);
+  }, [jobs, query]);
 
   // Rail counts come from the same set the list shows, so a tile's count is
   // always the number of cards under it.
@@ -456,15 +444,6 @@ export default function JobReportScreen({ navigation, route }) {
   const openTicket = (t) => {
     navigation.navigate('TechnicianTicketDetail', { ticketId: t.id });
   };
-
-  const stepMonth = (delta) => {
-    setMonth(({ y, m }) => {
-      const d = new Date(y, m + delta, 1);
-      return { y: d.getFullYear(), m: d.getMonth() };
-    });
-    scrollRef.current?.scrollTo?.({ y: 0, animated: false });
-  };
-  const monthLabel = new Date(month.y, month.m, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const toggleSearch = () => {
     if (showSearch) setQuery('');
@@ -518,15 +497,6 @@ export default function JobReportScreen({ navigation, route }) {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.green} colors={[C.green]} />}
         >
-          {/* Month bar (search results while searching). */}
-          <MonthBar
-            title={query.trim() ? 'Search results' : monthLabel}
-            sub={`${counts.All ?? 0} ${(counts.All ?? 0) === 1 ? 'job' : 'jobs'}`}
-            onPrev={() => stepMonth(-1)}
-            onNext={() => stepMonth(1)}
-            disabled={!!query.trim()}
-          />
-
           {showInitialSpinner && (
             <View style={styles.stateBox}>
               <ActivityIndicator size="small" color={C.green} />
@@ -549,7 +519,7 @@ export default function JobReportScreen({ navigation, route }) {
 
           {!showInitialSpinner && !showError && (
             previousShown.length === 0 ? (
-              <EmptyRow text={query.trim() ? `No jobs match "${query.trim()}".` : filter === 'All' ? `No jobs in ${monthLabel}.` : `No ${filter.toLowerCase()} jobs in ${monthLabel}.`} />
+              <EmptyRow text={query.trim() ? `No jobs match "${query.trim()}".` : filter === 'All' ? 'No jobs yet.' : `No ${filter.toLowerCase()} jobs.`} />
             ) : (
               <View style={[styles.grid, twoCol && { marginHorizontal: -rs(5) }]}>
                 {previousShown.map((t) => (

@@ -4,6 +4,7 @@ import { Text } from './Typography';
 import { ArrowLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { rf, rs } from '../utils/responsive';
+import { UI } from '../theme/tokens';
 
 // In-screen header for the mint-styled attendance screens: soft circular back
 // button, centred title, and faint mint curves in the top-right corner. The
@@ -43,7 +44,8 @@ export function StackHeader({ navigation, route, options }) {
 
 export default function MintScreenHeader({ title, navigation, right }) {
   // Partner Job Report header: light grey round back button, bold navy title.
-  const size = rs(36);
+  // Button is the partner PageHeader's 36 (not rs(): its 0.9 factor made it 32).
+  const size = UI.headerButton;
   const canGoBack = navigation?.canGoBack?.();
   return (
     <View className="flex-row items-center" style={{ paddingHorizontal: rs(16), paddingTop: rs(4), paddingBottom: rs(6) }}>

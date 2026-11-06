@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from '../components/Typography';
 import * as ImagePicker from 'expo-image-picker';
@@ -43,6 +43,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
   const [estimate, setEstimate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState(booking?.issueSummary || '');
   // Service Schedule alert (ETA + delivery) — pickup person enters at the
@@ -165,6 +166,9 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
   };
 
   const submit = async () => {
+    // Ref, not state: a fast double tap lands before the re-render that
+    // disables the button, and would POST the estimate twice.
+    if (submittingRef.current) return;
     const cleanedAmount = String(amount || '').replace(/[^0-9.]/g, '');
     if (!cleanedAmount || Number(cleanedAmount) <= 0) {
       notify('Estimate required', 'Enter the estimated repair value.', { type: 'warning' });
@@ -174,6 +178,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
       notify('Device image required', 'Upload at least one device image.', { type: 'warning' });
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const uploaded = {};
@@ -218,6 +223,7 @@ export default function PickupRepairEstimateScreen({ route, navigation }) {
     } catch (e) {
       notify('Could not submit estimate', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };

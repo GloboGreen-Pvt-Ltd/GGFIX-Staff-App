@@ -16,9 +16,16 @@
 const CLOUDINARY_HOST = 'res.cloudinary.com';
 const UNSUPPORTED_EXT = /\.(avif|heic|heif)(\?.*)?$/i;
 
+// Media moved from media.ggfix.in to cdn.neargfix.com (same S3 keys); rows saved
+// before the move still carry the old host, which no longer resolves.
+export function toCdnUrl(url) {
+  if (!url) return url;
+  return String(url).replace(/^https?:\/\/media\.ggfix\.in\//i, 'https://cdn.neargfix.com/');
+}
+
 export function normalizeDeviceImageUrl(url) {
   if (!url) return null;
-  const s = String(url);
+  const s = toCdnUrl(url);
   if (s.startsWith('data:')) return s;
   if (!s.includes(CLOUDINARY_HOST)) return s;
   // Only rewrite when the asset is in an Android-unsafe format. Idempotent:

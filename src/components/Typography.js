@@ -3,9 +3,10 @@
 import React, { forwardRef } from 'react';
 import { Text as RNText, TextInput as RNTextInput, StyleSheet } from 'react-native';
 import { cssInterop } from 'nativewind';
-import { interFamily, snapFontSize } from '../theme/typography';
+import { interFamily, resolveFontSize } from '../theme/typography';
+import { rf } from '../utils/responsive';
 
-function normalize(style, { input = false } = {}) {
+function normalize(style, { input = false, osScaled = true } = {}) {
   const flat = StyleSheet.flatten(style) || {};
   // Web: nativewind className styles arrive as compiled-CSS objects ($$css);
   // flattening those into inline numbers breaks react-native-web, so leave them.
@@ -14,7 +15,7 @@ function normalize(style, { input = false } = {}) {
   // parent's size/weight/family — don't stamp defaults onto them.
   if (flat.fontSize == null && flat.fontWeight == null && flat.fontFamily == null) return style;
   const { fontWeight, fontFamily, fontSize, lineHeight, ...rest } = flat;
-  const size = snapFontSize(fontSize ?? 13, { input });
+  const size = resolveFontSize(fontSize ?? rf(13), { input, osScaled });
   const out = { ...rest, fontFamily: fontFamily && !fontFamily.startsWith('Inter') ? fontFamily : interFamily(fontWeight), fontSize: size };
   // Keep line heights proportional when the size was snapped.
   if (lineHeight != null) out.lineHeight = fontSize ? Math.round(lineHeight * (size / fontSize)) : lineHeight;
@@ -22,12 +23,12 @@ function normalize(style, { input = false } = {}) {
 }
 
 export const Text = forwardRef(({ style, ...props }, ref) => (
-  <RNText ref={ref} {...props} style={normalize(style)} />
+  <RNText ref={ref} {...props} style={normalize(style, { osScaled: props.allowFontScaling !== false })} />
 ));
 Text.displayName = 'Text';
 
 export const TextInput = forwardRef(({ style, ...props }, ref) => (
-  <RNTextInput ref={ref} {...props} style={normalize(style, { input: true })} />
+  <RNTextInput ref={ref} {...props} style={normalize(style, { input: true, osScaled: props.allowFontScaling !== false })} />
 ));
 TextInput.displayName = 'TextInput';
 

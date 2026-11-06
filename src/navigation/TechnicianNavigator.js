@@ -26,11 +26,16 @@ const TAB_FOR_ROUTE = {
   TaskAssign: 'Tasks',
   TaskReport: 'Tasks',
   PickupAssign: 'Tasks',
+  PickupDetails: 'Tasks',
+  PickupCalendar: 'Tasks',
+  PickupRecords: 'Tasks',
   PickupReport: 'Tasks',
   PickupRepairEstimate: 'Tasks',
   PickupEstimateDetail: 'Tasks',
   PickupHistory: 'Tasks',
   PickupSelectBrand: 'Tasks',
+  PickupDeviceDetails: 'Tasks',
+  PickupDevicesRepair: 'Tasks',
   PickupSelectModel: 'Tasks',
   PickupDeviceColorStorage: 'Tasks',
   PickupDeviceServices: 'Tasks',
@@ -39,6 +44,18 @@ const TAB_FOR_ROUTE = {
   PickupDeviceSecurity: 'Tasks',
   PickupDeviceMissingParts: 'Tasks',
   PickupServiceBookingDevicesList: 'Tasks',
+  SellInspectScreening: 'Tasks',
+  SellInspectScreen: 'Tasks',
+  SellInspectFunctional: 'Tasks',
+  SellInspectAccessories: 'Tasks',
+  SellVerifyOtp: 'Tasks',
+  SellCompare: 'Tasks',
+  SellInspection: 'Tasks',
+  BuyDeliveries: 'Tasks',
+  BuyDelivery: 'Tasks',
+  SellPriceRevision: 'Tasks',
+  SellCustomerConfirm: 'Tasks',
+  SellPayment: 'Tasks',
   TechnicianDashboard: 'Tasks',
   TechnicianTicketDetail: 'Tasks',
   TechnicianBookingTimeline: 'Tasks',
@@ -76,6 +93,10 @@ const HIDE_BOTTOM_TAB_ROUTES = new Set([
   // Apply forms (opened from Home Quick Access): full-screen, no tab bar.
   'TechnicianApplyLeave',
   'PermissionApply',
+  // Pickup Details has its own action bar (next step / Unable to Pickup).
+  'PickupDetails',
+  'PickupDeviceDetails',
+  'PickupDevicesRepair',
   'PickupSelectBrand',
   'PickupSelectModel',
   'PickupDeviceColorStorage',
@@ -85,6 +106,20 @@ const HIDE_BOTTOM_TAB_ROUTES = new Set([
   'PickupDeviceSecurity',
   'PickupDeviceMissingParts',
   'PickupServiceBookingDevicesList',
+  // Device-purchase inspection at Device Collected (screens/sell).
+  'SellInspectScreening',
+  'SellInspectScreen',
+  'SellInspectFunctional',
+  'SellInspectAccessories',
+  // Device purchase at the door: OTP → Compare & Inspect → Price → Payment & Pickup.
+  'SellVerifyOtp',
+  'SellCompare',
+  'SellInspection',
+  'BuyDeliveries',
+  'BuyDelivery',
+  'SellPriceRevision',
+  'SellCustomerConfirm',
+  'SellPayment',
   // Salary report and Pay slip are read-only / action-driven screens where the
   // tab bar competes with the Download/Share buttons at the bottom of the page.
   'SalaryReport',
@@ -111,11 +146,16 @@ import LeaveReportScreen from '../screens/LeaveReportScreen';
 import TaskAssignScreen from '../screens/TaskAssignScreen';
 import JobReportScreen from '../screens/JobReportScreen';
 import PickupAssignScreen from '../screens/PickupAssignScreen';
+import PickupDetailsScreen from '../screens/PickupDetailsScreen';
+import PickupCalendarScreen from '../screens/PickupCalendarScreen';
+import PickupRecordsScreen from '../screens/PickupRecordsScreen';
 import PickupReportScreen from '../screens/PickupReportScreen';
 import PickupRepairEstimateScreen from '../screens/PickupRepairEstimateScreen';
 import PickupEstimateDetailScreen from '../screens/PickupEstimateDetailScreen';
 import PickupHistoryScreen from '../screens/PickupHistoryScreen';
 import PickupSelectBrandScreen from '../screens/PickupSelectBrandScreen';
+import PickupDeviceDetailsScreen from '../screens/PickupDeviceDetailsScreen';
+import PickupDevicesRepairScreen from '../screens/PickupDevicesRepairScreen';
 import PickupSelectModelScreen from '../screens/PickupSelectModelScreen';
 import PickupDeviceColorStorageScreen from '../screens/PickupDeviceColorStorageScreen';
 import PickupDeviceServicesScreen from '../screens/PickupDeviceServicesScreen';
@@ -124,6 +164,18 @@ import PickupDeviceInformationScreen from '../screens/PickupDeviceInformationScr
 import PickupDeviceSecurityScreen from '../screens/PickupDeviceSecurityScreen';
 import PickupDeviceMissingPartsScreen from '../screens/PickupDeviceMissingPartsScreen';
 import PickupServiceBookingDevicesListScreen from '../screens/PickupServiceBookingDevicesListScreen';
+import SellInspectScreeningScreen from '../screens/sell/SellInspectScreeningScreen';
+import SellInspectScreenConditionScreen from '../screens/sell/SellInspectScreenConditionScreen';
+import SellInspectFunctionalScreen from '../screens/sell/SellInspectFunctionalScreen';
+import SellInspectAccessoriesScreen from '../screens/sell/SellInspectAccessoriesScreen';
+import SellVerifyOtpScreen from '../screens/sell/SellVerifyOtpScreen';
+import SellCompareScreen from '../screens/sell/SellCompareScreen';
+import SellInspectionScreen from '../screens/sell/SellInspectionScreen';
+import BuyDeliveriesScreen from '../screens/delivery/BuyDeliveriesScreen';
+import BuyDeliveryScreen from '../screens/delivery/BuyDeliveryScreen';
+import SellPriceRevisionScreen from '../screens/sell/SellPriceRevisionScreen';
+import SellCustomerConfirmScreen from '../screens/sell/SellCustomerConfirmScreen';
+import SellPaymentScreen from '../screens/sell/SellPaymentScreen';
 import SalaryReportScreen from '../screens/SalaryReportScreen';
 import PayslipScreen from '../screens/PayslipScreen';
 
@@ -214,11 +266,16 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="LeaveReport" component={LeaveReportScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TaskAssign" component={TaskAssignScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TaskReport" component={JobReportScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="PickupAssign" component={PickupAssignScreen} options={{ title: 'Assign Pickup' }} />
+        <Stack.Screen name="PickupAssign" component={PickupAssignScreen} options={{ title: 'My Pickups' }} />
+        <Stack.Screen name="PickupDetails" component={PickupDetailsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="PickupCalendar" component={PickupCalendarScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="PickupRecords" component={PickupRecordsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupReport" component={PickupReportScreen} options={{ title: 'Pickup Report' }} />
         <Stack.Screen name="PickupRepairEstimate" component={PickupRepairEstimateScreen} options={{ title: 'Repair Estimate Processing' }} />
         <Stack.Screen name="PickupEstimateDetail" component={PickupEstimateDetailScreen} options={{ title: 'Estimate Details' }} />
-        <Stack.Screen name="PickupHistory" component={PickupHistoryScreen} options={{ title: 'Pickup History' }} />
+        <Stack.Screen name="PickupHistory" component={PickupHistoryScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="PickupDeviceDetails" component={PickupDeviceDetailsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="PickupDevicesRepair" component={PickupDevicesRepairScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupSelectBrand" component={PickupSelectBrandScreen} options={{ title: 'Select Device Brand' }} />
         <Stack.Screen name="PickupSelectModel" component={PickupSelectModelScreen} options={{ title: 'Select Device Model' }} />
         <Stack.Screen name="PickupDeviceColorStorage" component={PickupDeviceColorStorageScreen} options={{ title: 'Color, RAM & Storage' }} />
@@ -228,6 +285,18 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="PickupDeviceSecurity" component={PickupDeviceSecurityScreen} options={{ title: 'Device Security' }} />
         <Stack.Screen name="PickupDeviceMissingParts" component={PickupDeviceMissingPartsScreen} options={{ title: 'Device Missing Parts' }} />
         <Stack.Screen name="PickupServiceBookingDevicesList" component={PickupServiceBookingDevicesListScreen} options={{ title: 'Service Booking Devices List' }} />
+        <Stack.Screen name="SellInspectScreening" component={SellInspectScreeningScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SellInspectScreen" component={SellInspectScreenConditionScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SellInspectFunctional" component={SellInspectFunctionalScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SellInspectAccessories" component={SellInspectAccessoriesScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SellVerifyOtp" component={SellVerifyOtpScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SellCompare" component={SellCompareScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SellInspection" component={SellInspectionScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="BuyDeliveries" component={BuyDeliveriesScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="BuyDelivery" component={BuyDeliveryScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SellPriceRevision" component={SellPriceRevisionScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SellCustomerConfirm" component={SellCustomerConfirmScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="SellPayment" component={SellPaymentScreen} options={{ headerShown: false }} />
         <Stack.Screen name="SalaryReport" component={SalaryReportScreen} options={{ title: 'Salary Report' }} />
         <Stack.Screen name="Payslip" component={PayslipScreen} options={{ title: 'Pay slip' }} />
 

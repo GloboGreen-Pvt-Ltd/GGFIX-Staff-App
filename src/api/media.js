@@ -50,11 +50,11 @@ async function shrinkImageNow(uri) {
 // Its public path differs between a direct service origin and the TLS edge —
 // MEDIA_UPLOAD_PATH picks the right one; never spell it here.
 //
-// Everything is stored on S3 (bucket ggfix-media-1762) behind media.ggfix.in.
+// Everything is stored on S3 (bucket ggfix-media-1762) behind cdn.neargfix.com.
 // The backend slugifies `folder` into a SINGLE key segment, so a folder with
 // slashes collapses to one dash-joined directory; `slot` names the file, and the
 // backend appends 8 hex chars to defeat CDN caching. Technician device images
-// therefore land at media.ggfix.in/tech-dev-img/<slot>-<id>.<ext>.
+// therefore land at cdn.neargfix.com/tech-dev-img/<slot>-<id>.<ext>.
 const UPLOAD_TIMEOUT_MS = 60000;
 
 const MIME_BY_EXT = {

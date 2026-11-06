@@ -49,12 +49,19 @@ export const TECHNICIAN_BASE = svc(process.env.EXPO_PUBLIC_TECHNICIAN_BASE, 8085
 export const MASTER_BASE     = svc(process.env.EXPO_PUBLIC_MASTER_DATA_BASE, 8091)
   .replace(/\/master\/$/, '/');
 export const ORDER_BASE      = svc(process.env.EXPO_PUBLIC_ORDER_BASE, 8092);
+// No explicit base: sit next to the order service at the same edge
+// (…/order → …/marketplace), so dev .env files without it still reach the API.
+export const MARKETPLACE_BASE = svc(
+  process.env.EXPO_PUBLIC_MARKETPLACE_BASE
+    || ((o) => (/^https?:.*\/order\/?$/.test(o) ? o.replace(/\/order\/?$/, '/marketplace') : ''))(String(process.env.EXPO_PUBLIC_ORDER_BASE || '').trim()),
+  8087,
+);
 
 // The upload endpoint is @RequestMapping("/media") on master-data-service, so
 // talking to the service DIRECTLY (LAN dev, http://host:8091) it is /media/upload.
 // Through the TLS edge there is no `location /media/` block — nginx only exposes
 // it beneath the master prefix (/master/media/ -> :8091/media/). Posting to
-// api.ggfix.in/media/upload gets nginx's own 404/405, which carries no
+// api.neargfix.com/media/upload gets nginx's own 404/405, which carries no
 // Access-Control-Allow-Origin, so a browser reports it as a CORS error rather
 // than as the routing miss it is. A direct origin always names a port; the edge
 // is plain 443.

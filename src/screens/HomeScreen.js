@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, Image, ActivityIndicator, useWindowDimensions } from 'react-native';
+import { View, TouchableOpacity, ScrollView, Image, ActivityIndicator, useWindowDimensions, Text as RNText } from 'react-native';
 import { Text } from '../components/Typography';
+import { interFamily } from '../theme/typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -39,6 +40,8 @@ import {
   checkOut as apiCheckOut,
 } from '../api/technician';
 import { listMyTickets, listTicketEvents } from '../api/tickets';
+import { listMyAssignedPickups } from '../api/pickups';
+import { bucketOf } from '../utils/pickups';
 import { loadRepairDone } from '../utils/repairDone';
 import { listTechnicianWorkStatuses } from '../api/master';
 import { effectiveLateMinutes } from './DailyAttendanceScreen';
@@ -402,6 +405,27 @@ export default function HomeScreen({ navigation }) {
     return () => clearInterval(id);
   }, [reloadTickets]));
 
+  // Pickup person: Job Overview counts their pickups, not repair tickets, with
+  // the same scope and buckets as the My Pickups tiles (every assigned
+  // pickup, no month filter). A failed poll keeps the last list.
+  const isPickupPerson = resolveRoleKey(session) === 'PICKUP_PERSON';
+  const [pickups, setPickups] = useState(null); // null = not loaded yet
+  useFocusEffect(useCallback(() => {
+    if (!isPickupPerson) return undefined;
+    let active = true;
+    const loadPickups = () => listMyAssignedPickups()
+      .then((rows) => { if (active) setPickups(Array.isArray(rows) ? rows : []); })
+      .catch(() => {});
+    loadPickups();
+    const id = setInterval(loadPickups, TASK_POLL_MS);
+    return () => { active = false; clearInterval(id); };
+  }, [isPickupPerson]));
+  const pickupSummary = useMemo(() => {
+    const list = pickups || [];
+    const count = (bucket) => list.filter((b) => bucketOf(b.status) === bucket).length;
+    return { total: list.length, assigned: count('ASSIGNED'), inProgress: count('IN_PROGRESS'), completed: count('COMPLETED') };
+  }, [pickups]);
+
   const taskSummary = useMemo(() => {
     const assignedIds = [];
     let pending = 0;
@@ -659,12 +683,16 @@ export default function HomeScreen({ navigation }) {
   const contentW = Math.min(winW, MAX_CONTENT_WIDTH);
   const pad = rs(14);
   const innerW = contentW - pad * 2;
-  // Quick Access grid (Partner app layout): 4 tiles a row on a phone, 5 on a
-  // large phone, 6 on a tablet; a short last row stays left-aligned.
-  const quickCols = winW >= 768 ? 6 : winW >= 430 ? 5 : 4;
-  const quickGap = rs(8);
-  const quickPad = rs(8);
-  const quickW = Math.floor((innerW - 2 - quickPad * 2 - quickGap * (quickCols - 1)) / quickCols);
+  // Quick Access grid — same numbers as the Partner app's dashboard tool grid
+  // (DashboardScreen toolCardStyle + DashboardToolsGrid): 4 tiles a row on a
+  // phone (8 tiles = 4 × 2), 5 on a large phone (414+), 6 on a tablet (600+);
+  // a short last row stays left-aligned.
+  const quickTablet = winW >= 600;
+  const quickCols = quickTablet ? 6 : winW >= 414 ? 5 : 4;
+  const quickGap = quickTablet ? 12 : 8;
+  const quickPad = quickTablet ? 12 : 8;
+  // - 2: the panel's 1px border on each side.
+  const quickW = Math.floor(Math.max(0, (innerW - 2 - quickPad * 2 - quickGap * (quickCols - 1)) / quickCols));
   // Month tiles sit icon-beside-value when there's room, icon-above otherwise.
   const statGap = rs(6);
   const statTileW = (innerW - rs(24) - statGap * 3) / 4;
@@ -790,9 +818,45 @@ export default function HomeScreen({ navigation }) {
             </View>
           </TouchableOpacity>
 
+          {/* Shop → customer Buy deliveries (marketplace /staff/buy-orders). */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('BuyDeliveries')}
+            accessibilityRole="button"
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, padding: rs(12), marginTop: rs(12), ...shadow(0.04, 8, 2, 1) }}
+          >
+            <RNText style={{ flex: 1, fontSize: rf(14), fontWeight: '700', color: C.text }}>My Deliveries</RNText>
+            <RNText style={{ fontSize: rf(12), fontWeight: '700', color: C.primary }}>Shop pickup → Customer ›</RNText>
+          </TouchableOpacity>
+
           {/* 3b. Job Overview — counts per bucket; red dot = new unseen assignments */}
           <SectionTitle title="Job Overview" />
           <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
+            {isPickupPerson ? (
+              <>
+                {/* Each tile opens My Pickups on the matching tile (its params.filter). */}
+                <TaskCountCard
+                  icon={ClipboardList} fg={TILE_TONES.blue} tint={C.redTint}
+                  label="Assigned" value={pickupSummary.assigned} loading={pickups === null}
+                  onPress={() => navigation.navigate('PickupAssign', { filter: 'assigned' })}
+                />
+                <TaskCountCard
+                  icon={Briefcase} fg={TILE_TONES.teal} tint={C.greenTint}
+                  label="All Pickups" value={pickupSummary.total} loading={pickups === null}
+                  onPress={() => navigation.navigate('PickupAssign', { filter: 'total' })}
+                />
+                <TaskCountCard
+                  icon={Clock} fg={TILE_TONES.orange} tint={C.yellowTint}
+                  label="In Progress" value={pickupSummary.inProgress} loading={pickups === null}
+                  onPress={() => navigation.navigate('PickupAssign', { filter: 'inProgress' })}
+                />
+                <TaskCountCard
+                  icon={CircleCheck} fg={TILE_TONES.green} tint={C.greenTint}
+                  label="Completed" value={pickupSummary.completed} loading={pickups === null}
+                  onPress={() => navigation.navigate('PickupAssign', { filter: 'completed' })}
+                />
+              </>
+            ) : (
+            <>
             <TaskCountCard
               icon={ClipboardList} fg={TILE_TONES.blue} tint={C.redTint}
               label="Assigned"
@@ -817,8 +881,10 @@ export default function HomeScreen({ navigation }) {
               value={taskSummary.completed} loading={!tasksLoaded && ticketsLoading}
               onPress={() => navigation.navigate('TaskReport', { filter: 'Completed' })}
             />
+            </>
+            )}
           </View>
-          {!tasksLoaded && !ticketsLoading && errors.tickets ? (
+          {!isPickupPerson && !tasksLoaded && !ticketsLoading && errors.tickets ? (
             <Text style={{ fontSize: rf(11), color: C.muted, marginTop: rs(4) }} numberOfLines={1}>
               Couldn’t load tasks — will retry automatically.
             </Text>
@@ -830,16 +896,16 @@ export default function HomeScreen({ navigation }) {
           {/* 4. Quick Access — every category for this role, Partner-app tile grid */}
           <SectionTitle title="Quick Access" />
           <View style={{
-            backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: '#E8ECEF',
-            paddingTop: rs(8), paddingBottom: rs(2), paddingHorizontal: quickPad, ...shadow(0.05, 10, 3, 1),
+            backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB',
+            paddingTop: 8, paddingBottom: 2, ...shadow(0.05, 10, 3, 1),
           }}>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: quickPad }}>
               {categories.map((c, i) => (
                 <QuickTile
                   key={c.key}
                   item={c}
                   width={quickW}
-                  style={{ marginRight: i % quickCols === quickCols - 1 ? 0 : quickGap, marginBottom: rs(4) }}
+                  style={{ marginRight: i % quickCols === quickCols - 1 ? 0 : quickGap, marginBottom: 6 }}
                   tint={c.key === 'apply_permission' ? permTile : null}
                   onPress={() => navigation.navigate(c.route, c.params)}
                 />
@@ -918,17 +984,25 @@ function SectionTitle({ title, onViewAll }) {
 // circle with a solid glyph and a two-line label underneath.
 function QuickTile({ item, width, style, onPress, tint }) {
   const t = { ...(QUICK_TILES[item.key] || QUICK_TILES.default), ...(tint || {}) };
-  const box = rs(36);
+  // Partner DashboardToolCard sizes per class: phone / large phone (430+) / tablet (768+).
+  const { width: winW } = useWindowDimensions();
+  const cls = winW >= 768 ? 2 : winW >= 430 ? 1 : 0;
+  const box = [44, 46, 48][cls];
+  const glyph = [20, 21, 22][cls] + 3; // solid glyphs read smaller — partner adds 3
+  const fs = [12, 12.5, 13][cls];
   return (
     <TouchableOpacity
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={item.label.replace(/\n/g, ' ')}
       activeOpacity={0.75}
-      style={[{ width, alignItems: 'center', paddingVertical: rs(2) }, style]}
+      // No side padding (partner has 4): the 8px column gap already separates
+      // labels, and the extra width keeps "Attendance" on one line at 360dp
+      // without shrinking the font.
+      style={[{ width, alignItems: 'center', justifyContent: 'center', paddingVertical: 2 }, style]}
     >
       <View style={{ width: box, height: box, borderRadius: box / 2, backgroundColor: t.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <MaterialCommunityIcons name={t.icon} size={rs(19)} color={t.fg || QUICK_TILE_INK} />
+        <MaterialCommunityIcons name={t.icon} size={glyph} color={t.fg || QUICK_TILE_INK} />
         {t.badge ? (
           <View style={{
             position: 'absolute', top: -rs(4), right: -rs(4), minWidth: rs(18), height: rs(18), borderRadius: rs(9),
@@ -938,14 +1012,16 @@ function QuickTile({ item, width, style, onPress, tint }) {
           </View>
         ) : null}
       </View>
-      <Text
-        style={{ fontSize: rf(11), lineHeight: rlh(14), minHeight: rlh(28), fontWeight: '600', color: C.text, textAlign: 'center', marginTop: rs(4), letterSpacing: -0.1 }}
+      {/* Plain RN Text with Inter SemiBold set directly: the partner tile sizes
+          (fs) are exact, so they skip the shared Typography scale.
+          minHeight reserves two lines so every tile in a row lines up. */}
+      <RNText
+        style={{ fontFamily: interFamily('600'), fontSize: fs, lineHeight: fs + 4, minHeight: (fs + 4) * 2, color: '#1C3053', marginTop: 4, letterSpacing: -0.1, textAlign: 'center' }}
         numberOfLines={2}
-        adjustsFontSizeToFit
-        minimumFontScale={0.8}
+        ellipsizeMode="tail"
       >
         {item.label}
-      </Text>
+      </RNText>
     </TouchableOpacity>
   );
 }

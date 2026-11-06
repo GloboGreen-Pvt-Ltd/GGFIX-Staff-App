@@ -1,19 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { markNotificationsSeen } from './NotificationsScreen';
-import { View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Pressable, Platform, Alert, Animated, AppState, Modal, Easing, KeyboardAvoidingView } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Pressable, Platform, Alert, Animated, AppState, Modal, Easing, KeyboardAvoidingView, PanResponder } from 'react-native';
 import { Text, TextInput } from '../components/Typography';
+import { interFamily } from '../theme/typography';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from '../utils/audio';
 import {
   Smartphone, Search, UploadCloud, X, Check,
   Mic, Play, Pause, Trash2, Plus, Image as ImageIcon,
   ShieldCheck, PackageX, Square, IndianRupee, BadgeCheck, Hourglass,
-  Package, ChevronRight, Lock, CircleCheck,
+  Package, ChevronRight, ChevronsRight, Lock, CircleCheck,
 } from 'lucide-react-native';
 import DatePickerField, { toISO } from '../components/DatePickerField';
 import {
-  getTicket, setTechnicianPhotos, addRepairNote, listRepairNotes,
+  getTicket, setTechnicianPhotos, addRepairNote, updateRepairNote, listRepairNotes,
   listTicketEvents, postProgressEvent, acceptTicket,
   requestReEstimate, acknowledgeReEstimate,
 } from '../api/tickets';
@@ -21,6 +22,7 @@ import { ticketApi } from '../api/client';
 import { autoStartRepair } from '../utils/autoProgress';
 import { uploadMedia } from '../api/media';
 import { confirm, notify } from '../components/confirm';
+import AcceptJobDialog from '../components/AcceptJobDialog';
 import { userMessage } from '../utils/userMessages';
 import { rf, rs } from '../utils/responsive';
 import {
@@ -32,7 +34,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
 import { ticketRef } from '../utils/ticketRef';
 import { useSelector } from 'react-redux';
-import { selectTechnicianId } from '../store/authSlice';
+import { selectTechnicianId, selectUserId } from '../store/authSlice';
 import { resolveDeviceImageSource } from '../utils/images';
 import { listModelsForBrand } from '../api/master';
 import ImageViewerModal from '../components/ImageViewerModal';
@@ -92,8 +94,10 @@ const NEXT_ACTION_ROW = { key: 'NEXT_ACTION', label: 'Next Action', mode: 'next'
 // its time comes from the assignment event when the booking has one.
 const ASSIGNED_ROW = { key: 'TECHNICIAN_ASSIGNED', label: 'Technician Assigned', mode: 'auto', synthetic: true };
 const ASSIGNED_EVENT_KEYS = ['ASSIGNED_TO_TECHNICIAN', 'TECHNICIAN_ASSIGNED', 'REASSIGNED_TO_TECHNICIAN'];
-// Re-estimate rows (contract order), each shown only once its event is on the
-// booking — read off the events, never given a time of their own.
+// Re-estimate steps (contract order), read off the events. Not timeline rows:
+// the re-estimate is an optional path shown inside Next Action (request card +
+// Awaiting Customer Approval status), so the main timeline stays Assigned →
+// Work Started → Issue Verified → Next Action → Repair Completed → QC.
 const RE_ESTIMATE_ROWS = [
   { key: 'TECHNICIAN_REESTIMATE_REQUESTED', label: 'Technician Re-Estimate Requested', mode: 'reestimate', events: ['TECHNICIAN_REESTIMATE_REQUESTED'] },
   { key: 'RE_ESTIMATED_CONFIRMED', label: 'Service Re-Estimated – Awaiting Customer Approval', mode: 'reestimate', events: ['RE_ESTIMATED_CONFIRMED', 'WAITING_FOR_CUSTOMER_APPROVAL'] },
@@ -103,7 +107,6 @@ const RE_ESTIMATE_ROWS = [
 const TIMELINE_ROWS = [
   ASSIGNED_ROW,
   ...PROGRESS_ROWS.filter((r) => r.key === 'IN_REPAIR' || r.key === 'ISSUE_VERIFIED'),
-  ...RE_ESTIMATE_ROWS,
   NEXT_ACTION_ROW,
   ...PROGRESS_ROWS.filter((r) => r.key === 'REPAIR_COMPLETED' || r.key === 'QUALITY_CHECK_COMPLETED'),
 ];
@@ -300,6 +303,107 @@ const C = {
 
 // Next Action card: solid icon circle, title + one-line subtitle, chevron.
 // Locked cards stay tappable so the reason can be shown.
+// Compact "Slide to Completed" (Quality Check row). A full swipe fires
+// onComplete once (the knob waits at the end until it settles); a partial
+// swipe springs back. While idle the knob nudges right as a hint.
+const SLIDE_W = 128;
+const SLIDE_H = 30;
+const SLIDE_KNOB = SLIDE_H - 4;
+const SLIDE_MAX = SLIDE_W - SLIDE_KNOB - 4;
+// completed: locked at the end ("Completed" + lock) — no more swiping.
+function SlideToComplete({ label = 'Slide to Completed', disabled: off, dim, completed, onComplete }) {
+  const disabled = off || completed;
+  const x = useRef(new Animated.Value(0)).current;
+  const hint = useRef(new Animated.Value(0)).current;
+  const firing = useRef(false);
+  const loop = useRef(null);
+  const startHint = useCallback(() => {
+    loop.current = Animated.loop(Animated.sequence([
+      Animated.timing(hint, { toValue: 6, duration: 420, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(hint, { toValue: 0, duration: 420, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+      Animated.delay(900),
+    ]));
+    loop.current.start();
+  }, [hint]);
+  const stopHint = useCallback(() => { loop.current?.stop(); hint.setValue(0); }, [hint]);
+  useEffect(() => {
+    if (disabled) return undefined;
+    startHint();
+    return stopHint;
+  }, [disabled, startHint, stopHint]);
+  const springBack = useCallback(() => {
+    Animated.spring(x, { toValue: 0, bounciness: 6, useNativeDriver: true }).start(() => { if (!disabled) startHint(); });
+  }, [x, disabled, startHint]);
+  const fire = useCallback(() => {
+    if (firing.current) return;
+    firing.current = true;
+    Animated.timing(x, { toValue: SLIDE_MAX, duration: 90, useNativeDriver: true }).start(() => {
+      Promise.resolve(onComplete?.()).finally(() => { firing.current = false; springBack(); });
+    });
+  }, [x, onComplete, springBack]);
+  const responder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => !disabled && !firing.current,
+    onMoveShouldSetPanResponder: (_, g) => !disabled && !firing.current && Math.abs(g.dx) > Math.abs(g.dy),
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: stopHint,
+    onPanResponderMove: (_, g) => x.setValue(Math.max(0, Math.min(SLIDE_MAX, g.dx))),
+    onPanResponderRelease: (_, g) => { if (g.dx >= SLIDE_MAX * 0.9) fire(); else springBack(); },
+    onPanResponderTerminate: springBack,
+  }), [disabled, stopHint, x, fire, springBack]);
+  const knobX = Animated.add(x, hint);
+  if (completed) {
+    return (
+      <View
+        accessible
+        accessibilityLabel="Quality check completed, locked"
+        style={{
+          width: SLIDE_W, height: SLIDE_H, borderRadius: SLIDE_H / 2, flexDirection: 'row', alignItems: 'center',
+          justifyContent: 'space-between', backgroundColor: C.green, paddingLeft: 10, paddingRight: 2,
+        }}
+      >
+        <Text style={{ fontSize: rf(10), fontWeight: '700', color: '#FFFFFF' }} numberOfLines={1}>Completed</Text>
+        <View style={{ width: SLIDE_KNOB, height: SLIDE_KNOB, borderRadius: SLIDE_KNOB / 2, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
+          <Lock size={12} color={C.green} strokeWidth={2.6} />
+        </View>
+      </View>
+    );
+  }
+  return (
+    <View
+      {...responder.panHandlers}
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityActions={[{ name: 'activate' }]}
+      onAccessibilityAction={() => { if (!disabled) fire(); }}
+      style={{
+        width: SLIDE_W, height: SLIDE_H, borderRadius: SLIDE_H / 2, justifyContent: 'center',
+        backgroundColor: C.greenTint, borderWidth: 1, borderColor: C.green, opacity: disabled || dim ? 0.5 : 1, overflow: 'hidden',
+      }}
+    >
+      <Animated.Text
+        numberOfLines={1}
+        style={{
+          position: 'absolute', left: SLIDE_KNOB + 6, right: 6, textAlign: 'center',
+          fontFamily: interFamily('700'), fontSize: rf(10), color: C.green,
+          opacity: x.interpolate({ inputRange: [0, SLIDE_MAX * 0.6], outputRange: [1, 0], extrapolate: 'clamp' }),
+        }}
+      >
+        {label}
+      </Animated.Text>
+      <Animated.View
+        style={{
+          width: SLIDE_KNOB, height: SLIDE_KNOB, borderRadius: SLIDE_KNOB / 2, marginLeft: 2,
+          backgroundColor: C.green, alignItems: 'center', justifyContent: 'center',
+          transform: [{ translateX: knobX }],
+        }}
+      >
+        <ChevronsRight size={14} color="#FFFFFF" strokeWidth={2.6} />
+      </Animated.View>
+    </View>
+  );
+}
+
 function ActionCard({ tone, Icon, title, subtitle, onPress, busy, locked }) {
   return (
     <TouchableOpacity
@@ -549,7 +653,9 @@ const CONFETTI = [
   { color: '#609138', top: 62, right: 32, size: 6, rotate: '45deg' },
 ];
 
-function CompletionPopup({ visible, title, subtitle, durationMs }) {
+// onClose: back button / tap outside (stays on the page). onAction: the
+// "Go to Completed Jobs" button under the existing content.
+function CompletionPopup({ visible, title, subtitle, durationMs, onClose, onAction }) {
   const pop = useRef(new Animated.Value(0)).current;
   const fill = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -561,8 +667,11 @@ function CompletionPopup({ visible, title, subtitle, durationMs }) {
   }, [visible, durationMs, pop, fill]);
   const seconds = Math.max(1, Math.round(durationMs / 1000));
   return (
-    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={() => {}}>
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose || (() => {})}>
       <View style={{ flex: 1, backgroundColor: 'rgba(17,24,39,0.55)', alignItems: 'center', justifyContent: 'center', padding: rs(24) }}>
+        {onClose ? (
+          <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onClose} accessibilityLabel="Close" />
+        ) : null}
         <Animated.View
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
@@ -613,6 +722,16 @@ function CompletionPopup({ visible, title, subtitle, durationMs }) {
           <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: 8 }}>
             {seconds} second{seconds === 1 ? '' : 's'}
           </Text>
+          {onAction ? (
+            <TouchableOpacity
+              onPress={onAction}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              style={{ alignSelf: 'stretch', minHeight: 46, marginTop: rs(14), borderRadius: 12, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontSize: rf(14), fontWeight: '800', color: '#FFFFFF' }}>Go to Completed Jobs</Text>
+            </TouchableOpacity>
+          ) : null}
         </Animated.View>
       </View>
     </Modal>
@@ -628,6 +747,7 @@ export default function JobDetailsScreen({ route, navigation }) {
   // A job is shown only to the employee it's assigned to — e.g. a stale
   // notification after a reassignment lands here. Unknown ids don't block.
   const myTechId = useSelector(selectTechnicianId);
+  const myUserId = useSelector(selectUserId);
   const notMine = !!(myTechId && ticket?.assignedTechnicianId
     && String(ticket.assignedTechnicianId) !== String(myTechId));
   // Opening a ticket auto-reads its notification.
@@ -675,6 +795,10 @@ export default function JobDetailsScreen({ route, navigation }) {
   const [noteImages, setNoteImages] = useState([null, null, null]);
   const [noteAudioUrl, setNoteAudioUrl] = useState('');          // hosted URL (after upload)
   const [noteAudioLocalUri, setNoteAudioLocalUri] = useState(''); // local file, pre-upload
+  // Edit Report: the saved note being edited (its id), and any photos past the
+  // three slots, kept so the absolute update doesn't drop them.
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editExtraUrls, setEditExtraUrls] = useState([]);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingMs, setRecordingMs] = useState(0);
   const [uploadingAudio, setUploadingAudio] = useState(false);
@@ -736,15 +860,23 @@ export default function JobDetailsScreen({ route, navigation }) {
   // of each — acting on the empty initial state would re-post steps that are
   // already on the booking.
   const [notesLoaded, setNotesLoaded] = useState(false);
+  // The technician's own report notes only. The shop's notes (Partner app)
+  // and the backend's internal "Re-estimated: ₹…" records share this list;
+  // they must not stand in for the Verified Issue or count toward its photos.
+  // authorId is the author's user id (JWT); rows without one pass through.
+  const isMyNote = useCallback(
+    (n) => !n?.isInternal && (!myUserId || !n?.authorId || String(n.authorId) === String(myUserId)),
+    [myUserId],
+  );
   const refreshNotes = useCallback(async () => {
     if (!ticketId) return;
     try {
       const rows = await listRepairNotes(ticketId);
-      setNotesList(Array.isArray(rows) ? rows : []);
+      setNotesList(Array.isArray(rows) ? rows.filter(isMyNote) : []);
       setNotesLoaded(true);
       markSync(null);
     } catch (e) { markSync(e); }
-  }, [ticketId, markSync]);
+  }, [ticketId, markSync, isMyNote]);
 
   useEffect(() => { refreshNotes(); }, [refreshNotes]);
 
@@ -772,14 +904,18 @@ export default function JobDetailsScreen({ route, navigation }) {
   // ("which part is on order, ETA?") and it's passed through to the backend so
   // the customer / shop / technician timelines all read the same explanation.
   const [progressNotes, setProgressNotes] = useState({});
-  // Completion popup ("Your work is completed!", Quality Check only) + the timer that leaves the
-  // screen after it. The ref blocks a second save while one is in flight (a double tap lands
-  // before progressBusy re-renders), so a completion is never posted twice.
+  // Completion popup ("Your work is completed!", Quality Check only). It stays
+  // until closed (back / tap outside → this page) or "Go to Completed Jobs".
+  // completionShown: shown automatically once per QC success, never on a
+  // refresh; leavingRef: one navigation only. progressInFlight blocks a second
+  // save while one is in flight (a double tap lands before progressBusy
+  // re-renders), so a completion is never posted twice.
   const [completedBanner, setCompletedBanner] = useState(false);
   const [acceptBusy, setAcceptBusy] = useState(false);
-  const completionTimer = useRef(null);
+  const [acceptAsk, setAcceptAsk] = useState(false); // AcceptJobDialog open
+  const completionShown = useRef(false);
+  const leavingRef = useRef(false);
   const progressInFlight = useRef(false);
-  useEffect(() => () => { if (completionTimer.current) clearTimeout(completionTimer.current); }, []);
 
   const refreshProgress = useCallback(async () => {
     if (!ticketId) return;
@@ -924,19 +1060,24 @@ export default function JobDetailsScreen({ route, navigation }) {
   // second "Ready for delivery" notification. Until that backend change is
   // live the shop marks Ready from the Partner app, as before.
 
-  // Banner first, then back to the Job Report on its Completed list. popTo
-  // returns to the Job Report already in the stack (or replaces this screen
-  // with one); refreshAt re-applies the filter even if it was already set.
+  // The popup on a confirmed Quality Check; Go to Completed Jobs opens the Job
+  // Report on its Completed list. popTo returns to the Job Report already in
+  // the stack (or replaces this screen with one); refreshAt re-applies the
+  // filter even if it was already set.
   const [bannerText, setBannerText] = useState('');
   const showCompletion = useCallback((message) => {
-    // Once per completion: no second popup or second redirect.
-    if (completionTimer.current) return;
+    // Automatically once per completion — never again on a refresh.
+    if (completionShown.current) return;
+    completionShown.current = true;
     setBannerText(message);
     setCompletedBanner(true);
-    completionTimer.current = setTimeout(() => {
-      completionTimer.current = null;
-      navigation.popTo('TaskReport', { filter: 'Completed', refreshAt: Date.now() });
-    }, COMPLETION_REDIRECT_MS);
+  }, []);
+  const closeCompletion = useCallback(() => setCompletedBanner(false), []);
+  const goToCompletedJobs = useCallback(() => {
+    if (leavingRef.current) return;
+    leavingRef.current = true;
+    setCompletedBanner(false);
+    navigation.popTo('TaskReport', { filter: 'Completed', refreshAt: Date.now() });
   }, [navigation]);
 
   const submitProgress = useCallback(async (row, lockReason) => {
@@ -985,18 +1126,6 @@ export default function JobDetailsScreen({ route, navigation }) {
       setProgressBusy(null);
     }
   }, [ticketId, progressNotes, refreshProgress, progressDone, completedBanner, refreshTicket, showCompletion, markSync]);
-
-  // Quality Check — the technician's confirmation, recorded only after the
-  // backend accepts it (it rejects anyone not allowed to post the step).
-  const confirmQualityCheck = useCallback(async (row, lockReason) => {
-    if (lockReason) { notify('Step locked', lockReason, { type: 'warning' }); return; }
-    const ok = await confirm({
-      title: 'Quality check completed?',
-      message: 'Confirm the device passed the quality check. This is recorded on the Service History.',
-      confirmText: 'Confirm',
-    });
-    if (ok) submitProgress(row, null);
-  }, [submitProgress]);
 
   // Finish Repair — the only way to record Repair Completed. The lock (see
   // finishLock below) already holds it until the issue note is complete and
@@ -1290,7 +1419,15 @@ export default function JobDetailsScreen({ route, navigation }) {
     // so that row must read as still-pending, not approved.
     const approvalIsCurrent = decisionIsCurrent || (!!approved && (!reEstimated
       || new Date(approved.createdAt || 0) >= new Date(reEstimated.createdAt || 0)));
-    return { reEstimated, approved, decided, decisionIsCurrent, approvalIsCurrent };
+    // The shop's "Customer Rejected" step (Partner app): the customer declined
+    // the repair / estimate. Current when nothing newer (a re-estimate or an
+    // approval) has replaced it. The repair must not go on, so it is shown as
+    // the outcome instead of "waiting for approval".
+    const rejected = latestOf('CUSTOMER_REJECTED');
+    const rejectedIsCurrent = !!rejected
+      && (!approved || eventTime(rejected) >= eventTime(approved))
+      && (!reEstimated || eventTime(rejected) >= eventTime(reEstimated));
+    return { reEstimated, approved, decided, decisionIsCurrent, approvalIsCurrent, rejected, rejectedIsCurrent };
   }, [ticketEvents]);
 
   // Re-estimate rows of the Service Progress timeline: the latest event of
@@ -1372,6 +1509,7 @@ export default function JobDetailsScreen({ route, navigation }) {
       REPAIR_COMPLETED: (!ticket?.technicianAcceptedAt ? 'Accept the task first.' : null)
         // An open re-estimate, or a decision not yet acknowledged, holds it.
         || reEstimate.lock
+        || (estimateApproval.rejectedIsCurrent ? 'The customer rejected the estimate. Do not continue the repair.' : null)
         || (!approvedNow ? 'Waiting for customer approval.' : null) || noteReason
         || (autoState.partsEvent && !autoState.partsReceived ? 'Tap Resume Repair once the spare parts arrive.' : null),
       QUALITY_CHECK_COMPLETED: (!progressDone.REPAIR_COMPLETED ? 'Finish the repair first.' : null) || noteReason,
@@ -1662,6 +1800,8 @@ export default function JobDetailsScreen({ route, navigation }) {
       const imageUrls = [];
       for (const slot of noteImages) {
         if (!slot?.uri) continue;
+        // Edit Report: a photo already saved on the note keeps its hosted URL.
+        if (slot.remote) { imageUrls.push(slot.uri); continue; }
         const res = await uploadMedia({
           uri: slot.uri,
           name: slot.name || `note-image-${Date.now()}.jpg`,
@@ -1673,18 +1813,28 @@ export default function JobDetailsScreen({ route, navigation }) {
         imageUrls.push(url);
       }
 
-      await addRepairNote(ticketId, { note: trimmed, audioUrl, imageUrls });
+      const editing = editingNoteId;
+      const saved = editing
+        ? await updateRepairNote(ticketId, editing, { note: trimmed, audioUrl, imageUrls: [...imageUrls, ...editExtraUrls] })
+        : await addRepairNote(ticketId, { note: trimmed, audioUrl, imageUrls });
+      // Show the saved report straight from the server's response, so the
+      // blank form can't come back while (or if) the re-read below is slow.
+      if (saved?.id) {
+        setNotesList((prev) => [saved, ...prev.filter((n) => n?.id !== saved.id)]);
+      }
+      setEditingNoteId(null);
+      setEditExtraUrls([]);
       setNote('');
       setNoteAudioUrl('');
       setNoteAudioLocalUri('');
       setNoteImages([null, null, null]);
       // Backend emits TECHNICIAN_COMPLIANCE_ISSUE_VERIFIED_UPDATED on note
-      // submit; re-pull the notes list so the freshly-saved note shows under
-      // Submit. The timeline rail on the owner/customer side updates on its
-      // own refresh from the backend event we just emitted.
+      // submit; re-pull the notes list so the saved note is the server's copy.
+      // The timeline rail on the owner/customer side updates on its own
+      // refresh from the backend event we just emitted.
       refreshNotes();
       refreshProgress();
-      notify('Report saved', '', { type: 'success' });
+      notify(editing ? 'Report updated' : 'Report saved', '', { type: 'success' });
     } catch (e) {
       // Surface the backend's actual message so a stale ticket-service or a
       // server-side validation error stops being hidden behind a generic
@@ -1722,28 +1872,38 @@ export default function JobDetailsScreen({ route, navigation }) {
   // Accept / Not Accepted from the assignment preview — same endpoints as the
   // Job Assign Report. The full job opens only when the re-read ticket shows
   // the server's technicianAcceptedAt.
-  const acceptJob = async () => {
+  // Accept opens the compact AcceptJobDialog; its toast follows only the API's
+  // answer (a failed re-read after a successful accept is not an accept error).
+  const acceptJob = () => {
+    if (!acceptBusy) setAcceptAsk(true);
+  };
+  const confirmAcceptJob = async () => {
     if (acceptBusy) return;
-    const ok = await confirm({ title: 'Accept job?', message: 'Mark this job as accepted and start work.', confirmText: 'Accept' });
-    if (!ok) return;
     setAcceptBusy(true);
     try {
       await acceptTicket(ticketId);
-      await autoStartRepair(ticketId);
-      const fresh = await getTicket(ticketId);
-      setTicket(fresh);
-      if (!fresh?.technicianAcceptedAt) {
-        notify('Could not accept job', 'Please try again.', { type: 'error' });
-        return;
-      }
-      refreshNotes();
-      refreshProgress();
-      notify('Job accepted', '', { type: 'success' });
     } catch (e) {
-      notify('Could not accept job', userMessage(e, 'Please try again.'), { type: 'error' });
-    } finally {
       setAcceptBusy(false);
+      setAcceptAsk(false);
+      notify('Could not accept job', userMessage(e, 'Please try again.'), { type: 'error' });
+      return;
     }
+    await autoStartRepair(ticketId); // best-effort, never throws
+    let fresh = null;
+    try {
+      fresh = await getTicket(ticketId);
+      setTicket(fresh);
+    } catch { /* accepted; refreshTicket below re-reads it */ }
+    setAcceptBusy(false);
+    setAcceptAsk(false);
+    if (fresh && !fresh.technicianAcceptedAt) {
+      notify('Could not accept job', 'Please try again.', { type: 'error' });
+      return;
+    }
+    if (!fresh) refreshTicket();
+    refreshNotes();
+    refreshProgress();
+    notify('Job accepted', '', { type: 'success' });
   };
   const rejectJob = async () => {
     if (acceptBusy) return;
@@ -1802,7 +1962,12 @@ export default function JobDetailsScreen({ route, navigation }) {
   // list, a notification or a scanned QR can't open more): only the
   // assignment preview — no device security, customer photos or repair steps.
   if (!ticket.technicianAcceptedAt) {
-    return <AssignmentPreview ticket={ticket} navigation={navigation} busy={acceptBusy} onAccept={acceptJob} onReject={rejectJob} />;
+    return (
+      <>
+        <AssignmentPreview ticket={ticket} navigation={navigation} busy={acceptBusy} onAccept={acceptJob} onReject={rejectJob} />
+        <AcceptJobDialog visible={acceptAsk} busy={acceptBusy} onCancel={() => setAcceptAsk(false)} onConfirm={confirmAcceptJob} />
+      </>
+    );
   }
 
   // Delivered / cancelled job: Job Details turns read-only.
@@ -2061,6 +2226,18 @@ export default function JobDetailsScreen({ route, navigation }) {
       ),
     )
     : null;
+  // Re-estimate status inside Next Action once the shop has re-estimated
+  // (RE_ESTIMATED_CONFIRMED): the customer's answer read off the booking
+  // events — Rejected (re-estimate or Customer Rejected) / Approved / Pending.
+  // Skipped while the live banner above already shows the open revision.
+  const reDecisionRejected = estimateApproval.decisionIsCurrent
+    && String(estimateApproval.decided?.status || '').toUpperCase() === 'RE_ESTIMATE_REJECTED';
+  const reStatus = !estimateApproval.reEstimated || (reShown && rePending) ? null
+    : estimateApproval.rejectedIsCurrent || reDecisionRejected
+    ? { pill: 'REJECTED', fg: C.red, bg: C.redTint, at: (estimateApproval.rejectedIsCurrent ? estimateApproval.rejected : estimateApproval.decided)?.createdAt }
+    : estimateApproval.approvalIsCurrent
+    ? { pill: 'APPROVED', fg: C.green, bg: C.greenTint, at: (estimateApproval.decisionIsCurrent ? estimateApproval.decided : estimateApproval.approved)?.createdAt }
+    : { pill: 'PENDING', fg: C.yellowInk, bg: C.yellowTint, at: estimateApproval.reEstimated.createdAt };
   const nextActionBody = (
     <View>
       {/* A saved parts wait (open or resumed): its details, and Resume Repair. */}
@@ -2107,23 +2284,30 @@ export default function JobDetailsScreen({ route, navigation }) {
 
       {reEstimateBanner}
 
+      {/* Service Re-Estimate → Awaiting Customer Approval, with the customer's
+          answer as it stands on the booking (stays as history once decided). */}
+      {reStatus ? (
+        <View style={{ marginTop: 6, borderRadius: 10, padding: 8, borderWidth: 1, backgroundColor: C.surface, borderColor: C.border }}>
+          <View className="flex-row items-center">
+            <IndianRupee size={13} color="#1C3053" />
+            <Text className="font-bold flex-1 ml-1.5" style={{ fontSize: rf(10.5), color: C.ink }} numberOfLines={2}>
+              Service Re-Estimate · Awaiting Customer Approval
+            </Text>
+            <View className="rounded-full px-2 py-0.5 ml-1.5" style={{ backgroundColor: reStatus.bg }}>
+              <Text className="font-bold" style={{ fontSize: rf(9.5), color: reStatus.fg }}>{reStatus.pill}</Text>
+            </View>
+          </View>
+          <Text style={{ fontSize: rf(10.5), color: C.muted, marginTop: 3 }}>
+            {[reStatus.at ? `${reStatus.pill === 'PENDING' ? 'Since' : 'On'} ${fmtDateTime(reStatus.at)}` : null,
+              reStatus.pill === 'PENDING' ? 'Finish Repair is on hold until the customer decides.'
+                : reStatus.pill === 'REJECTED' ? 'Continue with the original approved repair only.' : null]
+              .filter(Boolean).join(' · ')}
+          </Text>
+        </View>
+      ) : null}
+
       {canAct ? (
         <>
-          <ActionCard
-            tone={ACTION_TONE.navy}
-            Icon={IndianRupee}
-            title="Request Service Re-Estimate"
-            subtitle={reEstimate.lock ? `Locked · ${reEstimate.lock}` : 'Report an additional issue or cost to the shop.'}
-            locked={!!reEstimate.lock}
-            busy={reSubmitting}
-            onPress={() => {
-              if (reEstimate.lock) { notify('Request Service Re-Estimate', reEstimate.lock, { type: 'warning' }); return; }
-              setPartsOpen(false);
-              setUnableOpen(false);
-              setReOpen(true);
-            }}
-          />
-
           <ActionCard
             tone={ACTION_TONE.green}
             Icon={CircleCheck}
@@ -2138,11 +2322,11 @@ export default function JobDetailsScreen({ route, navigation }) {
             <ActionCard
               tone={ACTION_TONE.amber}
               Icon={Package}
-              title="Parts Waiting"
+              title="Spare Parts Waiting"
               subtitle={partsLock ? `Locked · ${partsLock}` : 'Add required spare part details.'}
               locked={!!partsLock}
               onPress={() => {
-                if (partsLock) { notify('Parts Waiting', partsLock, { type: 'warning' }); return; }
+                if (partsLock) { notify('Spare Parts Waiting', partsLock, { type: 'warning' }); return; }
                 setUnableOpen(false);
                 setPartsOpen((v) => !v);
               }}
@@ -2204,6 +2388,21 @@ export default function JobDetailsScreen({ route, navigation }) {
           ) : null}
 
           <ActionCard
+            tone={ACTION_TONE.navy}
+            Icon={IndianRupee}
+            title="Service Re-Estimate Request"
+            subtitle={reEstimate.lock ? `Locked · ${reEstimate.lock}` : 'Report an additional issue or cost to the shop.'}
+            locked={!!reEstimate.lock}
+            busy={reSubmitting}
+            onPress={() => {
+              if (reEstimate.lock) { notify('Service Re-Estimate Request', reEstimate.lock, { type: 'warning' }); return; }
+              setPartsOpen(false);
+              setUnableOpen(false);
+              setReOpen(true);
+            }}
+          />
+
+          <ActionCard
             tone={ACTION_TONE.red}
             Icon={X}
             title="Unable to Repair"
@@ -2262,8 +2461,9 @@ export default function JobDetailsScreen({ route, navigation }) {
       ) : null}
     </View>
   );
-  // Latest saved note — the Technician Repair Report reads it.
-  const latestNote = notesList[0] || null;
+  // The saved report the Technician Repair Report reads: the newest complete
+  // note (description + required photos), else the newest note.
+  const latestNote = notesList.find(noteIsComplete) || notesList[0] || null;
   // Add Report shortcut on the Issue Verified row: scrolls to the entry form.
   const openReport = () => {
     if (composeY.current != null) {
@@ -2284,8 +2484,32 @@ export default function JobDetailsScreen({ route, navigation }) {
   // Repair read. A complete one replaces the blank compose form.
   const hasSavedReport = notesList.some(noteIsComplete);
   const hasIncompleteReport = !hasSavedReport && notesList.some((n) => String(n?.note || '').trim());
-  const showCompose = !reportLocked && !hasSavedReport;
-  const showReportAction = showCompose;
+  // The form waits for the first notes read (no blank form flashing over a
+  // saved report), and comes back only for Edit Report.
+  const showCompose = notesLoaded && (!!editingNoteId || (!reportLocked && !hasSavedReport));
+  const showReportAction = showCompose && !editingNoteId;
+  // The saved report shows as soon as it exists (not only after Finish
+  // Repair); Edit Report stays available until the job is closed.
+  const showReport = (reportLocked || hasSavedReport) && !editingNoteId;
+  const canEditReport = !jobClosed && !!latestNote?.id;
+  const startEditReport = () => {
+    if (!latestNote?.id) return;
+    const urls = (Array.isArray(latestNote.imageUrls) ? latestNote.imageUrls : []).filter(Boolean);
+    setEditingNoteId(latestNote.id);
+    setEditExtraUrls(urls.slice(3));
+    setNote(String(latestNote.note || ''));
+    setNoteAudioLocalUri('');
+    setNoteAudioUrl(latestNote.audioUrl || '');
+    setNoteImages([0, 1, 2].map((i) => (urls[i] ? { uri: urls[i], remote: true } : null)));
+  };
+  const cancelEditReport = () => {
+    setEditingNoteId(null);
+    setEditExtraUrls([]);
+    setNote('');
+    setNoteAudioUrl('');
+    setNoteAudioLocalUri('');
+    setNoteImages([null, null, null]);
+  };
   // A step on record with no report behind it (e.g. notes removed on the
   // server): say so rather than show an empty form as if nothing was done.
   const reportMissing = notesLoaded && !notesList.some((n) => String(n?.note || '').trim())
@@ -2324,7 +2548,7 @@ export default function JobDetailsScreen({ route, navigation }) {
   // Re-estimate / approval block above Submitted Notes. Rendered as soon as
   // either half exists — a plain first-time approval with no re-estimate is
   // still a date the technician needs.
-  const showEstimateBlock = !!(estimateApproval.reEstimated || estimateApproval.approved);
+  const showEstimateBlock = !!(estimateApproval.reEstimated || estimateApproval.approved || estimateApproval.rejectedIsCurrent);
   // The re-estimate revision behind the block, when the backend sends it: its
   // revised total and added items (after a rejection the ticket's own price
   // is the original again, so it can't stand in for the re-estimate).
@@ -2340,7 +2564,16 @@ export default function JobDetailsScreen({ route, navigation }) {
   // JSX: the customer's decision on the latest re-estimate / approved for the
   // current estimate / approved on a ticket old enough to predate the
   // CUSTOMER_APPROVED event (flag only, no timestamp) / still waiting.
-  const approvalRowProps = estimateApproval.decisionIsCurrent
+  const approvalRowProps = estimateApproval.rejectedIsCurrent
+    ? {
+        icon: X, tint: C.redTint, iconColor: C.red,
+        title: 'Customer Rejected',
+        pill: 'REJECTED', pillTint: C.redTint, pillColor: C.red,
+        when: fmtDateTime(estimateApproval.rejected.createdAt) || 'Date not recorded',
+        whenColor: C.red,
+        note: estimateApproval.rejected.note || 'The customer declined the repair / estimate. Do not continue the repair.',
+      }
+    : estimateApproval.decisionIsCurrent
     ? {
         icon: decisionRejectedEv ? X : BadgeCheck,
         tint: decisionRejectedEv ? C.redTint : C.greenTint,
@@ -2540,7 +2773,15 @@ export default function JobDetailsScreen({ route, navigation }) {
         {/* Compliance Notes — single card with the textarea, voice-note row,
             three image slots, and a full-width "Save Note" CTA at the bottom. */}
         <View onLayout={(e) => { composeY.current = e.nativeEvent.layout.y; }} />
-        <SectionHeader title="Technician Issue Verified & Updated" accent={C.yellow} />
+        <SectionHeader
+          title={editingNoteId ? 'Edit Technician Report' : 'Technician Issue Verified & Updated'}
+          accent={C.yellow}
+          right={editingNoteId ? (
+            <TouchableOpacity onPress={cancelEditReport} disabled={noteSubmitting} hitSlop={8} accessibilityRole="button">
+              <Text className="font-bold" style={{ fontSize: rf(12), color: C.muted }}>Cancel</Text>
+            </TouchableOpacity>
+          ) : null}
+        />
         <Card>
           {hasIncompleteReport ? (
             <Text style={{ fontSize: rf(10.5), color: C.yellowInk, marginBottom: 6 }}>
@@ -2709,7 +2950,7 @@ export default function JobDetailsScreen({ route, navigation }) {
               ? <ActivityIndicator color="#FFFFFF" />
               : (
                 <Text className="text-white font-bold" style={{ fontSize: rf(12.5) }}>
-                  Save Note{noteAttachmentCount ? ` (+${noteAttachmentCount} ${noteAttachmentCount === 1 ? 'attachment' : 'attachments'})` : ''}
+                  {editingNoteId ? 'Update Report' : 'Save Note'}{noteAttachmentCount ? ` (+${noteAttachmentCount} ${noteAttachmentCount === 1 ? 'attachment' : 'attachments'})` : ''}
                 </Text>
               )}
           </TouchableOpacity>
@@ -2728,18 +2969,33 @@ export default function JobDetailsScreen({ route, navigation }) {
           </>
         ) : null}
 
-        {/* After completion: the read-only Technician Repair Report — the
-            verified issue and repair details (latest saved description, its
-            voice note) and every evidence photo saved with the notes. */}
-        {reportLocked ? (
+        {/* Once saved (and after completion): the Technician Repair Report —
+            the verified issue and repair details (saved description, its voice
+            note) and every evidence photo saved with the notes. Edit Report
+            reopens the form on this note until the job is closed. */}
+        {showReport ? (
           <>
             <SectionHeader
               title="Technician Repair Report"
               accent={C.green}
               right={(
-                <View className="flex-row items-center rounded-full px-2 py-0.5" style={{ backgroundColor: C.greenTint }}>
-                  <Check size={11} color={C.green} strokeWidth={3} />
-                  <Text className="font-bold ml-1" style={{ fontSize: rf(10), color: C.green }}>{reportBadge}</Text>
+                <View className="flex-row items-center">
+                  {canEditReport ? (
+                    <TouchableOpacity
+                      onPress={startEditReport}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Edit report"
+                      className="flex-row items-center rounded-full px-2 py-0.5 mr-1.5"
+                      style={{ borderWidth: 1, borderColor: C.green }}
+                    >
+                      <Text className="font-bold" style={{ fontSize: rf(10), color: C.green }}>Edit Report</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  <View className="flex-row items-center rounded-full px-2 py-0.5" style={{ backgroundColor: C.greenTint }}>
+                    <Check size={11} color={C.green} strokeWidth={3} />
+                    <Text className="font-bold ml-1" style={{ fontSize: rf(10), color: C.green }}>{reportLocked ? reportBadge : 'Saved'}</Text>
+                  </View>
                 </View>
               )}
             />
@@ -2954,21 +3210,15 @@ export default function JobDetailsScreen({ route, navigation }) {
                           </Text>
                         </TouchableOpacity>
                       ) : row.mode === 'manual' ? (
-                        /* Quality Check: tap the tick after checking the device (confirmed first). */
-                        <TouchableOpacity
-                          onPress={status.kind === 'done' ? null : () => confirmQualityCheck(row, lockReason)}
-                          disabled={status.kind === 'done'}
-                          activeOpacity={0.8}
-                          hitSlop={8}
-                          accessibilityRole="checkbox"
-                          accessibilityState={{ checked: status.kind === 'done' }}
-                        >
-                          <Check
-                            size={22}
-                            color={status.kind === 'done' ? C.green : lockReason ? C.line : C.muted}
-                            strokeWidth={status.kind === 'done' ? 3 : 2.5}
-                          />
-                        </TouchableOpacity>
+                        /* Quality Check: Slide to Completed — the same QC save as
+                           before (submitProgress; its lock and in-flight guards
+                           apply), whose success shows the popup once. Once
+                           completed it locks (no more swiping, no API call). */
+                        <SlideToComplete
+                          completed={status.kind === 'done'}
+                          dim={!!lockReason}
+                          onComplete={() => (lockReason ? notify('Step locked', lockReason, { type: 'warning' }) : submitProgress(row, null))}
+                        />
                       ) : null}
                     </View>
                   </View>
@@ -3150,13 +3400,16 @@ export default function JobDetailsScreen({ route, navigation }) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-      {/* Completion popup (CompletionPopup above) while the screen hands over
-          to the Job Report after Repair Completed / Quality Check Completed. */}
+      {/* Completion popup (CompletionPopup above) after a confirmed Quality
+          Check Completed (Finish Repair stays on this page with a toast).
+          Close → stay here; Go to Completed Jobs → Job Report, Completed. */}
       <CompletionPopup
         visible={completedBanner}
         title={bannerText}
         subtitle={COMPLETION_SUBTITLE}
         durationMs={COMPLETION_REDIRECT_MS}
+        onClose={closeCompletion}
+        onAction={goToCompletedJobs}
       />
       <ImageViewerModal
         visible={photoAt >= 0}

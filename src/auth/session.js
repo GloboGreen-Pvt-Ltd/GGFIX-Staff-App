@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AUTH_BASE } from '../api/config';
 
 // The auth token is the crown-jewel credential, so it lives in the OS secure
 // enclave (iOS Keychain / Android Keystore) via expo-secure-store — NOT in
@@ -13,6 +14,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // to secure storage and is migrated out of AsyncStorage on next read.
 const TOKEN_KEY = 'auth.token';
 const USER_KEY = 'auth.user';
+
+// A session belongs to the server that issued it. When the app moves to another
+// API server (e.g. api.ggfix.in → api.neargfix.com) the old token is rejected by
+// every service, so it is dropped once and the user signs in again.
+const SERVER_KEY = 'auth.server';
+async function fromThisServer() {
+  return (await AsyncStorage.getItem(SERVER_KEY)) === AUTH_BASE;
+}
+async function dropForeignSession() {
+  await clearSession();
+  notifyAuthExpired();
+}
 // SecureStore keys must match [A-Za-z0-9._-]; the dotted key above is fine.
 const SECURE_TOKEN_KEY = 'auth.token';
 
@@ -85,6 +98,7 @@ export async function saveSession(session) {
   await Promise.all([
     writeToken(token),
     AsyncStorage.setItem(USER_KEY, JSON.stringify(profile || {})),
+    AsyncStorage.setItem(SERVER_KEY, AUTH_BASE),
   ]);
 }
 
@@ -103,15 +117,25 @@ export async function clearSession() {
   await Promise.all([
     deleteToken(),
     AsyncStorage.removeItem(USER_KEY),
+    AsyncStorage.removeItem(SERVER_KEY),
   ]);
 }
 
 export async function getToken() {
-  return readToken();
+  const token = await readToken();
+  if (token && !(await fromThisServer())) {
+    await dropForeignSession();
+    return null;
+  }
+  return token;
 }
 
 export async function getSession() {
   const raw = await AsyncStorage.getItem(USER_KEY);
+  if (raw && !(await fromThisServer())) {
+    await dropForeignSession();
+    return null;
+  }
   try {
     return raw ? JSON.parse(raw) : null;
   } catch {

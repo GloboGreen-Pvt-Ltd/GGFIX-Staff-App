@@ -40,7 +40,8 @@ import { rf, rs, sheetWidth } from '../utils/responsive';
 import { ticketRef } from '../utils/ticketRef';
 import { resolveDeviceImageSource } from '../utils/images';
 import { listModelsForBrand } from '../api/master';
-import { JobHeader, JobRail, MonthBar, JobPictureCard, KText } from '../components/JobCardKit';
+import { JobHeader, JobRail, JobPictureCard, KText } from '../components/JobCardKit';
+import AcceptJobDialog from '../components/AcceptJobDialog';
 import { SearchBar } from '../components/rnr';
 
 // Search box match: job ref, device, customer, phone or issue (case-insensitive).
@@ -74,15 +75,11 @@ const C = {
   white: '#FFFFFF',
 };
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Tickets are split into the two sections:
 //   Re-Assign     — newly (re)assigned, awaiting the technician's accept/reject
-//   Recent Assign — everything assigned to me this month, newest first
+//   Recent Assign — everything assigned to me, newest first
 //
 // Source of truth for "accepted" is tickets.technician_accepted_at (set by
 // POST /tickets/{id}/accept). A ticket whose status is CREATED with no
@@ -186,10 +183,7 @@ function deriveAssignment(events, ticket) {
 }
 
 export default function TaskAssignScreen({ navigation }) {
-  const now = new Date();
   const shopId = useSelector(selectShopId);
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
   const [list, setList] = useState([]);
   // Viewing assigned tasks auto-reads their notifications.
   useEffect(() => { if (list.length) markNotificationsSeen({ tickets: list }); }, [list]);
@@ -207,6 +201,7 @@ export default function TaskAssignScreen({ navigation }) {
   const q = query.trim().toLowerCase();
   const [showAll, setShowAll] = useState(false);
   const [reviewTicket, setReviewTicket] = useState(null);
+  const [acceptFor, setAcceptFor] = useState(null); // ticket id awaiting the Accept dialog
   const [info, setInfo] = useState(null); // { title, body }
 
   const scrollRef = useRef(null);
@@ -250,18 +245,11 @@ export default function TaskAssignScreen({ navigation }) {
     return () => { active = false; };
   }, [shopId]);
 
-  // Scope to picked month/year using whichever timestamp the backend last touched.
-  const monthScoped = useMemo(() => {
-    return list.filter((t) => {
-      const stamp = t.updatedAt || t.createdAt;
-      if (!stamp) return true;
-      const d = new Date(stamp);
-      return d.getFullYear() === year && d.getMonth() + 1 === month;
-    });
-  }, [list, year, month]);
+  // Every assigned job (no month filter); the rail filters narrow it down.
+  const monthScoped = list;
 
-  // Fetch timeline events for the month's tickets (assignment time, actor,
-  // response time). Cached per ticket id; cleared on pull-to-refresh.
+  // Fetch timeline events for the tickets (assignment time, actor, response
+  // time), capped per pass. Cached per ticket id; cleared on pull-to-refresh.
   useEffect(() => {
     const missing = monthScoped
       .map((t) => t.id)
@@ -332,16 +320,6 @@ export default function TaskAssignScreen({ navigation }) {
     return { rate, avgMs: avg, samples: samples.length };
   }, [counts, monthScoped, assignInfo]);
 
-  const stepMonth = (delta) => {
-    let m = month + delta;
-    let y = year;
-    if (m < 1) { m = 12; y--; }
-    else if (m > 12) { m = 1; y++; }
-    setMonth(m);
-    setYear(y);
-    setShowAll(false);
-  };
-
   const pickFilter = (key) => {
     setFilter(key);
     setShowAll(false);
@@ -358,30 +336,33 @@ export default function TaskAssignScreen({ navigation }) {
   // Accept hits the dedicated endpoint (POST /tickets/{id}/accept). Backend
   // stamps technician_accepted_at, bumps a CREATED ticket to IN_DIAGNOSIS,
   // and emits TECHNICIAN_ACCEPTED_SERVICE + TECHNICIAN_WORK_STARTED to the
-  // customer/owner timeline. `confirm`/`notify` from components/confirm are
-  // cross-platform — Alert.alert doesn't resolve its button callbacks on
-  // Expo Web, which silently broke both buttons.
-  const handleAccept = async (ticketId) => {
-    const proceed = await confirm({
-      title: 'Accept ticket?',
-      message: 'Mark this ticket as accepted and start work.',
-      confirmText: 'Accept',
-    });
-    if (!proceed) return;
+  // customer/owner timeline. Accept opens the compact AcceptJobDialog; the
+  // toast follows only the API's answer to the accept call itself.
+  const handleAccept = (ticketId) => {
+    if (actingOn) return;
+    setAcceptFor(ticketId);
+  };
+  const confirmAccept = async () => {
+    const ticketId = acceptFor;
+    if (!ticketId || actingOn) return;
     setActingOn(ticketId);
     try {
       await acceptTicket(ticketId);
-      // Repair Work Started follows Accept on its own — once the customer
-      // approval is current (utils/autoProgress); Job Details catches later approvals.
-      await autoStartRepair(ticketId);
-      setReviewTicket(null);
-      notify('Job accepted', '', { type: 'success' });
-      await load(true);
     } catch (e) {
-      notify('Could not accept job', userMessage(e, 'Please try again.'), { type: 'error' });
-    } finally {
       setActingOn(null);
+      setAcceptFor(null);
+      notify('Could not accept job', userMessage(e, 'Please try again.'), { type: 'error' });
+      return;
     }
+    // Repair Work Started follows Accept on its own — once the customer
+    // approval is current (utils/autoProgress, best-effort, never throws);
+    // Job Details catches later approvals.
+    await autoStartRepair(ticketId);
+    setAcceptFor(null);
+    setReviewTicket(null);
+    setActingOn(null);
+    notify('Job accepted', '', { type: 'success' });
+    load(true);
   };
 
   // Reject cancels the ticket via the existing status endpoint.
@@ -454,13 +435,6 @@ export default function TaskAssignScreen({ navigation }) {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.green} colors={[C.green]} />}
         >
-          <MonthBar
-            title={`${MONTHS[month - 1]} ${year}`}
-            sub={`${counts.total} ${counts.total === 1 ? 'job' : 'jobs'}`}
-            onPrev={() => stepMonth(-1)}
-            onNext={() => stepMonth(1)}
-          />
-
           {error && list.length === 0 ? (
             <View style={[styles.card, styles.stateBox]}>
               <CircleAlert size={rs(30)} color={C.red} />
@@ -474,7 +448,7 @@ export default function TaskAssignScreen({ navigation }) {
           ) : initialLoading ? (
             <ActivityIndicator color={C.green} style={{ marginVertical: 18 }} />
           ) : recentFiltered.length === 0 ? (
-            <EmptyRow text={q ? `No jobs match "${query.trim()}".` : `No assigned tasks in ${MONTHS[month - 1]} ${year}.`} />
+            <EmptyRow text={q ? `No jobs match "${query.trim()}".` : 'No assigned tasks yet.'} />
           ) : (
             <View style={wide ? styles.cardGrid : null}>
               {recentFiltered.map((t) => {
@@ -520,7 +494,11 @@ export default function TaskAssignScreen({ navigation }) {
         onClose={() => setReviewTicket(null)}
         onAccept={() => reviewTicket && handleAccept(reviewTicket.id)}
         onReject={() => reviewTicket && handleReject(reviewTicket.id)}
-      />
+      >
+        {/* Inside the sheet's Modal: iOS can't stack a sibling Modal on it. */}
+        <AcceptJobDialog inline visible={!!acceptFor && !!reviewTicket} busy={!!actingOn} onCancel={() => setAcceptFor(null)} onConfirm={confirmAccept} />
+      </ReviewSheet>
+      <AcceptJobDialog visible={!!acceptFor && !reviewTicket} busy={!!actingOn} onCancel={() => setAcceptFor(null)} onConfirm={confirmAccept} />
 
       <Modal visible={!!info} transparent animationType="fade" onRequestClose={() => setInfo(null)}>
         <Pressable style={styles.backdropCenter} onPress={() => setInfo(null)}>
@@ -696,7 +674,7 @@ function RecentRow({ ticket, byLabel, byName, assignedAt, acceptedAt, onPress })
   );
 }
 
-function ReviewSheet({ ticket, busy, byName, info, onClose, onAccept, onReject }) {
+function ReviewSheet({ ticket, busy, byName, info, onClose, onAccept, onReject, children }) {
   const visible = !!ticket;
   const when = info?.assignedAt || ticket?.createdAt;
   return (
@@ -743,6 +721,7 @@ function ReviewSheet({ ticket, busy, byName, info, onClose, onAccept, onReject }
           ) : null}
         </Pressable>
       </Pressable>
+      {children}
     </Modal>
   );
 }

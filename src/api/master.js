@@ -126,3 +126,129 @@ export async function listColors() {
   const res = await masterGet('master/colors');
   return Array.isArray(res) ? res : res?.content || [];
 }
+
+// ── Same read-only catalogue calls as the Partner App's api/masterData ─────
+const rows = (res) => (Array.isArray(res) ? res : res?.content || res?.data || []);
+
+/** Series of a brand within a device category ([] when none / unknown). */
+export async function listSeriesForCategoryBrand(categoryIdOrCode, brandId) {
+  if (!categoryIdOrCode || !brandId) return [];
+  const path = isUuid(categoryIdOrCode)
+    ? `master/categories/${categoryIdOrCode}/brands/${brandId}/series`
+    : `master/categories/by-code/${encodeURIComponent(String(categoryIdOrCode).toUpperCase())}/brands/${brandId}/series`;
+  return rows(await masterGet(path).catch(() => []));
+}
+
+export async function listModelsForSeries(seriesId) {
+  if (!seriesId) return [];
+  return rows(await masterGet(`master/series/${seriesId}/models`).catch(() => []));
+}
+
+// Sell evaluation catalogue (same endpoints as the customer app's sell flow):
+// screening questions, screen / body condition groups + options, functional issues.
+const listOf = (res) => (Array.isArray(res) ? res : res?.content || []);
+export async function getScreeningQuestions(flow, deviceCategoryId) {
+  return listOf(await masterGet('master/screening-questions', {
+    query: { flow: flow || undefined, deviceCategoryId: isUuid(deviceCategoryId) ? deviceCategoryId : undefined },
+  }));
+}
+export async function getConditionGroups(deviceCategoryId) {
+  return listOf(await masterGet('master/condition-groups', { query: { deviceCategoryId: isUuid(deviceCategoryId) ? deviceCategoryId : undefined } }));
+}
+export async function getConditionOptions(groupId) {
+  return listOf(await masterGet(`master/condition-groups/${groupId}/options`));
+}
+export async function getFunctionalIssues(deviceCategoryId) {
+  return listOf(await masterGet('master/functional-issues', { query: { deviceCategoryId: isUuid(deviceCategoryId) ? deviceCategoryId : undefined } }));
+}
+
+export async function getModel(modelId) {
+  if (!modelId) return null;
+  return masterGet(`master/models/${modelId}`);
+}
+
+/** "SM-S921B / SM-S921E" or ["…"] → unique codes. */
+export function parseModelNumbers(mn) {
+  const raw = Array.isArray(mn) ? mn.map((x) => String(x).trim()) : String(mn || '').split(/[/,;]+/).map((x) => x.trim());
+  return [...new Set(raw.filter(Boolean))];
+}
+
+/**
+ * A model's configured options (Partner getModelOptions): its own colours and
+ * RAM+storage combinations from GET /master/models/{id}. Colours get a swatch
+ * from the global palette by name; each "8 GB + 128 GB" label resolves to the
+ * real RAM / storage option ids when those sizes exist. The full master lists
+ * come back too, for a model with nothing configured yet.
+ */
+export async function getModelOptions(modelId) {
+  const [allColors, allRams, allStorages, model] = await Promise.all([
+    listColors().catch(() => []),
+    listRamOptions().catch(() => []),
+    listStorageOptions().catch(() => []),
+    modelId ? getModel(modelId).catch(() => null) : Promise.resolve(null),
+  ]);
+  const colorByName = new Map(allColors.map((c) => [String(c.name).toLowerCase(), c]));
+  const colors = [];
+  const seenColor = new Set();
+  (Array.isArray(model?.colors) ? model.colors : []).forEach((name) => {
+    const key = String(name || '').toLowerCase();
+    if (!key || seenColor.has(key)) return;
+    seenColor.add(key);
+    const hit = colorByName.get(key);
+    colors.push({ id: hit?.id || name, name, hexCode: hit?.hexCode });
+  });
+  const specs = [];
+  const seenSpec = new Set();
+  (Array.isArray(model?.ramStorage) ? model.ramStorage : []).forEach((rawLabel) => {
+    const label = String(rawLabel || '').trim();
+    if (!label || seenSpec.has(label)) return;
+    seenSpec.add(label);
+    if (label.includes('+')) {
+      const [ramPart = '', stoPart = ''] = label.split('+').map((x) => x.trim());
+      const ramOpt = allRams.find((r) => r.valueGb === parseInt(ramPart, 10));
+      const stoOpt = allStorages.find((st) => st.valueGb === parseInt(stoPart, 10));
+      specs.push({
+        id: label, storageOnly: false, label,
+        ramOptionId: ramOpt?.id || `ram:${ramPart}`, storageOptionId: stoOpt?.id || `sto:${stoPart}`,
+        ramLabel: ramOpt?.label || ramPart, storageLabel: stoOpt?.label || stoPart,
+      });
+    } else {
+      const stoOpt = allStorages.find((st) => st.valueGb === parseInt(label, 10));
+      specs.push({
+        id: label, storageOnly: true, label,
+        ramOptionId: null, storageOptionId: stoOpt?.id || `sto:${label}`, ramLabel: null, storageLabel: stoOpt?.label || label,
+      });
+    }
+  });
+  return {
+    model, colors, specs, allColors, allRams, allStorages,
+    modelNumbers: parseModelNumbers(model?.modelNumber), otherNumbers: parseModelNumbers(model?.otherNumber),
+    categoryId: model?.categoryId || null,
+  };
+}
+
+/**
+ * Key that lines a Category Menu row up with a device category by name (Partner
+ * categoryMenuKey): drops a "Buy / Sell / Repair" prefix, punctuation and a
+ * plural ending, so "Repair Mobiles" meets "Mobile".
+ */
+export function categoryMenuKey(name) {
+  return String(name || '').toLowerCase().replace(/^\s*(buy|sell|repair)\s+/, '').replace(/[^a-z0-9]/g, '').replace(/(es|s)$/, '');
+}
+
+/** { categoryMenuKey: imageUrl } from the admin Category Menu (tile art). Never rejects. */
+export async function getCategoryMenuImages(categoryType, { includeInactive = false } = {}) {
+  const list = rows(await masterGet('master/category-menu', { query: { categoryType } }).catch(() => []));
+  const out = {};
+  list
+    .filter((m) => m && (includeInactive || m.isActive === true) && m.imageUrl && String(m.imageUrl).trim())
+    .sort((a, b) => Number(a.isActive === true) - Number(b.isActive === true))
+    .forEach((m) => { out[categoryMenuKey(m.menuName)] = String(m.imageUrl).trim(); });
+  return out;
+}
+
+/** Repair services grouped by repair category for a device category. */
+export async function listRepairServicesGrouped(deviceCategoryId) {
+  if (!deviceCategoryId) return [];
+  return rows(await masterGet('master/repair-services/grouped', { query: { deviceCategoryId } }).catch(() => []));
+}

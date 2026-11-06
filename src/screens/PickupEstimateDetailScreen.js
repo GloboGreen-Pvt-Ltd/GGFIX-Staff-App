@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { getPickupRepairEstimate } from '../api/pickups';
+import { awaitingAccept } from '../utils/pickups';
 import { normalizeDeviceImageUrl } from '../utils/images';
 import { rf, rs } from '../utils/responsive';
 import { userMessage } from '../utils/userMessages';
@@ -174,7 +175,7 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
   // booking via params, so passing it once seeds the entire flow.
   const goEditEstimate = () => {
     if (!bookingId) return;
-    navigation.navigate('PickupSelectBrand', {
+    navigation.navigate('PickupDeviceDetails', {
       booking,
       bookingId,
       // Seed the wizard with the booking's current taxonomy so each screen
@@ -230,6 +231,16 @@ export default function PickupEstimateDetailScreen({ navigation, route }) {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.emptyWrap}>
           <Text style={styles.emptyText}>Booking not found.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+  // Not accepted yet (status of the booking it was opened with): closed.
+  if (awaitingAccept(initial)) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <View style={styles.emptyWrap}>
+          <Text style={styles.emptyText}>Accept this pickup to view its details.</Text>
         </View>
       </SafeAreaView>
     );

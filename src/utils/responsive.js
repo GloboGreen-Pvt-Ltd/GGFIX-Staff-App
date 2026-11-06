@@ -49,7 +49,7 @@ const cappedOsScale = Math.min(osFontScale, MAX_OS_FONT_SCALE);
 // RN re-multiplies a Text's fontSize by osFontScale, so pre-divide to land on
 // the capped scale. lineHeight is NOT re-multiplied by RN, so it uses the
 // capped scale directly (see rlh) — otherwise lines clip on large-font phones.
-const osCorrection = cappedOsScale / osFontScale;
+export const osCorrection = cappedOsScale / osFontScale;
 
 /** Responsive font size in px (width-scaled + OS-scale capped), pixel-rounded. */
 export function rf(size) {

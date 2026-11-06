@@ -5,6 +5,7 @@ import {
   SHOP_BASE,
   USER_BASE,
   ORDER_BASE,
+  MARKETPLACE_BASE,
 } from './config';
 import { getToken, clearSession, notifyAuthExpired } from '../auth/session';
 import { friendlyApiMessage, transportMessage, logDiagnostic } from '../utils/userMessages';
@@ -185,3 +186,4 @@ export const ticketApi = createClient(TICKET_BASE);
 export const shopApi = createClient(SHOP_BASE);
 export const userApi = createClient(USER_BASE);
 export const orderApi = createClient(ORDER_BASE);
+export const marketplaceApi = createClient(MARKETPLACE_BASE);

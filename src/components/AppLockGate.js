@@ -1,9 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Image, Pressable, View } from 'react-native';
+import { ActivityIndicator, AppState, Image, Platform, Pressable, View } from 'react-native';
 import { Text } from './Typography';
 import { Lock } from 'lucide-react-native';
 import { isAppLockEnabled, authenticate, isDeviceSecure } from '../auth/appLock';
 import { rf, rlh } from '../utils/responsive';
+
+// Recents-thumbnail cover: iOS only. iOS turns 'inactive' as the app switcher
+// opens, so the cover is up before its card is drawn. Android reports
+// 'background' for the app's OWN camera / gallery / permission / dialer /
+// maps intents too, so the cover flashed a full green screen on every photo
+// or permission prompt, and it landed too late for the thumbnail anyway.
+// Android thumbnails of sensitive screens are blanked natively by FLAG_SECURE
+// (utils/secureScreen).
+const USE_PRIVACY_COVER = Platform.OS === 'ios';
 
 // Wraps the authenticated app. When App Lock is on, requires the OS unlock
 // (fingerprint / pattern / PIN) on cold start and every time the app returns
@@ -61,7 +70,7 @@ export default function AppLockGate({ children, onLogout }) {
       const prev = appState.current;
       appState.current = next;
       // Cover the UI the instant we leave "active" (fires before the OS snapshot).
-      setObscured(next !== 'active');
+      setObscured(USE_PRIVACY_COVER && next !== 'active');
       if (enabled && /inactive|background/.test(prev) && next === 'active') {
         setLocked(true);
         runUnlock();
@@ -109,15 +118,16 @@ export default function AppLockGate({ children, onLogout }) {
   );
 }
 
-// Opaque branded overlay shown while the app is backgrounded, so sensitive
-// screens don't leak into the OS app-switcher thumbnail.
+// Opaque overlay shown while the app is backgrounded (iOS), so sensitive
+// screens don't leak into the OS app-switcher thumbnail. Same look as the
+// native splash (page grey + logo, app.config splash), not a green screen.
 function PrivacyCover() {
   return (
     <View
       pointerEvents="none"
       style={{
         position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: '#609138', alignItems: 'center', justifyContent: 'center',
+        backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center',
       }}
     >
       <Image

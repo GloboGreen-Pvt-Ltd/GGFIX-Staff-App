@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Pressable, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, View } from 'react-native';
+import { Pressable } from '../components/estimate/EstimateKit';
 import { Text } from '../components/Typography';
 import { Card, SearchBar } from '../components/rnr';
 import { Check, Smartphone } from 'lucide-react-native';

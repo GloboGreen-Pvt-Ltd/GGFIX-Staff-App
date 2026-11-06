@@ -163,6 +163,8 @@ import TaskUpdateScreen from '../screens/TaskUpdateScreen';
 import TaskCalendarScreen from '../screens/TaskCalendarScreen';
 import TaskHistoryScreen from '../screens/TaskHistoryScreen';
 import ScanTicketQrScreen from '../screens/ScanTicketQrScreen';
+import BuyDeliveriesScreen from '../screens/delivery/BuyDeliveriesScreen';
+import BuyDeliveryScreen from '../screens/delivery/BuyDeliveryScreen';
 import TabletFrame from '../components/TabletFrame';
 
 const Stack = createNativeStackNavigator();
@@ -230,6 +232,8 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="TaskReport" component={JobReportScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupAssign" component={PickupAssignScreen} options={{ title: 'My Pickups' }} />
         <Stack.Screen name="PickupDetails" component={PickupDetailsScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="BuyDeliveries" component={BuyDeliveriesScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="BuyDelivery" component={BuyDeliveryScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupCalendar" component={PickupCalendarScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupRecords" component={PickupRecordsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupReport" component={PickupReportScreen} options={{ title: 'Pickup Report' }} />

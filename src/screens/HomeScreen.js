@@ -790,6 +790,16 @@ export default function HomeScreen({ navigation }) {
             </View>
           </TouchableOpacity>
 
+          {/* Shop → customer Buy deliveries (marketplace /staff/buy-orders). */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('BuyDeliveries')}
+            accessibilityRole="button"
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, padding: rs(12), marginTop: rs(12), ...shadow(0.04, 8, 2, 1) }}
+          >
+            <RNText style={{ flex: 1, fontSize: rf(14), fontWeight: '700', color: C.text }}>My Deliveries</RNText>
+            <RNText style={{ fontSize: rf(12), fontWeight: '700', color: C.primary }}>Shop pickup → Customer ›</RNText>
+          </TouchableOpacity>
+
           {/* 3b. Job Overview — counts per bucket; red dot = new unseen assignments */}
           <SectionTitle title="Job Overview" />
           <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>

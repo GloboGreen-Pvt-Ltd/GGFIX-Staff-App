@@ -14,6 +14,7 @@
         "EXPO_PUBLIC_SHOP_BASE": "https://api.ggfix.in/shop",
         "EXPO_PUBLIC_TECHNICIAN_BASE": "https://api.ggfix.in/technician",
         "EXPO_PUBLIC_ORDER_BASE": "https://api.ggfix.in/order",
+        "EXPO_PUBLIC_MARKETPLACE_BASE": "https://api.neargfix.com/marketplace",
         "EXPO_PUBLIC_MASTER_DATA_BASE": "https://api.ggfix.in"
       }
     },
@@ -29,6 +30,7 @@
         "EXPO_PUBLIC_SHOP_BASE": "https://api.ggfix.in/shop",
         "EXPO_PUBLIC_TECHNICIAN_BASE": "https://api.ggfix.in/technician",
         "EXPO_PUBLIC_ORDER_BASE": "https://api.ggfix.in/order",
+        "EXPO_PUBLIC_MARKETPLACE_BASE": "https://api.neargfix.com/marketplace",
         "EXPO_PUBLIC_MASTER_DATA_BASE": "https://api.ggfix.in"
       }
     },
@@ -44,6 +46,7 @@
         "EXPO_PUBLIC_SHOP_BASE": "https://api.ggfix.in/shop",
         "EXPO_PUBLIC_TECHNICIAN_BASE": "https://api.ggfix.in/technician",
         "EXPO_PUBLIC_ORDER_BASE": "https://api.ggfix.in/order",
+        "EXPO_PUBLIC_MARKETPLACE_BASE": "https://api.neargfix.com/marketplace",
         "EXPO_PUBLIC_MASTER_DATA_BASE": "https://api.ggfix.in"
       }
     }

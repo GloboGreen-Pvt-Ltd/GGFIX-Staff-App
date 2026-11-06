@@ -15,7 +15,7 @@ import { rf, rs } from '../utils/responsive';
  * a light page, device hero art across the curve, tagline, progress and a
  * trust row. Device art comes from the CDN so it can change without a release.
  */
-const DEVICE_URL = 'https://media.ggfix.in/GGFIX-Partner-App/Device.png';
+const DEVICE_URL = 'https://cdn.neargfix.com/GGFIX-Partner-App/Device.png';
 
 // Warm the image cache as soon as this module loads (best-effort, never blocks).
 Image.prefetch(DEVICE_URL).catch(() => {});

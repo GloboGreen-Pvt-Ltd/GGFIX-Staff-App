@@ -11,20 +11,25 @@ import { listMyAssignedPickups } from '../api/pickups';
 import { rf, rs } from '../utils/responsive';
 import { useHideNativeHeader } from '../components/MintScreenHeader';
 import { SearchBar } from '../components/rnr';
-import { JobHeader, JobRail, MonthBar, JobPictureCard, KIT, toneOf } from '../components/JobCardKit';
+import { JobHeader, JobRail, JobPictureCard, KIT, toneOf } from '../components/JobCardKit';
 import { callCustomer, openDirections } from '../components/PickupCard';
 import usePickupAdvance from '../utils/usePickupAdvance';
 import { syncPickupReminders } from '../utils/checkoutAlarm';
 import {
-  PICKUP_STEPS, bucketOf, bySchedule, cancelInfo, customerPhone, dayKey, deviceLabel, isActive, isPastPickup, isReassigned, issueLabel,
-  nextStatusFor, overlapsFor, pickupDay, slotLabel, slotStartAt, statusMeta, stepIndex, todayKey, trackingId,
+  PICKUP_STEPS, awaitingAccept, bucketOf, bySchedule, cancelInfo, customerPhone, dayKey, deviceLabel, isActive, isPastPickup, isReassigned, issueLabel,
+  nextStepFor, overlapsFor, pickupDay, serverAcceptance, slotLabel, slotStartAt, statusMeta, stepIndex, todayKey, trackingId,
 } from '../utils/pickups';
 import { userMessage } from '../utils/userMessages';
+import { notify } from '../components/confirm';
+import PickupDeclineSheet from '../components/PickupDeclineSheet';
 
 // The estimate / verification step: from here on the pickup has a saved estimate.
 const ESTIMATE_STEP = PICKUP_STEPS.findIndex((st) => st.key === 'ESTIMATE');
-const hasVerification = (b) => isPastPickup(b.status) || stepIndex(b.status) >= ESTIMATE_STEP;
-// Quick date filters (across all months), next to the month bar.
+// Verify (the saved estimate / verification) only while it matters: an
+// estimate is on record and the device isn't handed over yet. Finished
+// pickups show it under View instead.
+const hasVerification = (b) => b?.kind !== 'SELL' && isActive(b) && stepIndex(b.status) >= ESTIMATE_STEP;
+// Quick date filters (across every pickup).
 const DATE_FILTERS = [
   { key: 'all', label: 'All dates' },
   { key: 'today', label: 'Today' },
@@ -42,29 +47,26 @@ const cardDate = (key) => {
   return `${d} ${MONTHS[m - 1].slice(0, 3)}${y === new Date().getFullYear() ? '' : ` ${y}`}`;
 };
 
-// Status rail (My Jobs JobRail): unique-pickup counts for the month; Today is
+// Status rail (My Jobs JobRail): unique-pickup counts over every pickup; Today is
 // always today. Filters can overlap (a reassigned pickup that was completed
 // is in both) but All counts each pickup once. Failed = cancelled by the
 // pickup person; Cancelled = by the shop or customer (last CANCELLED event).
 // Tap one to list just those pickups; tap it again for the normal sections.
 const TILES = [
-  { key: 'total', label: 'All', title: 'All Pickups', icon: ChartColumn, tone: 'teal', color: '#035C6C', match: () => true, empty: 'No pickups in this month.' },
+  { key: 'total', label: 'All', title: 'All Pickups', icon: ChartColumn, tone: 'teal', color: '#035C6C', match: () => true, empty: 'No pickups.' },
   { key: 'today', label: 'Today', title: "Today's Pickups", icon: CalendarDays, tone: 'blue', color: '#0788C9', empty: 'No pickups scheduled for today.' },
-  { key: 'assigned', label: 'Assigned', title: 'Assigned Pickups', icon: Package, tone: toneOf('#1C3053'), color: '#1C3053', match: (b) => bucketOf(b.status) === 'ASSIGNED', empty: 'No assigned pickups in this month.' },
-  { key: 'inProgress', label: 'In Progress', title: 'In Progress Pickups', icon: Truck, tone: 'orange', color: '#FAA700', match: (b) => bucketOf(b.status) === 'IN_PROGRESS', empty: 'No pickups in progress in this month.' },
-  { key: 'completed', label: 'Completed', title: 'Completed Pickups', icon: CircleCheck, tone: 'green', color: '#609138', match: (b) => bucketOf(b.status) === 'COMPLETED', empty: 'No completed pickups in this month.' },
-  { key: 'failed', label: 'Failed', title: 'Failed Pickups', icon: CircleX, tone: 'red', color: '#F32C26', match: (b) => cancelInfo(b)?.byMe === true, empty: 'No failed pickups in this month.' },
-  { key: 'cancelled', label: 'Cancelled', title: 'Cancelled Pickups', icon: Ban, tone: toneOf('#6B7280'), color: '#6B7280', match: (b) => cancelInfo(b)?.byMe === false, empty: 'No cancelled pickups in this month.' },
-  { key: 'reassigned', label: 'Reassigned', title: 'Reassigned Pickups', icon: Repeat, tone: 'orange', color: '#FAA700', match: (b) => isReassigned(b), empty: 'No reassigned pickups in this month.' },
+  { key: 'assigned', label: 'Assigned', title: 'Assigned Pickups', icon: Package, tone: toneOf('#1C3053'), color: '#1C3053', match: (b) => bucketOf(b.status) === 'ASSIGNED', empty: 'No assigned pickups.' },
+  { key: 'inProgress', label: 'In Progress', title: 'In Progress Pickups', icon: Truck, tone: 'orange', color: '#FAA700', match: (b) => bucketOf(b.status) === 'IN_PROGRESS', empty: 'No pickups in progress.' },
+  { key: 'completed', label: 'Completed', title: 'Completed Pickups', icon: CircleCheck, tone: 'green', color: '#609138', match: (b) => bucketOf(b.status) === 'COMPLETED', empty: 'No completed pickups.' },
+  { key: 'failed', label: 'Failed', title: 'Failed Pickups', icon: CircleX, tone: 'red', color: '#F32C26', match: (b) => cancelInfo(b)?.byMe === true, empty: 'No failed pickups.' },
+  { key: 'cancelled', label: 'Cancelled', title: 'Cancelled Pickups', icon: Ban, tone: toneOf('#6B7280'), color: '#6B7280', match: (b) => cancelInfo(b)?.byMe === false, empty: 'No cancelled pickups.' },
+  { key: 'reassigned', label: 'Reassigned', title: 'Reassigned Pickups', icon: Repeat, tone: 'orange', color: '#FAA700', match: (b) => isReassigned(b), empty: 'No reassigned pickups.' },
 ];
 
-// My Pickups — the pickup person's dashboard: month summary, then Today's
+// My Pickups — the pickup person's dashboard: status summary, then Today's
 // pickups, pickups reassigned to them and their other active assignments.
 export default function PickupAssignScreen({ navigation, route }) {
   useHideNativeHeader(navigation);
-  const now = new Date();
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -110,19 +112,13 @@ export default function PickupAssignScreen({ navigation, route }) {
   const { advance, busyId } = usePickupAdvance({ navigation, onDone: load });
 
   const today = todayKey();
-  const ym = `${year}-${String(month).padStart(2, '0')}`;
-  const isThisMonth = ym === today.slice(0, 7);
-  // In the chosen month by pickup day; this month also carries every pickup
-  // still in hand, earlier or upcoming (a pickup the shop just assigned for
-  // next month must show now, not only once that month is picked).
-  const scoped = useMemo(() => list.filter((b) => {
-    const key = pickupDay(b);
-    return key.startsWith(ym) || (isThisMonth && isActive(b));
-  }), [list, ym, isThisMonth]);
+  // Every assigned pickup (no month filter, same as My Jobs); the rail tiles
+  // and date chips narrow it down.
+  const scoped = list;
 
   // Completed / failed pickups stay listed (with their status) instead of
   // dropping off once handed over; only "Reassigned to You" is in-hand only.
-  const todayList = useMemo(() => list.filter((b) => pickupDay(b) === today).sort(bySchedule), [list, today]);
+  const todayList = useMemo(() => scoped.filter((b) => pickupDay(b) === today).sort(bySchedule), [scoped, today]);
   const reassignList = useMemo(() => scoped.filter((b) => isActive(b) && isReassigned(b) && pickupDay(b) !== today).sort(bySchedule), [scoped, today]);
   const recentList = useMemo(() => scoped.filter((b) => !(isActive(b) && isReassigned(b)) && pickupDay(b) !== today).sort(bySchedule), [scoped, today]);
 
@@ -140,8 +136,9 @@ export default function PickupAssignScreen({ navigation, route }) {
   }, [paramFilter, navigation]);
   const activeTile = TILES.find((t) => t.key === filter) || null;
   // Quick search (ID / customer / device / phone / address) and date filter
-  // run across every pickup, not just the month; the rail filter still applies.
+  // run across every pickup; the rail filter still applies.
   const [showSearch, setShowSearch] = useState(false);
+  const [declineFor, setDeclineFor] = useState(null); // booking in the Decline sheet
   const [q, setQ] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
   const term = q.trim().toLowerCase();
@@ -166,21 +163,54 @@ export default function PickupAssignScreen({ navigation, route }) {
     : [activeTile?.title, dateFilter !== 'all' ? DATE_FILTERS.find((d) => d.key === dateFilter).label : null].filter(Boolean).join(' · ');
   const clearFilters = () => { setFilter(null); setDateFilter('all'); setQ(''); setShowSearch(false); };
 
-  const open = (b) => navigation.navigate('PickupDetails', { bookingId: b.id, booking: b });
+  // A pickup opens only once accepted; before that the card's Accept is the way in.
+  const acceptFirst = () => notify('Accept the pickup first', 'Tap "Accept & Start Journey" to open its details.', { type: 'warning' });
+  const open = (b) => (awaitingAccept(b) ? acceptFirst() : navigation.navigate('PickupDetails', { bookingId: b.id, booking: b }));
   // My Jobs picture card. VIEW = Pickup Details; the pill is the next step the
   // server allows (tap = advance), shown only when there is one; History under
   // it opens the full event timeline.
   const renderCards = (rows) => rows.map((b) => {
     const st = statusMeta(b.status);
     const re = isReassigned(b) && isActive(b);
-    const next = nextStatusFor(b.status);
+    const next = nextStepFor(b);
     const busy = busyId === b.id;
     const clash = overlapsFor(b, list);
+    // Not accepted yet: assignment preview only (api/pickups previewOf) — ID,
+    // schedule and Accept; no customer, address, device or card actions.
+    if (b.preview) {
+      return (
+        <JobPictureCard
+          key={b.id}
+          compact
+          ticket={b}
+          tab={re ? 'Reassigned' : 'New Assignment'}
+          tabColor={re ? '#FAA700' : st.color}
+          refText={trackingId(b)}
+          model="Pickup assigned to you"
+          lines={[
+            { text: 'Accept to see the customer, address and device.' },
+            { icon: AlertTriangle, text: clash.length ? `Overlaps ${clash.map((o) => `${trackingId(o)} (${slotLabel(o)})`).join(', ')}` : null },
+          ]}
+          date={[cardDate(pickupDay(b)), slotLabel(b).replace(/ – /g, '–')].filter(Boolean).join(' · ')}
+          time={null}
+          pill={next ? { text: busy ? 'Updating…' : next.label, onPress: busy ? () => {} : () => advance(b) } : null}
+          footer={serverAcceptance(b) ? (
+            <TouchableOpacity onPress={() => setDeclineFor(b)} disabled={busy} activeOpacity={0.85} accessibilityRole="button"
+              accessibilityLabel="Decline pickup" style={styles.declineBtn}>
+              <CircleX size={rs(14)} color="#F32C26" strokeWidth={2.4} />
+              <Text style={styles.declineText}>Decline</Text>
+            </TouchableOpacity>
+          ) : null}
+          onPress={acceptFirst}
+        />
+      );
+    }
     return (
       <JobPictureCard
         key={b.id}
+        compact
         ticket={b}
-        tab={re ? 'Reassigned' : st.label}
+        tab={re ? 'Reassigned' : stepIndex(b.status) === 0 && b.accepted ? 'Accepted' : st.label}
         tabColor={re ? '#FAA700' : st.color}
         refText={trackingId(b)}
         model={deviceLabel(b)}
@@ -198,7 +228,7 @@ export default function PickupAssignScreen({ navigation, route }) {
         footer={(
           <PickupActions
             booking={b}
-            onHistory={() => navigation.navigate('PickupHistory', { booking: b })}
+            onHistory={() => (awaitingAccept(b) ? acceptFirst() : navigation.navigate('PickupHistory', { booking: b }))}
             onVerify={hasVerification(b) ? () => navigation.navigate('PickupEstimateDetail', { booking: b, bookingId: b.id }) : null}
           />
         )}
@@ -207,12 +237,6 @@ export default function PickupAssignScreen({ navigation, route }) {
     );
   });
   const firstLoad = loading && list.length === 0;
-  const stepMonth = (d) => {
-    const m0 = month - 1 + d;
-    setMonth(((m0 % 12) + 12) % 12 + 1);
-    setYear(year + Math.floor(m0 / 12));
-  };
-
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <JobHeader
@@ -248,12 +272,6 @@ export default function PickupAssignScreen({ navigation, route }) {
         showsVerticalScrollIndicator={false}
       >
         <View>
-          <MonthBar
-            title={`${MONTHS[month - 1]} ${year}`}
-            sub={`${counts.total} ${counts.total === 1 ? 'pickup' : 'pickups'}`}
-            onPrev={() => stepMonth(-1)}
-            onNext={() => stepMonth(1)}
-          />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {DATE_FILTERS.map((d) => {
               const on = dateFilter === d.key;
@@ -282,9 +300,9 @@ export default function PickupAssignScreen({ navigation, route }) {
               {renderCards(filteredList)}
             </Section>
           ) : (
-            // Only sections with pickups; one line when the month has none.
+            // Only sections with pickups; one line when there are none.
             todayList.length + reassignList.length + recentList.length === 0 ? (
-              <Text style={[styles.emptyLine, { marginTop: rs(4) }]}>{isThisMonth ? 'No pickups this month.' : 'No pickups in this month.'}</Text>
+              <Text style={[styles.emptyLine, { marginTop: rs(4) }]}>No pickups assigned yet.</Text>
             ) : (
             <>
               {todayList.length ? (
@@ -302,6 +320,7 @@ export default function PickupAssignScreen({ navigation, route }) {
         </View>
       </ScrollView>
       </View>
+      <PickupDeclineSheet booking={declineFor} visible={!!declineFor} onClose={() => setDeclineFor(null)} onDone={load} />
     </SafeAreaView>
   );
 }
@@ -364,6 +383,11 @@ const styles = StyleSheet.create({
   chipText: { fontSize: rf(11.5), fontWeight: '800', color: '#1C3053' },
   headBtn: { width: rs(34), height: rs(34), borderRadius: rs(17), backgroundColor: KIT.tealTint, alignItems: 'center', justifyContent: 'center' },
   actions: { flexDirection: 'row', gap: rs(4), marginTop: rs(6) },
+  declineBtn: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: rs(5), marginTop: rs(6),
+    paddingHorizontal: rs(10), paddingVertical: rs(5), borderRadius: rs(9), borderWidth: 1.2, borderColor: '#F32C26', backgroundColor: '#FFFFFF',
+  },
+  declineText: { fontSize: rf(12), fontWeight: '800', color: '#F32C26' },
   action: { flex: 1, alignItems: 'center' },
   actionBtn: { width: rs(28), height: rs(28), borderRadius: rs(14), borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   actionText: { marginTop: rs(2), fontSize: rf(9.5), fontWeight: '700' },

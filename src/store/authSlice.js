@@ -29,6 +29,10 @@ const authSlice = createSlice({
   reducers: {
     setSession(state, action) {
       const s = action.payload || {};
+      // Profile fields the login response lacks (technicianId, role label,
+      // photo) are kept only for the SAME user + shop — never carried into
+      // another account, whose requests would then use the old technician id.
+      const sameUser = !!s.userId && s.userId === state.userId && (s.shopId ?? null) === state.shopId;
       state.accessToken = s.accessToken ?? null;
       state.userId = s.userId ?? null;
       state.shopId = s.shopId ?? null;
@@ -37,9 +41,9 @@ const authSlice = createSlice({
       state.email = s.email ?? null;
       state.fullName = s.fullName ?? null;
       state.mobile = s.mobile ?? null;
-      state.roleLabel = s.roleLabel ?? state.roleLabel ?? null;
-      state.technicianId = s.technicianId ?? state.technicianId ?? null;
-      state.photoUrl = s.photoUrl ?? state.photoUrl ?? null;
+      state.roleLabel = s.roleLabel ?? (sameUser ? state.roleLabel : null) ?? null;
+      state.technicianId = s.technicianId ?? (sameUser ? state.technicianId : null) ?? null;
+      state.photoUrl = s.photoUrl ?? (sameUser ? state.photoUrl : null) ?? null;
     },
     mergeTechnicianProfile(state, action) {
       const t = action.payload || {};

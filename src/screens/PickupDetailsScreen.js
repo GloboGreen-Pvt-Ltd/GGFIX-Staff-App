@@ -10,11 +10,12 @@ import { Text } from '../components/Typography';
 import MintScreenHeader, { useHideNativeHeader } from '../components/MintScreenHeader';
 import { callCustomer, openDirections } from '../components/PickupCard';
 import PickupProblemSheet from '../components/PickupProblemSheet';
+import PickupDeclineSheet from '../components/PickupDeclineSheet';
 import { getPickupRepairEstimate, listMyAssignedPickups } from '../api/pickups';
 import usePickupAdvance from '../utils/usePickupAdvance';
 import {
-  PICKUP_STEPS, actorLabel, canReportProblem, cancelInfo, customerPhone, deviceLabel, eventColor, eventLabel, fmtDay, fmtStamp,
-  isPastPickup, issueLabel, nextStatusFor, overlapsFor, pickupDay, relDay, slotLabel, sortEvents, statusMeta, stepIndex, trackingId,
+  PICKUP_STEPS, stepsFor, actorLabel, awaitingAccept, canReportProblem, cancelInfo, customerPhone, deviceLabel, eventColor, eventLabel, fmtDay, fmtStamp,
+  isPastPickup, issueLabel, nextStepFor, overlapsFor, pickupDay, relDay, serverAcceptance, slotLabel, sortEvents, statusMeta, stepIndex, trackingId,
 } from '../utils/pickups';
 import { rf, rs } from '../utils/responsive';
 import { userMessage } from '../utils/userMessages';
@@ -37,7 +38,11 @@ export default function PickupDetailsScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [problem, setProblem] = useState(false);
+  const [declineOpen, setDeclineOpen] = useState(false);
   const [others, setOthers] = useState([]); // the rest of my pickups, for schedule clashes
+  // The action bar waits for the first server read: the booking passed in
+  // from the list can be stale, and a step worked out from it could be wrong.
+  const [synced, setSynced] = useState(false);
 
   const load = useCallback(async () => {
     if (!bookingId) { setLoading(false); return; }
@@ -48,9 +53,10 @@ export default function PickupDetailsScreen({ navigation, route }) {
       setOthers(rows || []);
       if (fresh) {
         setBooking(fresh);
+        setSynced(true);
         // From the estimate step on — including once the shop has moved the
         // booking on to its repair statuses — read the saved estimate.
-        if (isPastPickup(fresh.status) || stepIndex(fresh.status) >= STEP_FROM) {
+        if (fresh.kind !== 'SELL' && (isPastPickup(fresh.status) || stepIndex(fresh.status) >= STEP_FROM)) {
           getPickupRepairEstimate(bookingId).then((e) => setEstimate(e || null)).catch(() => {});
         }
       }
@@ -85,23 +91,67 @@ export default function PickupDetailsScreen({ navigation, route }) {
     );
   }
 
+  // Declined → the booking is the shop's again: back to My Pickups.
+  const declineSheet = (
+    <PickupDeclineSheet booking={booking} visible={declineOpen} onClose={() => setDeclineOpen(false)}
+      onDone={async () => { if (navigation.canGoBack()) navigation.goBack(); else await load(); }} />
+  );
+
+  // Not accepted yet: the details stay closed — only Accept or Decline. The
+  // server returns just the preview until it records the acceptance. (An
+  // older server without Accept keeps Accept & Start Journey + Unable to Pickup.)
+  if (awaitingAccept(booking)) {
+    const off = !!busyId || !synced;
+    const step = nextStepFor(booking);
+    const canDecline = serverAcceptance(booking);
+    return (
+      <SafeAreaView style={s.safe} edges={['top']}>
+        <MintScreenHeader title="Pickup Details" navigation={navigation} />
+        <View style={s.state}>
+          <AlertTriangle size={rs(26)} color="#FAA700" />
+          <Text style={s.stateText}>Accept this pickup to view its details.</Text>
+          <TouchableOpacity onPress={() => advance(booking)} disabled={off} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={step?.label}
+            style={[s.nextBtn, { flex: 0, alignSelf: 'stretch', marginTop: rs(6) }, off && { opacity: 0.6 }]}>
+            {busyId ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={s.nextText}>{step?.label}</Text>}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => (canDecline ? setDeclineOpen(true) : setProblem(true))} disabled={off} activeOpacity={0.85} accessibilityRole="button"
+            accessibilityLabel={canDecline ? 'Decline pickup' : 'Unable to pickup'}
+            style={[s.problemBtn, { alignSelf: 'stretch' }, off && { opacity: 0.6 }]}>
+            <AlertTriangle size={rs(15)} color="#F32C26" strokeWidth={2.4} />
+            <Text style={s.problemText}>{canDecline ? 'Decline' : 'Unable to Pickup'}</Text>
+          </TouchableOpacity>
+        </View>
+        {canDecline ? declineSheet : <PickupProblemSheet booking={booking} visible={problem} onClose={() => setProblem(false)} onDone={load} />}
+      </SafeAreaView>
+    );
+  }
+
   const st = statusMeta(booking.status);
+  // A device purchase (kind SELL) has fewer steps: no estimate or GPS gates.
+  const steps = stepsFor(booking);
+  const stepAt = (status) => steps.findIndex((x) => x.codes.includes(String(status || '').toUpperCase()));
   // Past the pickup (shop repair statuses) = every pickup step done.
-  const idx = isPastPickup(booking.status) ? PICKUP_STEPS.length - 1 : stepIndex(booking.status);
-  const next = nextStatusFor(booking.status);
+  const idx = isPastPickup(booking.status) ? steps.length - 1 : stepAt(booking.status);
+  const next = nextStepFor(booking);
+  // Accepted but not started: Decline (back to the shop) instead of Unable to Pickup.
+  const declineStep = serverAcceptance(booking) && stepIndex(booking.status) === 0;
   const cancel = cancelInfo(booking);
   const events = sortEvents(booking.events);
   // Latest event of a step; for a stopped pickup, the last step it reached.
   const stepEvent = (step) => events.filter((e) => step.codes.includes(String(e.status).toUpperCase())).pop();
-  const reached = PICKUP_STEPS.reduce((m, step, i) => (stepEvent(step) ? i : m), -1);
+  const reached = steps.reduce((m, step, i) => (stepEvent(step) ? i : m), -1);
   const slot = slotLabel(booking);
   const img = imageOf(booking);
   const est = { ...booking, ...(estimate || {}) };
   const services = Array.isArray(est.services) ? est.services : [];
-  const missingParts = String(est.missingDamageParts || '').split(',').map((x) => x.trim()).filter(Boolean);
+  // Saved one part per line ("Display (missing, damaged)"); older records are
+  // comma-separated, so split on commas only outside the parentheses.
+  const partsText = String(est.missingDamageParts || '');
+  const missingParts = (partsText.includes('\n') ? partsText.split('\n') : partsText.split(/,(?![^(]*\))/))
+    .map((x) => x.trim()).filter(Boolean);
   const photos = [{ url: est.frontImageUrl, label: 'Front' }, { url: est.backImageUrl, label: 'Back' }].filter((p) => p.url);
   const approved = est.customerApproval === 'DONE' || est.customerApproval === true;
-  const hasVerification = idx >= STEP_FROM && (services.length || est.estimateAmount != null || missingParts.length || est.customerApproval);
+  const hasVerification = booking.kind !== 'SELL' && idx >= STEP_FROM && (services.length || est.estimateAmount != null || missingParts.length || est.customerApproval);
   const phone = customerPhone(booking);
   const clash = overlapsFor(booking, others);
 
@@ -162,10 +212,10 @@ export default function PickupDetailsScreen({ navigation, route }) {
         <View style={s.card}>
           <View style={s.rowBetween}>
             <Text style={s.cardTitle}>Pickup Progress</Text>
-            <Text style={s.stepCount}>{cancel ? 'Stopped' : idx >= 0 ? `Step ${idx + 1} of ${PICKUP_STEPS.length}` : ''}</Text>
+            <Text style={s.stepCount}>{cancel ? 'Stopped' : idx >= 0 ? `Step ${idx + 1} of ${steps.length}` : ''}</Text>
           </View>
-          {PICKUP_STEPS.map((step, i) => {
-            const last = i === PICKUP_STEPS.length - 1;
+          {steps.map((step, i) => {
+            const last = i === steps.length - 1;
             const done = cancel ? i <= reached : (idx > i || (idx === i && last));
             const current = !cancel && idx === i && !done;
             const ev = stepEvent(step);
@@ -287,15 +337,16 @@ export default function PickupDetailsScreen({ navigation, route }) {
         // clipping on narrow phones. Clears the Android navigation bar.
         <View style={[s.bar, { paddingBottom: rs(10) + insets.bottom }]}>
           {canReportProblem(booking) ? (
-            <TouchableOpacity onPress={() => setProblem(true)} disabled={!!busyId} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Unable to pickup"
-              style={[s.problemBtn, next && { flex: 1 }]}>
+            <TouchableOpacity onPress={() => (declineStep ? setDeclineOpen(true) : setProblem(true))} disabled={!!busyId || !synced} activeOpacity={0.85} accessibilityRole="button"
+              accessibilityLabel={declineStep ? 'Decline pickup' : 'Unable to pickup'}
+              style={[s.problemBtn, next && { flex: 1 }, !synced && { opacity: 0.6 }]}>
               <AlertTriangle size={rs(15)} color="#F32C26" strokeWidth={2.4} />
-              <Text style={s.problemText} numberOfLines={2}>Unable to Pickup</Text>
+              <Text style={s.problemText} numberOfLines={2}>{declineStep ? 'Decline' : 'Unable to Pickup'}</Text>
             </TouchableOpacity>
           ) : null}
           {next ? (
-            <TouchableOpacity onPress={() => advance(booking)} disabled={!!busyId} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={next.label}
-              style={[s.nextBtn, busyId && { opacity: 0.6 }]}>
+            <TouchableOpacity onPress={() => advance(booking)} disabled={!!busyId || !synced} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={next.label}
+              style={[s.nextBtn, (busyId || !synced) && { opacity: 0.6 }]}>
               {busyId ? <ActivityIndicator color="#FFFFFF" size="small" /> : (
                 <>
                   {next.action === 'estimate' ? <ClipboardCheck size={rs(16)} color="#FFFFFF" strokeWidth={2.4} /> : <ArrowRightCircle size={rs(16)} color="#FFFFFF" strokeWidth={2.4} />}
@@ -308,6 +359,7 @@ export default function PickupDetailsScreen({ navigation, route }) {
       ) : null}
 
       <PickupProblemSheet booking={booking} visible={problem} onClose={() => setProblem(false)} onDone={load} />
+      {declineStep ? declineSheet : null}
     </SafeAreaView>
   );
 }

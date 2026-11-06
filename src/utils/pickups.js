@@ -20,8 +20,57 @@ export const PICKUP_STEPS = [
   { key: 'REACHED_SHOP', label: 'Reached Shop', codes: ['REACHED_SHOP'] },
   { key: 'HANDED_OVER', label: 'Handed Over to Shop', codes: ['RECEIVED_AT_SHOP'] },
 ];
+// A device purchase pickup (kind 'SELL'): no estimate, no GPS gates.
+export const SELL_PICKUP_STEPS = PICKUP_STEPS.filter((s) => ['ASSIGNED', 'ON_THE_WAY', 'COLLECTED', 'HANDED_OVER'].includes(s.key));
+export const stepsFor = (b) => (b?.kind === 'SELL' ? SELL_PICKUP_STEPS : PICKUP_STEPS);
 /** Index in PICKUP_STEPS, -1 for anything else (e.g. CANCELLED). */
 export const stepIndex = (status) => PICKUP_STEPS.findIndex((s) => s.codes.includes(up(status)));
+/** The server reports acceptance (`accepted`, Accept / Decline endpoints).
+ *  An older server doesn't: there, starting the journey is the acceptance. */
+export const serverAcceptance = (b) => typeof b?.accepted === 'boolean';
+/** Assigned but not accepted yet: only the assignment preview, Accept and
+ *  Decline — the details open once the server confirms the acceptance. */
+export const awaitingAccept = (b) => stepIndex(b?.status) === 0 && b?.accepted !== true;
+
+/** The one action for this booking now: Accept → Start Journey → the pickup
+ *  steps (nextStatusFor). An older server keeps the combined first step. */
+export function nextStepFor(b) {
+  if (stepIndex(b?.status) === 0) {
+    if (!serverAcceptance(b)) return { code: 'PICKUP_ON_THE_WAY', label: 'Accept & Start Journey', combined: true };
+    return b.accepted
+      ? { code: 'PICKUP_ON_THE_WAY', label: 'Start Journey' }
+      : { code: 'ACCEPT', label: 'Accept', action: 'accept' };
+  }
+  if (b?.kind === 'SELL' && up(b.status) === 'PICKUP_ON_THE_WAY') {
+    const st = sellStageFor(b);
+    return { code: 'DEVICE_PICKED_UP', label: st.label, action: 'sellStage', route: st.route };
+  }
+  return nextStatusFor(b?.status, b?.kind);
+}
+
+/** Device purchase at the customer's door: the screen for the next step —
+ *  Verify OTP → Compare & Inspect → Price Revision (shop owner, then the
+ *  customer) → Payment & Pickup. Read from the server row, so a reopened
+ *  pickup resumes where it stopped. */
+export function sellStageFor(b) {
+  const rev = up(b?.revision?.status);
+  if (!b?.otpVerifiedAt) return { route: 'SellVerifyOtp', label: 'Verify Customer' };
+  if (!b.inspectedAt) return { route: 'SellCompare', label: 'Compare & Inspect' };
+  if (b.payment) return { route: 'SellPayment', label: 'Complete Pickup' };
+  if (rev === 'APPROVED' || rev === 'SHOP_CONFIRMED') return { route: 'SellPayment', label: 'Payment & Pickup' };
+  if (rev === 'SHOP_APPROVED') return { route: 'SellCustomerConfirm', label: 'Get Customer Approval' };
+  if (rev === 'SHOP_PENDING' || rev === 'SHOP_REJECTED' || rev === 'REJECTED' || rev === 'NEGOTIATION') return { route: 'SellCustomerConfirm', label: 'Price Revision' };
+  return { route: 'SellPriceRevision', label: 'Price Revision' };
+}
+
+/** Why a pickup person declines an assignment (reason is required). */
+export const DECLINE_REASONS = [
+  'Not available at this time',
+  'Too far from my location',
+  'Vehicle problem',
+  'Already on another pickup',
+  'Other',
+];
 // After RECEIVED_AT_SHOP the booking carries the shop's repair statuses
 // (SERVICE phase in screens/common/serviceHistoryPhases: IN_REPAIR, READY,
 // INVOICE_GENERATED, DELIVERED_PROCESSING, DELIVERED …). The pickup leg is
@@ -36,6 +85,8 @@ const META = {
   PICKUP_PERSON_ASSIGNED: { label: 'Assigned', color: '#035C6C' },
   PICKUP_ASSIGNED: { label: 'Assigned', color: '#035C6C' },
   PICKUP_REASSIGNED: { label: 'Re-Assigned', color: '#FAA700' },
+  PICKUP_PERSON_ACCEPTED: { label: 'Accepted', color: '#609138' },
+  PICKUP_PERSON_DECLINED: { label: 'Declined', color: '#F32C26' },
   PICKUP_ON_THE_WAY: { label: 'On the Way', color: '#0788C9' },
   REACHED_CUSTOMER_LOCATION: { label: 'At Customer', color: '#1C3053' },
   REPAIR_ESTIMATE_PROCESSING: { label: 'Estimate Submitted', color: '#FAA700' },
@@ -74,28 +125,38 @@ export function bucketOf(status) {
   return 'OTHER';
 }
 
-// Current status → the one step the pickup person taps next (null = none).
+// Current status → the one step the pickup person taps next (null = none:
+// completed, cancelled and post-hand-over bookings are read-only).
 // `action` tells the caller what the step needs: 'reachedCustomer' / 'reached'
 // send GPS (50 m gates on the server), 'estimate' opens the estimate wizard.
-export function nextStatusFor(currentStatus) {
+// The backend has no separate Accept status: an assigned pickup is accepted
+// by starting it (PICKUP_ON_THE_WAY), so the first step says so.
+export function nextStatusFor(currentStatus, kind) {
   const s = up(currentStatus);
+  if (kind === 'SELL') {
+    // Collected after the sell inspection (the customer's selling pages, re-checked).
+    if (s === 'PICKUP_ON_THE_WAY') return { code: 'DEVICE_PICKED_UP', label: 'Inspect & Collect Device', action: 'sellInspect' };
+    // Verified handover: sent with GPS, the server checks the 50 m shop radius.
+    if (s === 'DEVICE_PICKED_UP' || s === 'PICKED_UP') return { code: 'RECEIVED_AT_SHOP', label: 'Hand Over to Shop', action: 'reached' };
+    if (s !== 'PICKUP_PERSON_ASSIGNED' && s !== 'PICKUP_ASSIGNED' && s !== 'PICKUP_REASSIGNED') return null;
+  }
   if (s === 'PICKUP_PERSON_ASSIGNED' || s === 'PICKUP_ASSIGNED' || s === 'PICKUP_REASSIGNED') {
-    return { code: 'PICKUP_ON_THE_WAY', label: "I'm On The Way" };
+    return { code: 'PICKUP_ON_THE_WAY', label: 'Accept & Start Journey' };
   }
   if (s === 'PICKUP_ON_THE_WAY') {
-    return { code: 'REACHED_CUSTOMER_LOCATION', label: 'Reached Customer Location', action: 'reachedCustomer' };
+    return { code: 'REACHED_CUSTOMER_LOCATION', label: 'Reached Customer', action: 'reachedCustomer' };
   }
   if (s === 'REACHED_CUSTOMER_LOCATION') {
-    return { code: 'REPAIR_ESTIMATE_PROCESSING', label: 'Repair Estimate', action: 'estimate' };
+    return { code: 'REPAIR_ESTIMATE_PROCESSING', label: 'Start Inspection & Estimate', action: 'estimate' };
   }
   if (s === 'REPAIR_ESTIMATE_PROCESSING' || s === 'ESTIMATE_SUBMITTED') {
-    return { code: 'DEVICE_PICKED_UP', label: 'Device Picked Up' };
+    return { code: 'DEVICE_PICKED_UP', label: 'Device Collected' };
   }
   if (s === 'DEVICE_PICKED_UP' || s === 'PICKED_UP') {
     return { code: 'REACHED_SHOP', label: 'Reached Shop', action: 'reached' };
   }
   if (s === 'REACHED_SHOP') {
-    return { code: 'RECEIVED_AT_SHOP', label: 'Received at Shop' };
+    return { code: 'RECEIVED_AT_SHOP', label: 'Hand Over to Shop' };
   }
   return null;
 }
@@ -103,7 +164,8 @@ export function nextStatusFor(currentStatus) {
 /** A failed pickup can be reported only before the device is collected. */
 export const canReportProblem = (b) => {
   const i = stepIndex(b?.status);
-  return i >= 0 && i <= PICKUP_STEPS.findIndex((s) => s.key === 'ESTIMATE');
+  // A device purchase paid at the door is collected, not reported.
+  return i >= 0 && i <= PICKUP_STEPS.findIndex((s) => s.key === 'ESTIMATE') && !(b?.kind === 'SELL' && b?.payment);
 };
 
 // Failed pickup / reschedule reasons. Only "Customer cancelled" changes the

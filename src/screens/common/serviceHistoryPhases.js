@@ -21,6 +21,7 @@ import {
   ClipboardCheck, Clock, RotateCcw, CheckCircle2,
 } from 'lucide-react-native';
 import { rf, rs } from '../../utils/responsive';
+import { toCdnUrl } from '../../utils/images';
 
 // Phase keys group the flat status list into the two visual sections the
 // timeline renders: the doorstep-pickup sub-flow and the in-shop service
@@ -386,7 +387,7 @@ function EventMedia({ audioUrl, imageUrls }) {
     if (soundRef.current) return soundRef.current;
     try { await Audio.setAudioModeAsync({ playsInSilentModeIOS: true }); } catch (_) {}
     const { sound } = await Audio.Sound.createAsync(
-      { uri: audioUrl },
+      { uri: toCdnUrl(audioUrl) },
       { rate, shouldCorrectPitch: true, progressUpdateIntervalMillis: 200 },
       onStatus,
     );
@@ -491,7 +492,7 @@ function EventMedia({ audioUrl, imageUrls }) {
             {imageUrls.map((u, j) => (
               <Image
                 key={j}
-                source={{ uri: u }}
+                source={{ uri: toCdnUrl(u) }}
                 style={{ width: 64, height: 64, borderRadius: 8, marginRight: 6 }}
               />
             ))}

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { listMyAssignedPickups } from '../api/pickups';
+import { bucketOf, pickupDay } from '../utils/pickups';
 import { rf, rs } from '../utils/responsive';
 import MintScreenHeader, { MintBackdrop, useHideNativeHeader } from '../components/MintScreenHeader';
 import { MINT, mintShadow, HeroCard, SectionCard, EmptyState, MonthCard, TILE_TONES } from '../components/MintKit';
@@ -31,14 +32,14 @@ const FILTERS = ['All', 'Completed', 'In Process', 'Pending'];
 // the pickup person's hands); Completed = the hand-off finished
 // (RECEIVED_AT_SHOP). Cancelled is its OWN terminal bucket — folding it into
 // COMPLETED inflated the green "Finished" tile with jobs that never happened.
+// Same buckets as My Pickups (utils/pickups bucketOf): cancelled is its own
+// bucket (never "In Process"), and the shop's statuses after hand-over
+// (IN_REPAIR, DELIVERED …) count as Completed.
 function bucketize(status) {
-  const s = String(status || '').toUpperCase();
-  if (s === 'RECEIVED_AT_SHOP') return 'COMPLETED';
-  if (s === 'CANCELLED') return 'CANCELLED';
-  if (s === 'PICKUP_PERSON_ASSIGNED' || s === 'PICKUP_ASSIGNED' || s === 'PICKUP_REASSIGNED') {
-    return 'PENDING';
-  }
-  return 'IN_PROCESS';
+  const b = bucketOf(status);
+  if (b === 'COMPLETED' || b === 'CANCELLED') return b;
+  if (b === 'IN_PROGRESS') return 'IN_PROCESS';
+  return 'PENDING';
 }
 
 // Human label per pickup status. Mirrors PickupAssignScreen.currentStatusLabel
@@ -104,9 +105,12 @@ export default function PickupReportScreen({ navigation }) {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
       const items = await listMyAssignedPickups();
-      setList(Array.isArray(items) ? items : []);
+      const seen = new Set();
+      setList((Array.isArray(items) ? items : []).filter((b) => b?.id && !seen.has(b.id) && seen.add(b.id)));
     } catch {
-      setList([]);
+      // A failed refresh keeps the last list (and its counts); only a failed
+      // first load shows empty.
+      if (!isRefresh) setList([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -118,14 +122,11 @@ export default function PickupReportScreen({ navigation }) {
     loadedOnceRef.current = true;
   }, [load]));
 
-  // Scope to the picked month so the stats only reflect pickups touched then.
+  // Scope to the picked month by pickup day — the same rule as My Pickups, so
+  // both screens count a booking in the same month.
   const mine = useMemo(() => {
-    return list.filter((b) => {
-      const t = b.updatedAt || b.createdAt;
-      if (!t) return true;
-      const d = new Date(t);
-      return d.getFullYear() === year && d.getMonth() + 1 === month;
-    });
+    const ym = `${year}-${String(month).padStart(2, '0')}`;
+    return list.filter((b) => pickupDay(b).startsWith(ym));
   }, [list, year, month]);
 
   const counts = useMemo(() => {
@@ -134,7 +135,7 @@ export default function PickupReportScreen({ navigation }) {
       const bk = bucketize(b.status);
       if (bk === 'PENDING') pending += 1;
       else if (bk === 'COMPLETED') completed += 1;
-      else inProcess += 1;
+      else if (bk === 'IN_PROCESS') inProcess += 1;
     });
     return { inProcess, pending, completed, total: mine.length };
   }, [mine]);

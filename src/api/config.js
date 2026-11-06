@@ -61,7 +61,7 @@ export const MARKETPLACE_BASE = svc(
 // talking to the service DIRECTLY (LAN dev, http://host:8091) it is /media/upload.
 // Through the TLS edge there is no `location /media/` block — nginx only exposes
 // it beneath the master prefix (/master/media/ -> :8091/media/). Posting to
-// api.ggfix.in/media/upload gets nginx's own 404/405, which carries no
+// api.neargfix.com/media/upload gets nginx's own 404/405, which carries no
 // Access-Control-Allow-Origin, so a browser reports it as a CORS error rather
 // than as the routing miss it is. A direct origin always names a port; the edge
 // is plain 443.

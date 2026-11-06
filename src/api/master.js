@@ -144,6 +144,24 @@ export async function listModelsForSeries(seriesId) {
   return rows(await masterGet(`master/series/${seriesId}/models`).catch(() => []));
 }
 
+// Sell evaluation catalogue (same endpoints as the customer app's sell flow):
+// screening questions, screen / body condition groups + options, functional issues.
+const listOf = (res) => (Array.isArray(res) ? res : res?.content || []);
+export async function getScreeningQuestions(flow, deviceCategoryId) {
+  return listOf(await masterGet('master/screening-questions', {
+    query: { flow: flow || undefined, deviceCategoryId: isUuid(deviceCategoryId) ? deviceCategoryId : undefined },
+  }));
+}
+export async function getConditionGroups(deviceCategoryId) {
+  return listOf(await masterGet('master/condition-groups', { query: { deviceCategoryId: isUuid(deviceCategoryId) ? deviceCategoryId : undefined } }));
+}
+export async function getConditionOptions(groupId) {
+  return listOf(await masterGet(`master/condition-groups/${groupId}/options`));
+}
+export async function getFunctionalIssues(deviceCategoryId) {
+  return listOf(await masterGet('master/functional-issues', { query: { deviceCategoryId: isUuid(deviceCategoryId) ? deviceCategoryId : undefined } }));
+}
+
 export async function getModel(modelId) {
   if (!modelId) return null;
   return masterGet(`master/models/${modelId}`);

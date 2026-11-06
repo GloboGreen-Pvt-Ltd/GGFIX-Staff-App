@@ -27,7 +27,7 @@ export function openDirections(booking) {
 // final-status time line.
 export default function PickupCard({ booking, onOpen, onAdvance, onHistory, busy, readOnly, stamp }) {
   const st = statusMeta(booking.status);
-  const next = readOnly ? null : nextStatusFor(booking.status);
+  const next = readOnly ? null : nextStatusFor(booking.status, booking.kind);
   const re = isReassigned(booking) && !readOnly;
   const slot = slotLabel(booking);
   const cancel = cancelInfo(booking);

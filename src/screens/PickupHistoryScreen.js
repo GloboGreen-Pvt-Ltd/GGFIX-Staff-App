@@ -11,7 +11,7 @@ import { rf, rs } from '../utils/responsive';
 import { userMessage } from '../utils/userMessages';
 // Oldest first by server time, one row per server event id (utils/pickups).
 import {
-  actorLabel, cancelInfo, deviceLabel, eventColor, eventLabel, fmtStamp, sortEvents, statusMeta, trackingId,
+  actorLabel, awaitingAccept, cancelInfo, deviceLabel, eventColor, eventLabel, fmtStamp, sortEvents, statusMeta, trackingId,
 } from '../utils/pickups';
 
 // Pickup Timeline — the complete audit trail of one pickup, oldest first:
@@ -27,6 +27,9 @@ export default function PickupHistoryScreen({ navigation, route }) {
   const [loading, setLoading] = useState(!Array.isArray(initial.events));
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  // Not in my assigned list any more (reassigned / removed): say so instead
+  // of silently showing the old snapshot as if it were current.
+  const [gone, setGone] = useState(false);
 
   const load = useCallback(async () => {
     if (!initial.id) { setLoading(false); return; }
@@ -34,6 +37,7 @@ export default function PickupHistoryScreen({ navigation, route }) {
       const list = await listMyAssignedPickups();
       const fresh = (list || []).find((b) => b.id === initial.id);
       if (fresh) setBooking((prev) => ({ ...prev, ...fresh }));
+      setGone(!fresh);
       setError(null);
     } catch (e) {
       setError(userMessage(e, 'Could not refresh history'));
@@ -55,6 +59,18 @@ export default function PickupHistoryScreen({ navigation, route }) {
   const handover = events.filter((e) => String(e.status).toUpperCase() === 'RECEIVED_AT_SHOP').pop();
   const photos = [{ url: booking.frontImageUrl, label: 'Front' }, { url: booking.backImageUrl, label: 'Back' }].filter((p) => p.url);
 
+  // Not accepted yet: the timeline opens only after Accept.
+  if (awaitingAccept(booking) && !gone) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <JobHeader navigation={navigation} title="Pickup Timeline" sub={trackingId(booking)} />
+        <View style={[styles.card, { margin: rs(12) }]}>
+          <Text style={styles.cancel}>Accept this pickup to view its history.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <JobHeader navigation={navigation} title="Pickup Timeline" sub={`${events.length} ${events.length === 1 ? 'event' : 'events'}`} />
@@ -74,6 +90,7 @@ export default function PickupHistoryScreen({ navigation, route }) {
             <View style={[styles.badge, { backgroundColor: st.bg }]}><Text style={[styles.badgeText, { color: st.color }]} numberOfLines={1}>{st.label}</Text></View>
           </View>
           {cancel?.note ? <Text style={styles.cancel}>{cancel.byMe ? 'Pickup failed' : 'Cancelled'}: {cancel.note}</Text> : null}
+          {gone ? <Text style={styles.cancel}>This pickup is no longer assigned to you. Showing the last saved details.</Text> : null}
         </View>
 
         {/* Hand-over to the shop */}

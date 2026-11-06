@@ -14,7 +14,10 @@ import {
 import { useSelector } from 'react-redux';
 import { ticketApi } from '../api/client';
 import { listMyTickets } from '../api/tickets';
-import { selectTechnicianId } from '../store/authSlice';
+import { listMyAssignedPickups } from '../api/pickups';
+import { trackingId as pickupTrackingId } from '../utils/pickups';
+import { selectSession, selectTechnicianId } from '../store/authSlice';
+import { resolveRoleKey } from '../config/categories';
 import { ticketRef } from '../utils/ticketRef';
 import { rf, rs } from '../utils/responsive';
 import MintScreenHeader from '../components/MintScreenHeader';
@@ -52,19 +55,33 @@ function normalizeCode(raw) {
 // shop-wide lookups run only to tell "someone else's job" apart from "no such
 // ticket" (and to catch an own job past the list's page), with the assignee
 // checked against this employee's technician id. No id → treated as not mine.
-async function resolveTicket(raw, myTechId) {
+async function resolveTicket(raw, myTechId, isPickupPerson) {
   const value = normalizeCode(raw);
   if (!value) return null;
   const lc = value.toLowerCase();
 
   // 1. The technician's own assigned tickets — matches trackingId, the
   //    on-screen "#CSPEN…" reference (also for tickets without a trackingId) and id.
+  //    Same second guard as My Jobs: a row now assigned to someone else (the
+  //    list can lag a reassignment) falls through to the "not yours" check.
   const mine = await listMyTickets({ page: 0, size: 200 }).catch(() => null);
   const myList = Array.isArray(mine?.content) ? mine.content : Array.isArray(mine) ? mine : [];
   const own = myList.find((t) => String(t.trackingId || '').toLowerCase() === lc
     || ticketRef(t).replace(/^#/, '').toLowerCase() === lc
     || String(t.id || '').toLowerCase() === lc);
-  if (own) return { ticket: own, assignedToMe: true };
+  if (own && (!myTechId || !own.assignedTechnicianId || String(own.assignedTechnicianId) === String(myTechId))) {
+    return { ticket: own, assignedToMe: true };
+  }
+
+  // 1b. A pickup person's jobs are their assigned pickups (already limited to
+  //     this person by the server and api/pickups): booking number or id.
+  if (isPickupPerson) {
+    const pickups = await listMyAssignedPickups().catch(() => []);
+    const pickup = (pickups || []).find((b) => String(b.bookingNumber || '').toLowerCase() === lc
+      || pickupTrackingId(b).replace(/^#/, '').toLowerCase() === lc
+      || String(b.id || '').toLowerCase() === lc);
+    if (pickup) return { pickup };
+  }
 
   const found = await (async () => {
     if (UUID_RE.test(value)) {
@@ -94,6 +111,7 @@ export default function ScanTicketQrScreen({ navigation }) {
   // The scanned value when it's a real job assigned to someone else.
   const [notMine, setNotMine] = useState(null);
   const myTechId = useSelector(selectTechnicianId);
+  const isPickupPerson = resolveRoleKey(useSelector(selectSession)) === 'PICKUP_PERSON';
   const handlingRef = useRef(false);
 
   useEffect(() => {
@@ -117,7 +135,11 @@ export default function ScanTicketQrScreen({ navigation }) {
     setScanned(true);
     setLoading(true);
     try {
-      const hit = await resolveTicket(data, myTechId);
+      const hit = await resolveTicket(data, myTechId, isPickupPerson);
+      if (hit?.pickup?.id) {
+        navigation.replace('PickupDetails', { bookingId: hit.pickup.id, booking: hit.pickup });
+        return;
+      }
       if (hit?.ticket?.id && hit.assignedToMe) {
         // Open the ticket the technician just scanned. `replace` keeps the
         // scanner out of the back stack, so Back from the ticket returns Home.

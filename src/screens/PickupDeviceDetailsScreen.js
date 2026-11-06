@@ -6,7 +6,7 @@ import { useHideNativeHeader } from '../components/MintScreenHeader';
 import { EText, ETextInput, DeviceImage, rem, Pressable } from '../components/estimate/EstimateKit';
 import { resolveDeviceImageSource } from '../utils/images';
 import {
-  categoryMenuKey, getCategoryMenuImages, getModel, getModelOptions, listBrandsForCategory, listDeviceCategories,
+  categoryMenuKey, getCategoryMenuImages, getModel, getModelOptions, listBrands, listBrandsForCategory, listDeviceCategories,
   listModelsForBrand, listSeriesForCategoryBrand, parseModelNumbers,
 } from '../api/master';
 
@@ -111,6 +111,23 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
     storageLabel: pick('storageLabel') || null,
     modelNumber: params.modelNumber || booking.modelNumber || null,
   });
+  // The saved device (Edit Estimate): its summary shows straight away while
+  // the category → brand → model lookups load; the looked-up model takes over
+  // once it resolves, and any manual pick drops it.
+  const seed = useRef({
+    brandName: pick('brandName') || null,
+    modelName: pick('modelName') || null,
+    color: String(pick('color') || '').trim(),
+    storage: [pick('ramLabel'), pick('storageLabel')].filter(Boolean).join(' / '),
+    image: resolveDeviceImageSource({
+      url: pick('modelImageUrl') || booking.deviceImageUrl,
+      base64: pick('modelImageBase64') || booking.deviceImageBase64,
+    }),
+  }).current;
+  const [seedOn, setSeedOn] = useState(!!seed.modelName);
+  // Saved with names only, no catalogue ids (e.g. a device-purchase pickup):
+  // the brand + model are looked up by name below, then pre-selected the same way.
+  const [byName, setByName] = useState(!prefill.current.modelId && !!seed.brandName && !!seed.modelName);
 
   // ── Category ──────────────────────────────────────────────────────────────
   const [cats, setCats] = useState([]);
@@ -118,7 +135,7 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
   const [catsLoading, setCatsLoading] = useState(true);
   const initialCat = params.categoryId || params.deviceCategoryId || booking.deviceCategoryId || null;
   const [catId, setCatId] = useState(initialCat);
-  const [catListOpen, setCatListOpen] = useState(!initialCat && !prefill.current.modelId);
+  const [catListOpen, setCatListOpen] = useState(!initialCat && !prefill.current.modelId && !byName);
   // ── Brand / series / model ────────────────────────────────────────────────
   const [brands, setBrands] = useState([]);
   const [brandsLoading, setBrandsLoading] = useState(false);
@@ -143,6 +160,7 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
   const [savedVariantBad, setSavedVariantBad] = useState(null); // label of an invalid saved pair
   const [masterOpen, setMasterOpen] = useState(false); // standard RAM / storage lists unfolded
   const [typeSheet, setTypeSheet] = useState(null);
+  useEffect(() => { if (model) setSeedOn(false); }, [model]);
 
   useEffect(() => {
     let alive = true;
@@ -169,6 +187,32 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
       .catch(() => { if (alive) setCatListOpen(true); });
     return () => { alive = false; };
   }, [catId]);
+
+  // Names only: find the catalogue brand, then its model (stored either bare
+  // or with the brand in front), and seed their ids + the model's category so
+  // the chain below pre-selects them. Not found → the normal pickers.
+  useEffect(() => {
+    if (!byName) return undefined;
+    let alive = true;
+    const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    (async () => {
+      const brands = await listBrands().catch(() => []);
+      const b = brands.find((x) => norm(x.name) === norm(seed.brandName));
+      const models = b ? await listModelsForBrand(b.id).catch(() => []) : [];
+      const want = norm(seed.modelName);
+      const m = (Array.isArray(models) ? models : []).find((x) => norm(x.name) === want || norm(`${b.name} ${x.name}`) === want);
+      if (!alive) return;
+      if (b && m) {
+        prefill.current = { ...prefill.current, brandId: b.id, modelId: m.id };
+        if (m.categoryId) setCatId(m.categoryId);
+        else setCatListOpen(true);
+      } else {
+        setCatListOpen(true);
+      }
+      setByName(false);
+    })();
+    return () => { alive = false; };
+  }, []);
 
   // New category → its brands; everything below starts again.
   useEffect(() => {
@@ -231,14 +275,19 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
         const nums = o.modelNumbers?.length ? o.modelNumbers : parseModelNumbers(model.modelNumber);
         setModelNumber((prev) => (prev && nums.includes(prev) ? prev : (nums[0] || null)));
         const pf = prefill.current;
-        if (pf.color || pf.ramOptionId || pf.storageOptionId || pf.modelNumber) {
-          prefill.current = { ...pf, color: '', ramOptionId: null, storageOptionId: null, modelNumber: null };
+        if (pf.color || pf.ramOptionId || pf.storageOptionId || pf.modelNumber || pf.ramLabel || pf.storageLabel) {
+          prefill.current = { ...pf, color: '', ramOptionId: null, storageOptionId: null, modelNumber: null, ramLabel: null, storageLabel: null };
           if (pf.color) {
             const c = [...(o.colors || []), ...(o.allColors || [])].find((x) => String(x.name || '').toLowerCase() === String(pf.color).toLowerCase());
             setColor(c ? c.name : pf.color);
           }
           const good = (o.specs || []).filter((v) => !variantProblem(v));
-          const v = good.find((x) => (x.ramOptionId || null) === (pf.ramOptionId || null) && (x.storageOptionId || null) === (pf.storageOptionId || null));
+          // By saved ids, else (names-only booking) by the saved RAM / storage sizes.
+          const v = pf.ramOptionId || pf.storageOptionId
+            ? good.find((x) => (x.ramOptionId || null) === (pf.ramOptionId || null) && (x.storageOptionId || null) === (pf.storageOptionId || null))
+            : pf.storageLabel || pf.ramLabel
+            ? good.find((x) => (!pf.storageLabel || gbOf(x.storageLabel) === gbOf(pf.storageLabel)) && (!pf.ramLabel || gbOf(x.ramLabel) === gbOf(pf.ramLabel)))
+            : null;
           if (v) setVariantId(v.id);
           else if (pf.ramOptionId || pf.storageOptionId) {
             const r = gbOf(pf.ramLabel);
@@ -297,6 +346,7 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
   const missingHint = masterPairBad ? 'RAM can’t be larger than storage.' : '';
 
   const pickModel = (m) => {
+    setSeedOn(false);
     setModel(m);
     if (m?.seriesId) setSeriesId((cur) => (cur && cur !== m.seriesId ? '' : cur));
     setQ('');
@@ -306,6 +356,32 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
   const onNext = () => {
     if (!ready) return;
     const variant = pickedVariant;
+    if (params.sellInspection) {
+      // Device purchase: on to the customer's selling pages (Screening →
+      // Screen → Functional → Accessories & Warranty), with the customer's
+      // answers (sellEval) as the pre-selection.
+      navigation.navigate('SellInspectScreening', {
+        bookingId: params.bookingId,
+        booking,
+        device: {
+          categoryId: category.id,
+          categoryCode: category.code || null,
+          brandId: brand.id || null,
+          brandName: brand.name,
+          modelId: model.id || null,
+          modelName: model.name,
+          ramOptionId: variant ? (variant.ramOptionId || null) : (ram || null),
+          ramLabel: variant ? (variant.ramLabel || null) : (ramLabelOf(ram) || null),
+          storageOptionId: variant ? variant.storageOptionId : storage,
+          storageLabel: variant ? variant.storageLabel : (storageLabelOf(storage) || null),
+          color: color.trim() || null,
+          modelNumber: modelNumber || null,
+        },
+        workingCondition: params.sellEval?.workingCondition || null,
+        editHints: params.sellEval || null,
+      });
+      return;
+    }
     navigation.navigate('PickupDevicesRepair', {
       ...params,
       returnTo: undefined,
@@ -332,10 +408,12 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
     });
   };
 
-  const crumbs = [brand?.name, seriesName, model?.name].filter(Boolean);
-  const summaryColor = color.trim();
-  const summaryStorage = pickedVariant ? pickedVariant.label
+  const seeded = seedOn && !model;
+  const crumbs = seeded ? [seed.brandName, seed.modelName].filter(Boolean) : [brand?.name, seriesName, model?.name].filter(Boolean);
+  const summaryColor = seeded ? seed.color : color.trim();
+  const summaryStorage = seeded ? seed.storage : pickedVariant ? pickedVariant.label
     : [ramLabelOf(ram), storageLabelOf(storage)].filter(Boolean).join(' / ');
+  const summaryImage = seeded ? seed.image : modelImage;
   const customerName = params.customer?.name || params.customerName || booking.customerName;
 
   return (
@@ -364,7 +442,7 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
             <Field label="Category">
               {category && !catListOpen ? (
                 <PickedCard image={catImageFor(category)} title={category.name} onChange={() => setCatListOpen(true)} />
-              ) : catsLoading || (!catId && prefill.current.modelId && !catListOpen) ? (
+              ) : catsLoading || (!catId && (prefill.current.modelId || byName) && !catListOpen) ? (
                 <ActivityIndicator color={ACCENT} style={{ marginVertical: 12 }} />
               ) : (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4 }}>
@@ -374,7 +452,7 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
                     return (
                       <View key={c.id} style={{ width: tilePct(catCols), padding: 4 }}>
                         <Pressable
-                          onPress={() => { if (!on) setCatId(c.id); setCatListOpen(false); }}
+                          onPress={() => { if (!on) { setSeedOn(false); setCatId(c.id); } setCatListOpen(false); }}
                           accessibilityRole="button" accessibilityState={{ selected: on }} accessibilityLabel={c.name}
                           style={({ pressed }) => ({
                             minHeight: 96, paddingHorizontal: 6, paddingVertical: 10, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
@@ -416,7 +494,7 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
                           compact
                           padH={2}
                           on={brand?.id === b.id}
-                          onPress={() => { if (brand?.id !== b.id) setBrand(b); setBrandListOpen(false); }}
+                          onPress={() => { if (brand?.id !== b.id) { setSeedOn(false); setBrand(b); } setBrandListOpen(false); }}
                         />
                       </View>
                     ))}
@@ -433,7 +511,7 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
                           title: 'Other Brand',
                           placeholder: 'Type the brand name',
                           initial: brand?.custom ? brand.name : '',
-                          onDone: (name) => { setBrand({ id: null, name, custom: true }); setBrandListOpen(false); },
+                          onDone: (name) => { setSeedOn(false); setBrand({ id: null, name, custom: true }); setBrandListOpen(false); },
                         })}
                       />
                     </View>
@@ -606,7 +684,7 @@ export default function PickupDeviceDetailsScreen({ navigation, route }) {
                 <EText style={{ fontSize: 14, fontWeight: '700', color: INK, marginBottom: 10 }}>Select Device</EText>
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <View style={{ width: 64, height: 76, borderRadius: 10, backgroundColor: '#FFFFFF', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
-                    {modelImage ? <DeviceImage url={modelImage} style={{ width: 56, height: 68 }} /> : <Smartphone size={28} color={ACCENT} />}
+                    {summaryImage ? <DeviceImage url={summaryImage} style={{ width: 56, height: 68 }} /> : <Smartphone size={28} color={ACCENT} />}
                   </View>
                   <View style={{ flex: 1, marginLeft: 12 }}>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>

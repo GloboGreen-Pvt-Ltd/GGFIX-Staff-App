@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, ActivityIndicator, View } from 'react-native';
 import { Text } from '../Typography';
 import { cn } from './cn';
+import { UI } from '../../theme/tokens';
 
 function isTextChildren(children) {
   if (children == null) return false;
@@ -39,12 +40,16 @@ const textVariantClasses = {
 };
 
 const sizeClasses = {
-  default: 'py-3.5 px-6 rounded-2xl',
+  default: 'py-2.5 px-6 rounded-2xl',
   sm: 'py-2.5 px-4 rounded-xl',
   lg: 'py-4 px-8 rounded-2xl',
-  pill: 'py-3.5 px-6 rounded-full',
+  pill: 'py-2.5 px-6 rounded-full',
   icon: 'h-11 w-11 rounded-full',
 };
+// Shared button height (tokens UI.buttonHeight, same 46 as EstimateKit
+// EButton) for the full-size buttons. Not rs(): its 0.9 compact factor would
+// drop it to ~41.
+const sizeMinHeight = { default: UI.buttonHeight, lg: UI.buttonHeight, pill: UI.buttonHeight };
 
 const shadowVariants = {
   default: { shadowColor: '#035C6C', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
@@ -79,7 +84,7 @@ export function Button({
     <Pressable
       {...rest}
       disabled={isDisabled}
-      style={[shadow, rest.style]}
+      style={[sizeMinHeight[size] ? { minHeight: sizeMinHeight[size] } : null, shadow, rest.style]}
       className={cn(
         'flex-row items-center justify-center active:opacity-80',
         variantClasses[variant],
@@ -95,7 +100,7 @@ export function Button({
         <>
           {leftIcon ? <View className="mr-2">{leftIcon}</View> : null}
           {isTextChildren(children) ? (
-            <Text numberOfLines={1} className={cn('text-base font-bold tracking-wide', textVariantClasses[variant], textClassName)}>{children}</Text>
+            <Text numberOfLines={1} style={{ flexShrink: 1 }} className={cn('text-base font-bold tracking-wide', textVariantClasses[variant], textClassName)}>{children}</Text>
           ) : (
             children
           )}

@@ -98,14 +98,14 @@ const ART = {
   backPanel: () => (<G><Back /><Path d="M24 30 l6 5 l-2 6 l8 5 M30 35 l7 -4" {...line} stroke={ACCENT} /><Badge x={39} y={18} /></G>),
   generic: () => (<G><Front /><Badge x={32} y={32} /></G>),
   // Physical-condition states (screen / body): clean → spots → scratches → cracks → dents.
-  condClean: () => (<G><Front /><Path d="M25 31 l5 5 l9 -10" {...line} stroke={'#01AC77'} strokeWidth={3} /></G>),
-  spotsMinor: () => (<G><Front /><Circle cx={28} cy={24} r={2.2} fill={'#E5484D'} /><Circle cx={37} cy={36} r={1.6} fill={'#E5484D'} /></G>),
-  spotsMajor: () => (<G><Front /><Circle cx={26} cy={20} r={3} fill={'#E5484D'} /><Circle cx={37} cy={24} r={2.4} fill={'#E5484D'} /><Circle cx={29} cy={33} r={3.4} fill={'#E5484D'} /><Circle cx={38} cy={40} r={2.2} fill={'#E5484D'} /><Circle cx={25} cy={44} r={1.8} fill={'#E5484D'} /></G>),
-  scratchMinor: () => (<G><Front /><Path d="M25 22 l8 -4 M30 38 l9 -3" {...line} stroke={'#E5484D'} /></G>),
-  scratchMajor: () => (<G><Front /><Path d="M23 20 l16 -6 M24 30 l15 -5 M25 41 l14 -6 M27 47 l10 -3" {...line} stroke={'#E5484D'} /></G>),
-  cracked: () => (<G><Front /><Path d="M32 14 l-4 10 l7 6 l-6 9 l5 8 M35 30 l6 -3" {...line} stroke={'#E5484D'} /></G>),
-  dented: () => (<G><Back /><Path d="M18 26 q5 4 0 8" {...line} stroke={'#E5484D'} /><Path d="M46 38 q-5 4 0 8" {...line} stroke={'#E5484D'} /></G>),
-  broken: () => (<G><Front /><Path d="M22 14 l20 36 M42 14 l-20 36" {...line} stroke={'#E5484D'} /></G>),
+  condClean: () => (<G><Path d="M25 31 l5 5 l9 -10" {...line} stroke={'#01AC77'} strokeWidth={3} /></G>),
+  spotsMinor: () => (<G><Circle cx={28} cy={24} r={2.2} fill={'#E5484D'} /><Circle cx={37} cy={36} r={1.6} fill={'#E5484D'} /></G>),
+  spotsMajor: () => (<G><Circle cx={26} cy={20} r={3} fill={'#E5484D'} /><Circle cx={37} cy={24} r={2.4} fill={'#E5484D'} /><Circle cx={29} cy={33} r={3.4} fill={'#E5484D'} /><Circle cx={38} cy={40} r={2.2} fill={'#E5484D'} /><Circle cx={25} cy={44} r={1.8} fill={'#E5484D'} /></G>),
+  scratchMinor: () => (<G><Path d="M25 22 l8 -4 M30 38 l9 -3" {...line} stroke={'#E5484D'} /></G>),
+  scratchMajor: () => (<G><Path d="M23 20 l16 -6 M24 30 l15 -5 M25 41 l14 -6 M27 47 l10 -3" {...line} stroke={'#E5484D'} /></G>),
+  cracked: () => (<G><Path d="M32 14 l-4 10 l7 6 l-6 9 l5 8 M35 30 l6 -3" {...line} stroke={'#E5484D'} /></G>),
+  dented: () => (<G><Path d="M18 26 q5 4 0 8" {...line} stroke={'#E5484D'} /><Path d="M46 38 q-5 4 0 8" {...line} stroke={'#E5484D'} /></G>),
+  broken: () => (<G><Path d="M22 14 l20 36 M42 14 l-20 36" {...line} stroke={'#E5484D'} /></G>),
   // Accessories
   box: () => (
     <G>
@@ -203,10 +203,30 @@ export function artFor(name) {
   return 'generic';
 }
 
-export default function ConditionArt({ kind, size = 56 }) {
+// Device outlines for the condition states: phone, tablet, laptop, watch.
+const BASES = {
+  phone: () => <Front />,
+  tablet: () => (<G><Rect x={9} y={8} width={46} height={50} rx={5} {...line} /><Circle cx={32} cy={54} r={1.2} fill={INK} /></G>),
+  laptop: () => (<G><Rect x={10} y={10} width={44} height={34} rx={3} {...line} /><Path d="M5 50 h54 l-4 -6 h-46 z" {...line} /></G>),
+  watch: () => (<G><Rect x={22} y={4} width={20} height={10} rx={2} {...line} /><Rect x={22} y={50} width={20} height={10} rx={2} {...line} /><Rect x={16} y={14} width={32} height={36} rx={9} {...line} /></G>),
+};
+const COND_KINDS = new Set(['condClean', 'spotsMinor', 'spotsMajor', 'scratchMinor', 'scratchMajor', 'cracked', 'dented', 'broken']);
+
+/** Device family from any text (category, model): phone · tablet · laptop · watch. */
+export function deviceShapeOf(text) {
+  const t = String(text || '').toLowerCase();
+  if (/laptop|notebook|macbook|thinkpad|vivobook|ideapad|chromebook/.test(t)) return 'laptop';
+  if (/watch/.test(t)) return 'watch';
+  if (/tablet|tab|ipad|pad/.test(t)) return 'tablet';
+  return 'phone';
+}
+
+export default function ConditionArt({ kind, size = 56, shape = 'phone' }) {
   const Draw = ART[kind] || ART.generic;
+  const Base = COND_KINDS.has(kind) ? (BASES[shape] || BASES.phone) : null;
   return (
     <Svg width={size} height={size} viewBox="0 0 64 64">
+      {Base ? <Base /> : null}
       <Draw />
     </Svg>
   );

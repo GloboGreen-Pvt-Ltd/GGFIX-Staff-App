@@ -13,7 +13,7 @@ import { uploadMedia } from '../../api/media';
 import { rf } from '../../utils/responsive';
 import { SC, SK, SellCard, SellCta, SellLoader, SellPage, goToSellStage, isGone, sellError, useSellPickup } from './sellKit';
 import { getFunctionalIssueIcon } from './functionalIssueIcons';
-import ConditionArt, { conditionArtFor } from './conditionArt';
+import ConditionArt, { conditionArtFor, deviceShapeOf } from './conditionArt';
 
 // Device inspection after Compare Details, in three steps on one page:
 // 1 Inspection — one pick per condition group (Screen / Display, Touch Glass,
@@ -43,7 +43,7 @@ const luhn = (d) => [...d].reverse().reduce((sum, ch, i) => {
   return sum + n;
 }, 0) % 10 === 0;
 
-function OptionArt({ group, label, on }) {
+function OptionArt({ group, label, on, shape }) {
   const color = on ? SK.teal : SK.navy;
   if (isBattery(group)) {
     const l = String(label).toLowerCase();
@@ -52,7 +52,7 @@ function OptionArt({ group, label, on }) {
     return <BatteryFull size={28} color={SC.green} strokeWidth={1.7} />;
   }
   // Same condition pictures as the Partner app (no spot, minor spots, scratches, cracks…).
-  return <ConditionArt kind={conditionArtFor(label)} size={40} />;
+  return <ConditionArt kind={conditionArtFor(label)} size={40} shape={shape} />;
 }
 
 function Tick() {
@@ -130,6 +130,8 @@ export default function SellInspectionScreen({ navigation, route }) {
   const seq = useRef(0);
   const restored = useRef(false);
   const draftKey = `sellInspectionDraft:${id}`;
+  // Laptop / tablet / watch / phone outline for the condition pictures, from the booked device.
+  const shape = deviceShapeOf([booking?.categoryName, booking?.categoryCode, booking?.device?.categoryName, booking?.device?.category, booking?.deviceName, booking?.device?.modelName, booking?.device?.name, p.device?.categoryName, p.device?.modelName].filter(Boolean).join(' '));
 
   // Condition groups / functional issues from master data for the device's category (fallback: the phone list).
   useEffect(() => {
@@ -284,7 +286,7 @@ export default function SellInspectionScreen({ navigation, route }) {
                     const on = picks[g.id] === o.id;
                     return (
                       <Tile key={o.id} on={on} role="radio" label={o.label} onPress={() => setPicks((s) => ({ ...s, [g.id]: o.id }))}>
-                        <OptionArt group={g} label={o.label} on={on} />
+                        <OptionArt group={g} label={o.label} on={on} shape={shape} />
                       </Tile>
                     );
                   })}

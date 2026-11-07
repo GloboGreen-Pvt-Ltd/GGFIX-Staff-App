@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Camera, CheckCircle2, CheckSquare, MapPin, Navigation, Phone, Square, Store, X } from 'lucide-react-native';
 import { confirm, notify } from '../../components/confirm';
 import { uploadMedia } from '../../api/media';
+import { deviceShapeOf } from '../sell/conditionArt';
 import { DELIVERY_STATUS, DELIVERY_TABS, deliveryAction, getDelivery, listMyDeliveries } from '../../api/buyDeliveries';
 import { Button, Card, Loader, Page, SC, SK, apiError, money } from './deliveryKit';
 
@@ -137,11 +138,13 @@ export default function BuyDeliveryScreen({ navigation, route }) {
   }
 
   const s = o.status;
+  // Phones carry an IMEI; laptops, tablets, watches a serial number.
+  const isPhone = deviceShapeOf(o.productTitle) === 'phone';
   const urls = photos.filter((p) => p.url).map((p) => p.url);
   const uploading = photos.some((p) => p.busy);
   const CHECKS = [
     ['model', 'Product & model match the order'],
-    ['imei', 'IMEI / serial checked on the device'],
+    ['imei', isPhone ? 'IMEI checked on the device' : 'Serial number checked on the device'],
     ['qty', `Quantity is ${o.quantity || 1}`],
     ['cond', 'Condition matches the listing'],
   ];
@@ -251,9 +254,17 @@ ${o.shopAddress}` : ''}</Text>
                 <Text style={{ fontSize: 13, color: SK.ink }}>{label}</Text>
               </Pressable>
             ))}
-            {input({ placeholder: o.productImeiRequired ? 'IMEI on the device (required)' : 'IMEI / serial (optional)', value: imei, autoCapitalize: 'characters', onChangeText: (t) => setImei(t.replace(/\s/g, '')) })}
+            {input({
+              placeholder: isPhone ? `15-digit IMEI${o.productImeiRequired ? ' (required)' : ' (optional)'}` : `Serial number${o.productImeiRequired ? ' (required)' : ' (optional)'}`,
+              value: imei,
+              keyboardType: isPhone ? 'number-pad' : 'default',
+              maxLength: isPhone ? 15 : 30,
+              autoCapitalize: 'characters',
+              onChangeText: (t) => setImei(isPhone ? t.replace(/\D/g, '') : t.replace(/[^A-Za-z0-9-]/g, '').toUpperCase()),
+            })}
+            {imei && isPhone && imei.length !== 15 ? <Text style={{ fontSize: 11, color: SC.red, marginTop: 4 }}>IMEI must be 15 digits</Text> : null}
             {photoBlock(`Pickup photos (min ${MIN_PHOTOS})`)}
-            <Button title="Confirm Pickup" loading={busy === 'pickup'} disabled={!!busy || !verified || urls.length < MIN_PHOTOS || uploading || (o.productImeiRequired && !imei)} style={{ marginTop: 12 }}
+            <Button title="Confirm Pickup" loading={busy === 'pickup'} disabled={!!busy || !verified || urls.length < MIN_PHOTOS || uploading || (o.productImeiRequired && !imei) || (isPhone && !!imei && imei.length !== 15)} style={{ marginTop: 12 }}
               onPress={() => run('pickup', { productVerified: true, imei: imei || undefined, photos: urls }, 'Pickup confirmed')} />
           </Card>
         ) : null}

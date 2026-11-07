@@ -144,8 +144,13 @@ export default function SellInspectionScreen({ navigation, route }) {
       const out = [];
       for (const g of base) {
         const fromApi = list.length ? await getConditionOptions(g.id).catch(() => []) : [];
-        const opts = fromApi.length ? fromApi.map((o) => ({ id: o.id, label: o.label || o.name })) : (g.options || []).map((o, i) => ({ id: `${g.id}-${i}`, label: o }));
-        if (opts.length) out.push({ id: g.id, code: g.code || g.id, name: g.name, opts });
+        const raw = fromApi.length ? fromApi.map((o) => ({ id: o.id, label: o.label || o.name })) : (g.options || []).map((o, i) => ({ id: `${g.id}-${i}`, label: o }));
+        // Master data can repeat a group (same name, or two Battery groups) or an option — show each once.
+        const seenOpt = new Set();
+        const opts = raw.filter((o) => o.label && !seenOpt.has(o.label.trim().toLowerCase()) && seenOpt.add(o.label.trim().toLowerCase()));
+        const key = String(g.name || g.code || '').trim().toLowerCase();
+        const dup = out.some((x) => String(x.name || x.code || '').trim().toLowerCase() === key || (isBattery(x) && isBattery(g)));
+        if (opts.length && !dup) out.push({ id: g.id, code: g.code || g.id, name: g.name, opts });
       }
       if (!out.some(isBattery)) out.push({ ...BATTERY_GROUP, opts: BATTERY_GROUP.options.map((o, i) => ({ id: `${BATTERY_GROUP.id}-${i}`, label: o })) });
       const fi = await getFunctionalIssues(cat).catch(() => []);

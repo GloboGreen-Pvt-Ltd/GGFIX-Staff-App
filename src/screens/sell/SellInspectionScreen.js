@@ -13,6 +13,7 @@ import { uploadMedia } from '../../api/media';
 import { rf } from '../../utils/responsive';
 import { SC, SK, SellCard, SellCta, SellLoader, SellPage, goToSellStage, isGone, sellError, useSellPickup } from './sellKit';
 import { getFunctionalIssueIcon } from './functionalIssueIcons';
+import ConditionArt, { conditionArtFor } from './conditionArt';
 
 // Device inspection after Compare Details, in three steps on one page:
 // 1 Inspection — one pick per condition group (Screen / Display, Touch Glass,
@@ -50,7 +51,8 @@ function OptionArt({ group, label, on }) {
     if (/weak|drain/.test(l)) return <BatteryMedium size={28} color={SK.amber} strokeWidth={1.7} />;
     return <BatteryFull size={28} color={SC.green} strokeWidth={1.7} />;
   }
-  return <Smartphone size={28} color={color} strokeWidth={1.5} />;
+  // Same condition pictures as the Partner app (no spot, minor spots, scratches, cracks…).
+  return <ConditionArt kind={conditionArtFor(label)} size={40} />;
 }
 
 function Tick() {

@@ -217,7 +217,7 @@ export function deviceShapeOf(text) {
   const t = String(text || '').toLowerCase();
   if (/laptop|notebook|macbook|thinkpad|vivobook|ideapad|chromebook/.test(t)) return 'laptop';
   if (/watch/.test(t)) return 'watch';
-  if (/tablet|tab|ipad|pad/.test(t)) return 'tablet';
+  if (/tablet|ipad|(^|\s)(tab|pad)(\s|$)/.test(t)) return 'tablet';
   return 'phone';
 }
 

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { listMyAssignedPickups } from '../api/pickups';
+import { listMyDeliveries } from '../api/buyDeliveries';
 import { rf, rs } from '../utils/responsive';
 import { useHideNativeHeader } from '../components/MintScreenHeader';
 import { SearchBar } from '../components/rnr';
@@ -76,6 +77,14 @@ export default function PickupAssignScreen({ navigation, route }) {
   // GET /technicians/me/pickup-bookings — the server scopes it to the caller
   // (JWT userId + shopId → their pickup-person row). A failed re-read keeps
   // the last list on screen and shows the error above it.
+  // Fixed-price Buy deliveries assigned to me (marketplace) — separate list, shown as a card here.
+  const [buyOpen, setBuyOpen] = useState(null);
+  useFocusEffect(useCallback(() => {
+    listMyDeliveries()
+      .then((rows) => setBuyOpen((Array.isArray(rows) ? rows : []).filter((o) => ['ASSIGNED', 'ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY'].includes(o.status)).length))
+      .catch(() => setBuyOpen(null));
+  }, []));
+
   const load = useCallback(async (mode = 'silent') => {
     if (mode === 'refresh') setRefreshing(true);
     try {
@@ -271,6 +280,13 @@ export default function PickupAssignScreen({ navigation, route }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load('refresh')} colors={[KIT.teal]} tintColor={KIT.teal} />}
         showsVerticalScrollIndicator={false}
       >
+        {buyOpen ? (
+          <TouchableOpacity onPress={() => navigation.navigate('BuyDeliveries')} accessibilityRole="button" accessibilityLabel="Buy deliveries"
+            style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 14, borderWidth: 1, borderColor: '#01AC77', backgroundColor: '#E6F7F0', marginBottom: 10 }}>
+            <Text style={{ flex: 1, fontSize: rf(14), fontWeight: '800', color: '#111111' }}>Buy Deliveries</Text>
+            <Text style={{ fontSize: rf(13), fontWeight: '800', color: '#01AC77' }}>{buyOpen} active ›</Text>
+          </TouchableOpacity>
+        ) : null}
         <View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {DATE_FILTERS.map((d) => {

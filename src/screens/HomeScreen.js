@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, Image, ActivityIndicator, useWindowDimensions, Text as RNText } from 'react-native';
+import { AppState, RefreshControl, View, TouchableOpacity, ScrollView, Image, ActivityIndicator, useWindowDimensions, Text as RNText } from 'react-native';
 import { Text } from '../components/Typography';
 import { interFamily } from '../theme/typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -42,7 +42,7 @@ import {
 import { listMyTickets, listTicketEvents } from '../api/tickets';
 import { listMyAssignedPickups } from '../api/pickups';
 import { bucketOf } from '../utils/pickups';
-import { loadRepairDone } from '../utils/repairDone';
+import { jobStage, isLiveStage, isAwaitingAccept } from '../utils/jobStage';
 import { listTechnicianWorkStatuses } from '../api/master';
 import { effectiveLateMinutes } from './DailyAttendanceScreen';
 import { loadUnreadNotificationCount } from './NotificationsScreen';
@@ -51,6 +51,7 @@ import { useLogout } from '../auth/LogoutContext';
 import { notify } from '../components/confirm';
 import { userMessage } from '../utils/userMessages';
 import CheckoutReminder from '../components/CheckoutReminder';
+import PickupSoonPopup from '../components/PickupSoonPopup';
 import MyTasksShortcut from '../components/MyTasksShortcut';
 import { syncCheckoutAlarm, cancelCheckoutAlarm } from '../utils/checkoutAlarm';
 import { CalendarModal, parseISO, toISO } from '../components/DatePickerField';
@@ -144,24 +145,14 @@ const EVENT_INDEX = Object.fromEntries(CANONICAL_EVENT_ORDER.map((k, i) => [k, i
 // done, not jump forward to a phase the technician didn't perform.
 const TECHNICIAN_CAP_INDEX = EVENT_INDEX.REPAIR_COMPLETED;
 
-// Task summary cards (above Quick Access). Buckets mirror the rules the task
-// screens already use:
-//   Recent Assigned — assigned to me but not yet accepted/started (same
-//                     `needsAccept` rule as TaskAssignScreen).
-//   Completed       — READY / DELIVERED (work done; shop-side handover).
-//   Pending         — everything else accepted and still open
-//                     (CREATED, IN_DIAGNOSIS, QUOTED, APPROVED, IN_REPAIR…).
-// CANCELLED tickets are excluded from all three.
-const TASK_FINAL_STATUSES = new Set(['DELIVERED', 'CANCELLED']);
-const TASK_COMPLETED_STATUSES = new Set(['READY', 'INVOICE_GENERATED', 'INVOICE_READY', 'DELIVERED_PROCESSING', 'DELIVERED']);
+// Task summary cards (above Quick Access): the same sections as My Jobs
+// (utils/jobStage), so each count is exactly what its My Jobs section lists:
+//   Assigned  — not accepted yet (Assigned + Reassigned)
+//   Pending   — accepted but waiting (approval / spare parts / Quality Check)
+//   Completed — Quality Check done or the shop's handover
+// In Process and Cancelled jobs are in none of the three.
 const TASK_POLL_MS = 30000;
-function taskBucket(t) {
-  const s = String(t?.status || '').toUpperCase();
-  if (s === 'CANCELLED') return null;
-  if (!t?.technicianAcceptedAt && !TASK_FINAL_STATUSES.has(s)) return 'assigned';
-  if (TASK_COMPLETED_STATUSES.has(s) || t?.repairDone) return 'completed';
-  return 'pending';
-}
+const EVENT_BATCH = 8;
 // Seen "Recent Assigned" ticket ids, stored per user so a shared device
 // doesn't leak one employee's read-state into another's badge.
 const seenAssignedKey = (userKey) => `ggfix.home.seenAssignedTasks.${userKey || 'anon'}`;
@@ -375,7 +366,26 @@ export default function HomeScreen({ navigation }) {
   const brk = useBreak(userKey);
   const [seenAssigned, setSeenAssigned] = useState(null); // Set | null (not loaded yet)
   const [tasksLoaded, setTasksLoaded] = useState(false);
-  const [repairDoneById, setRepairDoneById] = useState({});
+  // Booking events of the accepted, still-open jobs — what decides In Process
+  // vs Pending vs Completed. One pass at a time (polls don't stack up).
+  const [eventsById, setEventsById] = useState({});
+  const eventsBusy = useRef(false);
+  const loadStageEvents = useCallback(async (items) => {
+    if (eventsBusy.current) return;
+    eventsBusy.current = true;
+    try {
+      const ids = items.filter((t) => t?.id != null && t.technicianAcceptedAt && isLiveStage(jobStage(t))).map((t) => t.id);
+      const out = {};
+      for (let i = 0; i < ids.length; i += EVENT_BATCH) {
+        const chunk = ids.slice(i, i + EVENT_BATCH);
+        const rows = await Promise.all(chunk.map((id) => listTicketEvents(id).catch(() => null)));
+        chunk.forEach((id, j) => { if (Array.isArray(rows[j])) out[id] = rows[j]; });
+      }
+      setEventsById((prev) => ({ ...prev, ...out }));
+    } finally {
+      eventsBusy.current = false;
+    }
+  }, []);
 
   const reloadTickets = useCallback(async () => {
     try {
@@ -384,8 +394,7 @@ export default function HomeScreen({ navigation }) {
       setTickets(items);
       setTasksLoaded(true);
       setErrors((s) => (s.tickets ? { ...s, tickets: undefined } : s));
-      // Repair Completed counts the job as done without waiting for the shop.
-      loadRepairDone(items).then(setRepairDoneById);
+      loadStageEvents(items);
     } catch (e) {
       setErrors((s) => ({ ...s, tickets: e?.message || 'Could not load tasks' }));
     } finally {
@@ -418,8 +427,21 @@ export default function HomeScreen({ navigation }) {
       .catch(() => {});
     loadPickups();
     const id = setInterval(loadPickups, TASK_POLL_MS);
-    return () => { active = false; clearInterval(id); };
+    // Back from the background: fresh list at once (pickup reminder popup).
+    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') loadPickups(); });
+    return () => { active = false; clearInterval(id); sub.remove(); };
   }, [isPickupPerson]));
+  // Pull to refresh: tickets, attendance and (pickup person) pickups.
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const onPullRefresh = useCallback(async () => {
+    setPullRefreshing(true);
+    try {
+      await Promise.allSettled([
+        reloadTickets(), reloadAttendance(),
+        isPickupPerson ? listMyAssignedPickups().then((rows) => setPickups(Array.isArray(rows) ? rows : [])) : null,
+      ]);
+    } finally { setPullRefreshing(false); }
+  }, [reloadTickets, reloadAttendance, isPickupPerson]);
   const pickupSummary = useMemo(() => {
     const list = pickups || [];
     const count = (bucket) => list.filter((b) => bucketOf(b.status) === bucket).length;
@@ -431,20 +453,20 @@ export default function HomeScreen({ navigation }) {
     let pending = 0;
     let completed = 0;
     tickets.forEach((t) => {
-      const b = taskBucket(repairDoneById[t.id] ? { ...t, repairDone: true } : t);
-      if (b === 'assigned') { if (t?.id != null) assignedIds.push(String(t.id)); }
-      else if (b === 'pending') pending += 1;
-      else if (b === 'completed') completed += 1;
+      const stage = jobStage(t, eventsById[t.id]);
+      if (isAwaitingAccept(stage)) { if (t?.id != null) assignedIds.push(String(t.id)); }
+      else if (stage === 'Pending') pending += 1;
+      else if (stage === 'Completed') completed += 1;
     });
     const unseen = seenAssigned ? assignedIds.filter((id) => !seenAssigned.has(id)).length : 0;
     return { assigned: assignedIds.length, assignedIds, pending, completed, unseen };
-  }, [tickets, seenAssigned, repairDoneById]);
+  }, [tickets, seenAssigned, eventsById]);
 
   const openRecentAssigned = () => {
     const ids = taskSummary.assignedIds;
     setSeenAssigned(new Set(ids));
     writeSeenAssigned(userKey, ids);
-    navigation.navigate('TaskAssign');
+    navigation.navigate('TaskReport', { filter: 'Assigned', refreshAt: Date.now() });
   };
 
   // Button toggles based on today's row:
@@ -739,6 +761,7 @@ export default function HomeScreen({ navigation }) {
         style={{ backgroundColor: C.bg }}
         contentContainerStyle={{ alignItems: 'center', paddingBottom: rs(12) }}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={pullRefreshing} onRefresh={onPullRefresh} colors={['#035C6C']} tintColor="#035C6C" />}
       >
         <View style={{ width: contentW, paddingHorizontal: pad }}>
           {/* 2. Greeting + date (left), location card (right) */}
@@ -818,15 +841,30 @@ export default function HomeScreen({ navigation }) {
             </View>
           </TouchableOpacity>
 
+          {/* Deliveries are pickup-person work: hidden for technicians. */}
+          {isPickupPerson ? (
+          <>
           {/* Shop → customer Buy deliveries (marketplace /staff/buy-orders). */}
           <TouchableOpacity
             onPress={() => navigation.navigate('BuyDeliveries')}
             accessibilityRole="button"
             style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, padding: rs(12), marginTop: rs(12), ...shadow(0.04, 8, 2, 1) }}
           >
-            <RNText style={{ flex: 1, fontSize: rf(14), fontWeight: '700', color: C.text }}>My Deliveries</RNText>
+            <RNText style={{ flex: 1, fontSize: rf(14), fontWeight: '700', color: C.text }}>Order Deliveries</RNText>
             <RNText style={{ fontSize: rf(12), fontWeight: '700', color: C.primary }}>Shop pickup → Customer ›</RNText>
           </TouchableOpacity>
+
+          {/* Repaired devices back to the customer (ticket-service /technicians/me/repair-deliveries). */}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('RepairDeliveries')}
+            accessibilityRole="button"
+            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, padding: rs(12), marginTop: rs(10), ...shadow(0.04, 8, 2, 1) }}
+          >
+            <RNText style={{ flex: 1, fontSize: rf(14), fontWeight: '700', color: C.text }}>Service Delivery</RNText>
+            <RNText style={{ fontSize: rf(12), fontWeight: '700', color: C.primary }}>Repaired device → Customer ›</RNText>
+          </TouchableOpacity>
+          </>
+          ) : null}
 
           {/* 3b. Job Overview — counts per bucket; red dot = new unseen assignments */}
           <SectionTitle title="Job Overview" />
@@ -953,6 +991,7 @@ export default function HomeScreen({ navigation }) {
         accentSoft={C.greenTint}
       />
       <CheckoutReminder onDuty={hasCheckedIn && !hasCheckedOut} />
+      {isPickupPerson ? <PickupSoonPopup pickups={pickups} navigation={navigation} /> : null}
     </SafeAreaView>
   );
 }

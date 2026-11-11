@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  View, ScrollView, TouchableOpacity, ActivityIndicator, Image, Modal, Pressable, Linking, AppState, StyleSheet,
+  View, RefreshControl, ScrollView, TouchableOpacity, ActivityIndicator, Image, Modal, Pressable, Linking, AppState, StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -51,6 +51,9 @@ export default function TaskDetailsScreen({ navigation, route }) {
   const [photoAt, setPhotoAt] = useState(-1);
   const inFlight = useRef(false);
 
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const onPullRefresh = async () => { setPullRefreshing(true); try { await loadRef.current?.(); } finally { setPullRefreshing(false); } };
+  const loadRef = useRef(null);
   const load = useCallback(async () => {
     if (!taskId) return;
     try {
@@ -66,6 +69,7 @@ export default function TaskDetailsScreen({ navigation, route }) {
       setLoading(false);
     }
   }, [taskId]);
+  loadRef.current = load;
 
   useFocusEffect(useCallback(() => {
     load();
@@ -183,7 +187,8 @@ export default function TaskDetailsScreen({ navigation, route }) {
           </TouchableOpacity>
         ) : null}
       />
-      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={pullRefreshing} onRefresh={onPullRefresh} colors={['#035C6C']} tintColor="#035C6C" />}>
         {/* Title, category, status, priority */}
         <View style={s.card}>
           <View style={s.row}>

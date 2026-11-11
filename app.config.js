@@ -37,6 +37,9 @@ export default {
       adaptiveIcon: { foregroundImage: './assets/logo.png', backgroundColor: '#202124' },
       // Checkout SOS alarm: exact timing at 6:30 PM + survive reboot.
       permissions: ['SCHEDULE_EXACT_ALARM', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE', 'POST_NOTIFICATIONS'],
+      // Pickup reminder map (react-native-maps). Expo Go has its own key; dev /
+      // release builds need a Maps SDK for Android key (EAS env, never in git).
+      ...(process.env.GOOGLE_MAPS_ANDROID_API_KEY ? { config: { googleMaps: { apiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY } } } : {}),
     },
     plugins: [
       // Checkout SOS alarm sound (src/utils/checkoutAlarm.js), bundled as a native resource.

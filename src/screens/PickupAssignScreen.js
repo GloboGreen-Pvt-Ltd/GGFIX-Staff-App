@@ -368,7 +368,7 @@ function PickupActions({ booking, onHistory, onVerify }) {
 
 // Section title with a count; an empty section is a single muted line.
 // onClear (filtered list): a "Show all" link back to the normal sections.
-function Section({ title, icon: Icon, color, count, empty, onClear, children }) {
+export function Section({ title, icon: Icon, color, count, empty, onClear, children }) {
   return (
     <View style={styles.section}>
       <View style={styles.sectionHead}>

@@ -5,7 +5,8 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Clock, Laptop, ScanLine, Search, 
 import { rf, rlh, rs } from '../utils/responsive';
 import { interFamily } from '../theme/typography';
 import { resolveDeviceImageSource } from '../utils/images';
-import { listModelsForBrand } from '../api/master';
+import { listBrands, listModelsForBrand } from '../api/master';
+import Svg, { Defs, LinearGradient as SvgGradient, Path, Rect, Stop } from 'react-native-svg';
 
 // The Partner app's Job Report look (header, month bar, gradient status rail,
 // picture job card), shared by Job Assign and My Jobs / Job Report.
@@ -138,7 +139,9 @@ const RAIL_RADIUS = rs(15);
 // noBorder: only the selected tile is outlined.
 // softBorder: unselected tiles get a faint edge in their colour and the
 // selected one a 2pt border in its colour (Partner Job Report rail).
-export function GradientTile({ icon: Icon, tone, label, count, sub, active, onPress, compact, selectTeal, noBorder, softBorder, style }) {
+// labelSize: the rail's shared label size (useUniformLabel) — set, the label
+// no longer shrinks on its own; onLabelWidth reports the room the label has.
+export function GradientTile({ icon: Icon, tone, label, count, sub, active, onPress, compact, selectTeal, noBorder, softBorder, plain, style, labelSize, onLabelWidth }) {
   const t = typeof tone === 'string' ? (RAIL_TONES[tone] || RAIL_TONES.teal) : tone;
   const tealSel = selectTeal && active;
   // My Jobs rail (softBorder): a much lighter tint, a touch more on the selected tile.
@@ -156,8 +159,9 @@ export function GradientTile({ icon: Icon, tone, label, count, sub, active, onPr
       style={[s.railTile, compact && s.tileCompact, {
         borderRadius: radius,
         // Solid top colour under the gradient so the Android elevation shadow renders.
-        backgroundColor: fill.top,
-        borderColor: softBorder && !active ? (fill.edge || toneOf(fill.color).edge) : fill.color,
+        backgroundColor: plain ? KIT.white : fill.top,
+        // plain (My Jobs): white tile, gray borders; the selected one darker / heavier.
+        borderColor: plain ? (active ? '#9CA3AF' : KIT.line) : softBorder && !active ? (fill.edge || toneOf(fill.color).edge) : fill.color,
         // Thin border; the selected filter's is a touch heavier.
         borderWidth: active ? (tealSel ? 1.8 : softBorder ? 2 : 1.6) : (noBorder ? 0 : 1),
         shadowColor: fill.color,
@@ -165,24 +169,25 @@ export function GradientTile({ icon: Icon, tone, label, count, sub, active, onPr
         ...(softBorder ? { shadowColor: '#111111', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 } : null),
       }, style]}
     >
-      <GradientFill tone={fill} radius={radius} />
+      {plain ? null : <GradientFill tone={fill} radius={radius} />}
       <View>
         <View style={[s.railDisc, { width: disc, height: disc, borderRadius: disc / 2, backgroundColor: t.color }]}>
           <Icon size={compact ? rs(13) : rs(15)} color={KIT.white} strokeWidth={2.5} />
         </View>
         {count != null && count !== '' ? (
-          <View style={[s.railBadge, compact && s.badgeCompact, { borderColor: t.color }]}>
-            <KText size={compact ? 9 : 10} weight="800" color={t.color} numberOfLines={1}>{typeof count === 'number' && count > 99 ? '99+' : count}</KText>
+          <View style={[s.railBadge, compact && s.badgeCompact, { borderColor: plain ? KIT.line : t.color }]}>
+            <KText size={compact ? 9 : 10} weight="800" color={plain ? KIT.ink : t.color} numberOfLines={1}>{typeof count === 'number' && count > 99 ? '99+' : count}</KText>
           </View>
         ) : null}
       </View>
       <KText
-        size={compact ? 10 : 11.5}
+        size={labelSize || (compact ? 10 : 11.5)}
         weight="800"
-        color={t.color}
+        color={plain ? KIT.ink : t.color}
         numberOfLines={1}
-        adjustsFontSizeToFit
+        adjustsFontSizeToFit={!labelSize}
         minimumFontScale={0.7}
+        onLayout={onLabelWidth ? (e) => onLabelWidth(e.nativeEvent.layout.width) : undefined}
         style={[s.center, { marginTop: compact ? rs(4) : rs(5), alignSelf: 'stretch' }]}
       >
         {label}
@@ -210,9 +215,38 @@ export function useSidebarWidth() {
 //   items: [{ key, label, icon, tone | color, count?, sub?, onPress? }]
 //   A tile is tappable when it has onPress, or when onPick is given and the
 //   item isn't `static` (summary-only tiles such as hours or amounts).
+// One label size for a whole rail: the largest (up to `base`) at which the
+// longest label still fits a tile, so every tile's text is the same size.
+// Each label is measured at `base` in a hidden probe; tiles report the room.
+const LABEL_BASE = 11.5;
+function useUniformLabel(labels, base = LABEL_BASE) {
+  const [natural, setNatural] = useState({});
+  const [room, setRoom] = useState(0);
+  const ready = room > 0 && labels.every((l) => natural[l]);
+  const widest = Math.max(0, ...labels.map((l) => natural[l] || 0));
+  // 0.96: a little slack so rounding never ends in an ellipsis.
+  const size = !ready ? undefined
+    : widest <= room * 0.96 ? base : Math.floor(((base * room * 0.96) / widest) * 2) / 2;
+  const probe = (
+    <View pointerEvents="none" style={s.labelProbe}>
+      {labels.map((l) => (
+        <KText key={l} size={base} weight="800" numberOfLines={1}
+          onLayout={(e) => { const w = e.nativeEvent.layout.width; setNatural((p) => (p[l] === w ? p : { ...p, [l]: w })); }}>
+          {l}
+        </KText>
+      ))}
+    </View>
+  );
+  // The narrowest tile decides (the selected one has a thicker border).
+  return { size, probe, onLabelWidth: (w) => setRoom((p) => (p && p <= w ? p : w)) };
+}
+
 export function LeftVerticalSidebar({ items, active, onPick }) {
   const width = useSidebarWidth();
+  const label = useUniformLabel(items.map((it) => String(it.label)));
   return (
+    <>
+    {label.probe}
     <ScrollView style={[s.rail, { width }]} contentContainerStyle={s.railContent} showsVerticalScrollIndicator={false}>
       {items.map((it) => {
         const press = it.onPress || (onPick && !it.static ? () => onPick(it.key) : undefined);
@@ -226,11 +260,15 @@ export function LeftVerticalSidebar({ items, active, onPick }) {
             sub={it.sub}
             active={active === it.key}
             softBorder
+            plain
             onPress={press}
+            labelSize={label.size}
+            onLabelWidth={label.onLabelWidth}
           />
         );
       })}
     </ScrollView>
+    </>
   );
 }
 
@@ -244,23 +282,29 @@ export function SidebarLayout({ sidebar, children }) {
   );
 }
 
-function RailTile({ item, count, active, onPress, noBorder, softBorder }) {
+function RailTile({ item, count, active, onPress, noBorder, softBorder, plain, labelSize, onLabelWidth }) {
   return (
     <GradientTile
       icon={item.icon} tone={item.tone} label={item.label} count={count} active={active} onPress={onPress}
-      noBorder={noBorder} softBorder={softBorder}
+      noBorder={noBorder} softBorder={softBorder} plain={plain} labelSize={labelSize} onLabelWidth={onLabelWidth}
     />
   );
 }
 
 // items: [{ key, label, icon, tone }]; counts: { [key]: n }.
-export function JobRail({ items, counts, active, onPick, noBorder, softBorder }) {
+// Every rail uses the My Jobs look by default (white tile, grey edge, soft shadow).
+export function JobRail({ items, counts, active, onPick, noBorder, softBorder = true, plain = true }) {
+  const label = useUniformLabel(items.map((it) => String(it.label)));
   return (
+    <>
+    {label.probe}
     <ScrollView style={s.rail} contentContainerStyle={s.railContent} showsVerticalScrollIndicator={false}>
       {items.map((it) => (
-        <RailTile key={it.key} item={it} count={counts[it.key] ?? 0} active={active === it.key} onPress={() => onPick(it.key)} noBorder={noBorder} softBorder={softBorder} />
+        <RailTile key={it.key} item={it} count={counts[it.key] ?? 0} active={active === it.key} onPress={() => onPick(it.key)} noBorder={noBorder} softBorder={softBorder} plain={plain}
+          labelSize={label.size} onLabelWidth={label.onLabelWidth} />
       ))}
     </ScrollView>
+    </>
   );
 }
 
@@ -271,18 +315,62 @@ const LAPTOP_RE = /(laptop|notebook|macbook|chromebook|thinkpad|ideapad|vivobook
 
 // brandId → Promise<models[]>, shared by every card so each brand is fetched once.
 const modelsByBrand = new Map();
+const norm = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ');
+// One catalogue brands list, for rows that carry brand / model names but no ids (sell pickups).
+let brandsList = null;
+function brandIdByName(name) {
+  if (!brandsList) brandsList = listBrands().catch(() => { brandsList = null; return []; });
+  return brandsList.then((all) => (all || []).find((b) => norm(b.name) === norm(name))?.id || null);
+}
 function modelImageFor(ticket) {
-  if (!ticket?.brandId || !ticket?.modelId) return Promise.resolve(null);
-  if (!modelsByBrand.has(ticket.brandId)) {
-    modelsByBrand.set(ticket.brandId, listModelsForBrand(ticket.brandId).catch(() => {
-      modelsByBrand.delete(ticket.brandId);
-      return [];
-    }));
-  }
-  return modelsByBrand.get(ticket.brandId).then((models) => {
-    const m = (models || []).find((x) => x.id === ticket.modelId);
-    return resolveDeviceImageSource({ url: m?.imageUrl, base64: m?.imageBase64 });
+  const byIds = !!(ticket?.brandId && ticket?.modelId);
+  if (!byIds && !(ticket?.brandName && ticket?.modelName)) return Promise.resolve(null);
+  return (byIds ? Promise.resolve(ticket.brandId) : brandIdByName(ticket.brandName)).then((brandId) => {
+    if (!brandId) return null;
+    if (!modelsByBrand.has(brandId)) {
+      modelsByBrand.set(brandId, listModelsForBrand(brandId).catch(() => {
+        modelsByBrand.delete(brandId);
+        return [];
+      }));
+    }
+    return modelsByBrand.get(brandId).then((models) => {
+      const list = models || [];
+      const want = norm(ticket.modelName);
+      const full = norm(`${ticket.brandName} ${ticket.modelName}`);
+      // By id; else the exact name (catalogue names may carry the brand: "Apple iPhone 11 Pro"),
+      // else one ending with it, else the longest catalogue name inside it.
+      const m = byIds ? list.find((x) => x.id === ticket.modelId)
+        : list.find((x) => norm(x.name) === want || norm(x.name) === full)
+          || list.find((x) => norm(x.name).endsWith(` ${want}`))
+          || list.filter((x) => x.name && full.includes(norm(x.name))).sort((a, b) => b.name.length - a.name.length)[0];
+      return resolveDeviceImageSource({ url: m?.imageUrl, base64: m?.imageBase64 });
+    });
   });
+}
+
+// Default device picture when the card has no image (e.g. a pickup not yet accepted).
+function DefaultDeviceArt({ laptop, tone }) {
+  return laptop ? (
+    <Svg width="100%" height="100%" viewBox="0 0 100 70" preserveAspectRatio="xMidYMid meet">
+      <Defs><SvgGradient id="lapScreen" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor="#E5F3F5" /><Stop offset="1" stopColor="#FFFFFF" /></SvgGradient></Defs>
+      <Rect x="14" y="6" width="72" height="48" rx="5" fill={tone} />
+      <Rect x="18" y="10" width="64" height="40" rx="2.5" fill="url(#lapScreen)" />
+      <Rect x="26" y="18" width="22" height="4" rx="2" fill={tone} opacity="0.25" />
+      <Rect x="26" y="26" width="40" height="4" rx="2" fill={tone} opacity="0.15" />
+      <Path d="M6 58 H94 L88 64 H12 Z" fill={tone} opacity="0.85" />
+    </Svg>
+  ) : (
+    <Svg width="100%" height="100%" viewBox="0 0 60 100" preserveAspectRatio="xMidYMid meet">
+      <Defs><SvgGradient id="phoneScreen" x1="0" y1="0" x2="0" y2="1"><Stop offset="0" stopColor="#E5F3F5" /><Stop offset="1" stopColor="#FFFFFF" /></SvgGradient></Defs>
+      <Rect x="8" y="2" width="44" height="96" rx="10" fill={tone} />
+      <Rect x="12" y="9" width="36" height="82" rx="6" fill="url(#phoneScreen)" />
+      <Rect x="24" y="4.5" width="12" height="2.4" rx="1.2" fill="#FFFFFF" opacity="0.6" />
+      {[0, 1, 2].map((r) => [0, 1, 2].map((c) => (
+        <Rect key={`${r}${c}`} x={16 + c * 10} y={18 + r * 11} width="7" height="7" rx="2" fill={tone} opacity={0.12 + ((r + c) % 3) * 0.06} />
+      )))}
+      <Rect x="16" y="78" width="28" height="5" rx="2.5" fill={tone} opacity="0.2" />
+    </Svg>
+  );
 }
 
 export function DevicePhoto({ ticket, tone = KIT.teal }) {
@@ -304,10 +392,10 @@ export function DevicePhoto({ ticket, tone = KIT.teal }) {
     let alive = true;
     modelImageFor(ticket).then((x) => { if (alive) setSrc(x); });
     return () => { alive = false; };
-  }, [ticket.id, ticket.brandId, ticket.modelId, direct]);
+  }, [ticket.id, ticket.brandId, ticket.modelId, ticket.brandName, ticket.modelName, direct]);
   return src && !failed
     ? <Image source={{ uri: src }} style={s.picImg} resizeMode="contain" onError={() => setFailed(true)} />
-    : <DevIcon size={rs(28)} color={tone} strokeWidth={1.8} />;
+    : <View style={s.picImg}><DefaultDeviceArt laptop={DevIcon === Laptop} tone={tone} /></View>;
 }
 
 // ---------------------------------------------------------------------------
@@ -333,9 +421,7 @@ export function JobPictureCard({
         <View style={[s.picBox, compact && s.picBoxCompact]}>
           <DevicePhoto ticket={ticket} tone={tabColor} />
         </View>
-        <TouchableOpacity onPress={onPress} hitSlop={4} activeOpacity={0.7} accessibilityLabel="View job" style={s.viewPill}>
-          <KText size={11.5} weight="800" color={KIT.teal} style={{ letterSpacing: 0.5 }}>VIEW</KText>
-        </TouchableOpacity>
+        {/* No VIEW button: the whole card opens the job. */}
       </View>
       <View style={s.rule} />
 
@@ -395,6 +481,8 @@ const s = StyleSheet.create({
   monthMid: { flex: 1, alignItems: 'center', paddingHorizontal: rs(6) },
 
   rail: { width: rs(74), flexGrow: 0, backgroundColor: KIT.white, borderRightWidth: 1, borderRightColor: KIT.line },
+  // Off-screen, unconstrained: each label laid out at its natural width.
+  labelProbe: { position: 'absolute', top: 0, left: -2000, width: 1500, opacity: 0, alignItems: 'flex-start' },
   sideRow: { flex: 1, flexDirection: 'row' },
   sideMain: { flex: 1, minWidth: 0 },
   railContent: { paddingHorizontal: rs(5), paddingTop: rs(10), paddingBottom: rs(20), gap: rs(9) },

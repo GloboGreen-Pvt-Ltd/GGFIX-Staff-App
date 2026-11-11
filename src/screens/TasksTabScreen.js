@@ -14,7 +14,7 @@ export default function TasksTabScreen({ navigation }) {
           Jump straight into your assigned tickets.
         </Text>
         <Pressable
-          onPress={() => navigation.navigate('TaskAssign')}
+          onPress={() => navigation.navigate('TaskReport', { filter: 'Assigned', refreshAt: Date.now() })}
           className="mt-4 bg-primary rounded-xl px-6 py-3"
         >
           <Text className="text-white font-bold">Open My Tickets</Text>

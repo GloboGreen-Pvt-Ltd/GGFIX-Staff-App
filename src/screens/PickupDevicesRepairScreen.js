@@ -533,7 +533,7 @@ export default function PickupDevicesRepairScreen({ navigation, route }) {
   };
   const pickTime = (ms) => { setDeliveryMs(ms); setTimeSheet(false); };
   const onContinue = () => {
-    if (goingRef.current || uploading || !ready) return; // photos + IMEI are required (see `ready`)
+    if (goingRef.current || uploading || !ready) return; // photos are required, IMEI optional (see `ready`)
     const selected = [
       ...[...pickedIds].map((id) => {
         const s = serviceById[id]; const r = ensureRow(id);
@@ -542,11 +542,7 @@ export default function PickupDevicesRepairScreen({ navigation, route }) {
       ...customIssues.map((c) => ({ serviceId: null, serviceCode: null, serviceName: c.name, price: priceNum(c.price), warranty: c.warranty || null })),
     ];
     if (selected.length === 0) return;
-    const missing = selected.find((x) => !(x.price > 0) && !(x.serviceId && seed.idSeed.has(x.serviceId)));
-    if (missing) {
-      notify('Price required', `Enter a price for ${missing.serviceName || 'the selected issue'}.`, { type: 'error' });
-      return;
-    }
+    // Prices are optional (Partner "Not Estimated"): an issue without one goes on at ₹0.
     // Partner complaintText rule: notes, else the selected issue names; accessories as a final line.
     const complaintText = [
       notes.trim() || selected.map((x) => x.serviceName).filter(Boolean).join(', '),
@@ -675,17 +671,17 @@ export default function PickupDevicesRepairScreen({ navigation, route }) {
     { key: 'gallery', label: 'Gallery', icon: 'photo-library', off: !canAddPhoto, busy: photoBusy, onPress: () => addPhoto(false) },
     { key: 'video', label: 'Video', icon: 'videocam', off: !!photos.video, busy: uploading === 'video', onPress: addVideo },
   ];
-  // Required: a repair issue, both device photos (front + back; video stays
-  // optional) and, for phones, a valid IMEI (14–17 digits, the Partner rule).
+  // Required: a repair issue and both device photos (front + back; video stays
+  // optional). The IMEI is optional — when typed it must be valid (14–17 digits, the Partner rule).
   const photosOk = !!photos.front && !!photos.back;
   const photoCount = [photos.front, photos.back].filter(Boolean).length;
   const imeiDigits = imei.replace(/\D/g, '');
-  const imeiOk = !showImei || (imeiDigits.length >= 14 && imeiDigits.length <= 17);
+  const imeiOk = !showImei || !imeiDigits.length || (imeiDigits.length >= 14 && imeiDigits.length <= 17);
   const ready = totalSelected > 0 && !uploading && photosOk && imeiOk;
   const missingHint = uploading ? 'Uploading device media…'
     : totalSelected === 0 ? 'Select at least one repair issue.'
       : !photosOk ? `Add ${2 - photoCount} more device ${2 - photoCount === 1 ? 'photo' : 'photos'} (front and back).`
-        : !imeiOk ? 'Enter the device IMEI (15 digits).' : '';
+        : !imeiOk ? 'Enter a valid IMEI (15 digits) or leave it empty.' : '';
 
   return (
     <View style={{ flex: 1, backgroundColor: EST.white }}>
@@ -779,6 +775,15 @@ export default function PickupDevicesRepairScreen({ navigation, route }) {
 
               {totalSelected > 0 ? (
                 <View style={{ marginTop: 10 }}>
+                  {(() => {
+                    const est = [...pickedIds].reduce((t, id) => t + priceNum(ensureRow(id).price), 0) + customIssues.reduce((t, c) => t + priceNum(c.price), 0);
+                    return (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <EText style={[sectionTitle, { marginBottom: 0 }]}>Selected Services ({totalSelected})</EText>
+                        <EText style={{ fontSize: 14, fontWeight: '700', color: est > 0 ? EST.primary : EST.muted }}>{est > 0 ? `₹${est.toLocaleString('en-IN')}` : 'Not Estimated'}</EText>
+                      </View>
+                    );
+                  })()}
                   {[...pickedIds].map((id) => {
                     const s = serviceById[id];
                     if (!s) return null;
@@ -857,7 +862,7 @@ export default function PickupDevicesRepairScreen({ navigation, route }) {
             {/* IMEI */}
             {showImei ? (
               <View style={{ paddingHorizontal: 16, paddingTop: 16 }}>
-                <EText style={sectionTitle}>IMEI Number<EText style={{ color: EST.red }}> *</EText></EText>
+                <EText style={sectionTitle}>IMEI Number<EText style={{ color: EST.muted, fontWeight: '600' }}> (Optional)</EText></EText>
                 <View style={{ flexDirection: 'row', alignItems: 'center', height: 46, borderWidth: 1, borderColor: imeiDigits.length && !imeiOk ? EST.red : EST.border, borderRadius: 12, backgroundColor: EST.white, paddingLeft: 12, paddingRight: 6 }}>
                   <Barcode size={20} color={EST.text} strokeWidth={1.75} />
                   <ETextInput

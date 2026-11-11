@@ -525,6 +525,48 @@ function fmt(v) {
  * side — left and right of a fork — and both are always drawn, greyed out until
  * reached, so the technician can see which way the job went and which way it didn't.
  */
+const RE_ESTIMATE_CODES = ['TECHNICIAN_REESTIMATE_REQUESTED', 'RE_ESTIMATED_CONFIRMED', 'RE_ESTIMATE_APPROVED', 'RE_ESTIMATE_REJECTED'];
+// Groups the re-estimate events into revisions (oldest first): a revision
+// starts at a technician request, or at a re-estimate once the previous one
+// already had a price. Rows: request · re-estimated · verdict (Pending while
+// open) · Repair Work in Progress after an approval.
+export function reEstimateRevisionRows(events) {
+  const t = (e) => new Date(e?.createdAt || 0).getTime();
+  const list = (events || []).filter((e) => e?.status).slice().sort((a, b) => t(a) - t(b));
+  const revs = [];
+  let cur = null;
+  list.forEach((e) => {
+    const k = String(e.status).toUpperCase();
+    if (k === 'TECHNICIAN_REESTIMATE_REQUESTED') {
+      if (!cur || cur.estimated) { cur = { request: e }; revs.push(cur); } else if (!cur.request) cur.request = e;
+    } else if (k === 'RE_ESTIMATED_CONFIRMED') {
+      if (!cur || cur.estimated) { cur = {}; revs.push(cur); }
+      cur.estimated = e;
+    } else if (cur?.estimated && !cur.verdict && (k === 'RE_ESTIMATE_APPROVED' || k === 'RE_ESTIMATE_REJECTED')) {
+      cur.verdict = e;
+    } else if (cur?.verdict && !cur.resumed && k === 'REPAIR_WORK_RESUMED') {
+      cur.resumed = e;
+    }
+  });
+  const multi = revs.length > 1;
+  return revs.flatMap((r, i) => {
+    const n = i + 1;
+    const tag = multi ? ` (Revision ${n})` : '';
+    const last = i === revs.length - 1;
+    const rejected = String(r.verdict?.status || '').toUpperCase() === 'RE_ESTIMATE_REJECTED';
+    const rows = [];
+    if (r.request) rows.push({ value: `REV${n}_REQUESTED`, label: `Technician Re-Estimate Requested${tag}`, ev: r.request });
+    rows.push({ value: `REV${n}_ESTIMATED`, label: `Service Re-Estimated${tag}`, ev: r.estimated || null, open: last && !r.estimated });
+    if (!r.estimated) return rows;
+    rows.push({ value: `REV${n}_VERDICT`, ev: r.verdict || null, open: last && !r.verdict,
+      label: r.verdict ? `${rejected ? 'Re-Estimate Rejected by Customer' : 'Re-Estimate Approved by Customer'}${tag}`
+        : `Re-Estimate Approval Pending${tag}` });
+    // Approved: repair resumes (done at the approval when no resume row came).
+    if (r.verdict && !rejected) rows.push({ value: `REV${n}_RESUMED`, label: 'Repair Work in Progress', ev: r.resumed || r.verdict });
+    return rows;
+  });
+}
+
 export function ServiceHistoryTimeline({ events, status, phaseFilter }) {
   // Index events by status key. Keep the FIRST occurrence so the displayed
   // timestamp is when that state was entered, not when it was re-emitted.
@@ -539,10 +581,18 @@ export function ServiceHistoryTimeline({ events, status, phaseFilter }) {
   // (technician Service History). No filter = both phases, with the
   // walk-in-bookings hide rule kept below.
   // Optional rows (re-estimate) appear only once their event is on the booking.
+  // Re-estimate revisions: each one is its own set of rows, in order, so a
+  // Revision 2 never overwrites Revision 1 (see reEstimateRevisionRows).
+  const revRows = reEstimateRevisionRows(events);
+  revRows.forEach((r) => { if (r.ev) eventByStatus[r.value] = r.ev; });
   const visibleOptions = (phaseFilter
     ? SHOP_BOOKING_STATUS_OPTIONS.filter((o) => o.phase === phaseFilter)
     : SHOP_BOOKING_STATUS_OPTIONS
-  ).filter((o) => !o.optional || !!eventByStatus[o.value]);
+  ).flatMap((o) => {
+    if (!RE_ESTIMATE_CODES.includes(o.value)) return [o];
+    // All revision rows go where the first re-estimate row sits.
+    return o.value === RE_ESTIMATE_CODES[0] ? revRows.map((r) => ({ ...o, ...r, optional: false })) : [];
+  }).filter((o) => !o.optional || !!eventByStatus[o.value]);
 
   // Which of the two endings the booking actually took. The shared handover
   // tail (Out for Delivery, Invoice Generated) has a row under BOTH branches,
@@ -576,6 +626,12 @@ export function ServiceHistoryTimeline({ events, status, phaseFilter }) {
   const latestKey = (sortedByTime[0]?.status || '').toUpperCase();
   const latestMatches = visibleOptions.filter((o) => o.value === latestKey && rowCompleted(o));
   let currentRowId = latestMatches.length ? rowIdOf(latestMatches[latestMatches.length - 1]) : null;
+  // The latest revision's open step (pending approval / repair resuming) or
+  // its newest event is the ongoing one.
+  const openRev = revRows.find((r) => r.open);
+  const latestRev = revRows.find((r) => r.ev && r.ev === sortedByTime[0]);
+  if (openRev) currentRowId = openRev.value;
+  else if (latestRev) currentRowId = latestRev.value;
   if (!currentRowId) {
     visibleOptions.forEach((o) => { if (rowCompleted(o)) currentRowId = rowIdOf(o); });
   }

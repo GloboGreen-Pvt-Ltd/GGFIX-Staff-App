@@ -7,7 +7,7 @@ import { rf } from '../utils/responsive';
 export default function TechnicianDashboardScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TaskAssign')}>
+      <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('TaskReport', { filter: 'Assigned', refreshAt: Date.now() })}>
         <Text style={styles.cardTitle}>My Assigned Tickets</Text>
       </TouchableOpacity>
     </SafeAreaView>

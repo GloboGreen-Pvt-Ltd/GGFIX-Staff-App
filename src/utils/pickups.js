@@ -299,6 +299,14 @@ export function slotStartAt(b) {
   return new Date(y, mo - 1, d, Math.floor(m / 60), m % 60);
 }
 
+/** Accepting a pickup opens this many minutes before its slot (server: SellPickupController). */
+export const ACCEPT_LEAD_MIN = 5;
+/** When this pickup can be accepted; null = no date + slot, so no time limit. */
+export function acceptOpensAt(b) {
+  const t = slotStartAt(b);
+  return t ? new Date(t.getTime() - ACCEPT_LEAD_MIN * 60000) : null;
+}
+
 /** "27 Oct, 14:05" (year only when not this year) — for narrow card lines. */
 export function fmtShortStamp(v) {
   const d = toDate(v);

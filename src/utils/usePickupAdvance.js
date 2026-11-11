@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { acceptPickup, getPickupRepairEstimate, getSellEvaluation, updatePickupStatus } from '../api/pickups';
 import { confirm, notify } from '../components/confirm';
 import { readPickupPersonLocation } from './pickupLocation';
-import { nextStepFor } from './pickups';
+import { ACCEPT_LEAD_MIN, acceptOpensAt, nextStepFor } from './pickups';
 import { isSafeText, userMessage } from './userMessages';
 
 // "Next step" for a pickup booking (My Pickups cards + Pickup Details). The
@@ -15,6 +15,15 @@ export default function usePickupAdvance({ navigation, onDone }) {
   const advance = useCallback(async (booking) => {
     const next = nextStepFor(booking);
     if (!next || inFlight.current) return;
+    // Accepting opens ACCEPT_LEAD_MIN minutes before the scheduled pickup time — never earlier.
+    if (next.action === 'accept' || next.combined) {
+      const from = acceptOpensAt(booking);
+      if (from && Date.now() < from.getTime()) {
+        const when = from.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+        notify('Too early to accept', `You can accept this pickup from ${when} (${ACCEPT_LEAD_MIN} minutes before the pickup time).`, { type: 'warning' });
+        return;
+      }
+    }
     // The journey opens 1 hour before the scheduled pickup time (server: startAllowedAt).
     if (next.code === 'PICKUP_ON_THE_WAY' && next.action !== 'accept') {
       const from = booking.startAllowedAt ? new Date(booking.startAllowedAt) : null;
@@ -126,9 +135,13 @@ export default function usePickupAdvance({ navigation, onDone }) {
         await onDone?.();
       } catch (e) {
         const code = e?.payload?.code;
-        notify(code === 'STALE_STATUS' || code === 'NOT_ASSIGNED' ? 'Pickup changed' : 'Could not accept pickup',
-          code === 'STALE_STATUS' || code === 'NOT_ASSIGNED' ? 'This pickup was updated by the shop. Refreshing…' : userMessage(e, 'Please try again.'),
-          { type: 'error' });
+        if (code === 'TOO_EARLY') {
+          notify('Too early to accept', isSafeText(e.payload.message) ? e.payload.message : `Accept from ${ACCEPT_LEAD_MIN} minutes before the pickup time.`, { type: 'warning' });
+        } else {
+          notify(code === 'STALE_STATUS' || code === 'NOT_ASSIGNED' ? 'Pickup changed' : 'Could not accept pickup',
+            code === 'STALE_STATUS' || code === 'NOT_ASSIGNED' ? 'This pickup was updated by the shop. Refreshing…' : userMessage(e, 'Please try again.'),
+            { type: 'error' });
+        }
         await onDone?.();
       } finally {
         inFlight.current = false;

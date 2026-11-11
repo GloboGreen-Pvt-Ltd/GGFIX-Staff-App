@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Camera, CheckCircle2, CheckSquare, MapPin, Navigation, Phone, Square, Store, X } from 'lucide-react-native';
 import { confirm, notify } from '../../components/confirm';
 import { uploadMedia } from '../../api/media';
+import { deviceShapeOf } from '../sell/conditionArt';
 import { DELIVERY_STATUS, DELIVERY_TABS, deliveryAction, getDelivery, listMyDeliveries } from '../../api/buyDeliveries';
 import { Button, Card, Loader, Page, SC, SK, apiError, money } from './deliveryKit';
 
@@ -30,6 +31,7 @@ export default function BuyDeliveryScreen({ navigation, route }) {
   const [payRef, setPayRef] = useState('');
   const [reason, setReason] = useState('');
   const [imei, setImei] = useState('');
+  const otpRef = useRef(null);
   const [failOpen, setFailOpen] = useState(false);
   const [journey, setJourney] = useState(false);
   const [shown, setShown] = useState(false);
@@ -137,11 +139,20 @@ export default function BuyDeliveryScreen({ navigation, route }) {
   }
 
   const s = o.status;
+  // Phones carry an IMEI; laptops, tablets, watches a serial number.
+  const isPhone = deviceShapeOf(o.productTitle) === 'phone';
   const urls = photos.filter((p) => p.url).map((p) => p.url);
   const uploading = photos.some((p) => p.busy);
+  const cashOk = !!amount && Number(amount) === Number(o.totalAmount);
+  const deliverMissing = [
+    !cashOk ? 'Tap “Cash collected” after taking the exact amount' : null,
+    otp.length !== 4 ? 'Enter the 4-digit customer OTP' : null,
+    urls.length < MIN_PHOTOS || uploading ? `Add ${MIN_PHOTOS} delivery photos` : null,
+    !shown ? 'Confirm the product was shown to the customer' : null,
+  ].filter(Boolean);
   const CHECKS = [
     ['model', 'Product & model match the order'],
-    ['imei', 'IMEI / serial checked on the device'],
+    ['imei', isPhone ? 'IMEI checked on the device' : 'Serial number checked on the device'],
     ['qty', `Quantity is ${o.quantity || 1}`],
     ['cond', 'Condition matches the listing'],
   ];
@@ -251,9 +262,17 @@ ${o.shopAddress}` : ''}</Text>
                 <Text style={{ fontSize: 13, color: SK.ink }}>{label}</Text>
               </Pressable>
             ))}
-            {input({ placeholder: o.productImeiRequired ? 'IMEI on the device (required)' : 'IMEI / serial (optional)', value: imei, autoCapitalize: 'characters', onChangeText: (t) => setImei(t.replace(/\s/g, '')) })}
+            {input({
+              placeholder: isPhone ? `15-digit IMEI${o.productImeiRequired ? ' (required)' : ' (optional)'}` : `Serial number${o.productImeiRequired ? ' (required)' : ' (optional)'}`,
+              value: imei,
+              keyboardType: isPhone ? 'number-pad' : 'default',
+              maxLength: isPhone ? 15 : 30,
+              autoCapitalize: 'characters',
+              onChangeText: (t) => setImei(isPhone ? t.replace(/\D/g, '') : t.replace(/[^A-Za-z0-9-]/g, '').toUpperCase()),
+            })}
+            {imei && isPhone && imei.length !== 15 ? <Text style={{ fontSize: 11, color: SC.red, marginTop: 4 }}>IMEI must be 15 digits</Text> : null}
             {photoBlock(`Pickup photos (min ${MIN_PHOTOS})`)}
-            <Button title="Confirm Pickup" loading={busy === 'pickup'} disabled={!!busy || !verified || urls.length < MIN_PHOTOS || uploading || (o.productImeiRequired && !imei)} style={{ marginTop: 12 }}
+            <Button title="Confirm Pickup" loading={busy === 'pickup'} disabled={!!busy || !verified || urls.length < MIN_PHOTOS || uploading || (o.productImeiRequired && !imei) || (isPhone && !!imei && imei.length !== 15)} style={{ marginTop: 12 }}
               onPress={() => run('pickup', { productVerified: true, imei: imei || undefined, photos: urls }, 'Pickup confirmed')} />
           </Card>
         ) : null}
@@ -266,18 +285,52 @@ ${o.shopAddress}` : ''}</Text>
 
         {s === 'OUT_FOR_DELIVERY' ? (
           <Card title="At customer — payment & handover">
-            <Text style={{ fontSize: 13, color: MUTED }}>Collect exactly {money(o.totalAmount)} in cash, then enter the customer's 4-digit order OTP.</Text>
-            {input({ placeholder: `Amount collected (${o.totalAmount})`, keyboardType: 'number-pad', value: amount, onChangeText: (t) => setAmount(t.replace(/[^\d.]/g, '')) })}
-            {input({ placeholder: 'Customer OTP', keyboardType: 'number-pad', maxLength: 4, value: otp, onChangeText: (t) => setOtp(t.replace(/\D/g, '')) })}
-            {input({ placeholder: 'Payment note (optional)', value: payRef, onChangeText: setPayRef })}
+            {/* 1 · Collect cash: the exact order total, confirmed with one tap. */}
+            <View style={{ borderRadius: 16, backgroundColor: cashOk ? '#E6F7F0' : '#FFF7E6', padding: 14, flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, color: MUTED }}>Cash to collect</Text>
+                <Text style={{ fontSize: 26, fontWeight: '800', color: SK.ink, marginTop: 2 }}>{money(o.totalAmount)}</Text>
+                <Text style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>Cash on delivery · exact amount</Text>
+              </View>
+              <Pressable onPress={() => setAmount(cashOk ? '' : String(Number(o.totalAmount)))} accessibilityRole="checkbox" accessibilityState={{ checked: cashOk }}
+                style={{ paddingHorizontal: 14, height: 40, borderRadius: 20, flexDirection: 'row', alignItems: 'center', backgroundColor: cashOk ? SC.green : '#FFFFFF', borderWidth: 1.5, borderColor: SC.green }}>
+                {cashOk ? <CheckSquare size={16} color="#FFFFFF" /> : <Square size={16} color={SC.green} />}
+                <Text style={{ marginLeft: 6, fontSize: 13, fontWeight: '800', color: cashOk ? '#FFFFFF' : SC.green }}>{cashOk ? 'Collected' : 'Cash collected'}</Text>
+              </Pressable>
+            </View>
+
+            {/* 2 · Customer OTP in four boxes */}
+            <Text style={{ fontSize: 13, fontWeight: '800', color: SK.ink, marginTop: 14 }}>Customer OTP</Text>
+            <Text style={{ fontSize: 11.5, color: MUTED }}>Ask the customer for the 4-digit code in their app.</Text>
+            <Pressable onPress={() => otpRef.current?.focus()} style={{ flexDirection: 'row', gap: 10, marginTop: 8 }} accessibilityLabel="Customer OTP">
+              {[0, 1, 2, 3].map((k) => (
+                <View key={k} style={{ width: 52, height: 52, borderRadius: 14, borderWidth: k === otp.length ? 2 : 1, borderColor: k === otp.length ? SK.teal : SK.line, backgroundColor: '#F6F7F9', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 22, fontWeight: '800', color: SK.ink }}>{otp[k] || ''}</Text>
+                </View>
+              ))}
+              <TextInput ref={otpRef} value={otp} onChangeText={(t) => setOtp(t.replace(/\D/g, '').slice(0, 4))} keyboardType="number-pad" maxLength={4}
+                textContentType="oneTimeCode" style={{ position: 'absolute', opacity: 0, width: 1, height: 1 }} />
+            </Pressable>
+
+            {/* 3 · Proof photos */}
             {photoBlock(`Delivery proof photos (min ${MIN_PHOTOS})`)}
+
+            {/* 4 · Product shown */}
             <Pressable onPress={() => setShown((v) => !v)} accessibilityRole="checkbox" accessibilityState={{ checked: shown }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, marginTop: 6 }}>
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, marginTop: 6 }}>
               {shown ? <CheckSquare size={20} color={SC.green} /> : <Square size={20} color={MUTED} />}
               <Text style={{ fontSize: 13, color: SK.ink }}>Product shown & verified with the customer</Text>
             </Pressable>
+
+            {input({ placeholder: 'Note (optional)', value: payRef, onChangeText: setPayRef })}
+
+            {deliverMissing.length ? (
+              <View style={{ marginTop: 10 }}>
+                {deliverMissing.map((m) => <Text key={m} style={{ fontSize: 11.5, color: SK.amber || '#B54708' }}>• {m}</Text>)}
+              </View>
+            ) : null}
             <Button title="Complete Delivery" variant="success" loading={busy === 'deliver'}
-              disabled={!!busy || !amount || otp.length !== 4 || urls.length < MIN_PHOTOS || uploading || !shown} style={{ marginTop: 12 }}
+              disabled={!!busy || deliverMissing.length > 0} style={{ marginTop: 12 }}
               onPress={() => run('deliver', { amountCollected: amount, otp, paymentRef: payRef.trim() || undefined, photos: urls }, 'Delivery completed')} />
           </Card>
         ) : null}

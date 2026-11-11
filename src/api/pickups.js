@@ -55,11 +55,13 @@ export async function listMyAssignedPickups(status) {
 }
 
 // What an employee may see of a pickup before accepting it: the assignment
-// itself (ID, schedule, status, assignee, events for "reassigned"). Customer,
-// contact, address, device, photos and prices are left out.
+// itself (ID, schedule, status, assignee, events for "reassigned") and the
+// device's catalogue image (brand / model ids + model image) so the card shows
+// the device. Customer, contact, address, customer photos and prices are left out.
 const PREVIEW_FIELDS = [
   'id', 'bookingNumber', 'shopId', 'serviceMode', 'status', 'pickupDate', 'pickupSlotStart', 'pickupSlotEnd',
   'assignedPickupPersonId', 'pickupPersonName', 'createdAt', 'updatedAt', 'events', 'accepted', 'acceptedAt',
+  'brandId', 'modelId', 'deviceImageUrl', 'modelImageUrl', 'deviceImageBase64', 'modelImageBase64',
 ];
 function previewOf(b) {
   const out = { preview: true };

@@ -4,8 +4,12 @@ import { Text } from '../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   Bell, Wrench, CalendarCheck2, CalendarX2, CalendarClock, Timer,
-  ShieldCheck, BadgeCheck, CircleCheck, CircleX, RefreshCw, FileText, ListChecks, CalendarClock as TaskClock,
+  ShieldCheck, BadgeCheck, CircleCheck, CircleX, RefreshCw, FileText, ListChecks, CalendarClock as TaskClock, Truck, PackageCheck, IndianRupee,
 } from 'lucide-react-native';
+import { listMyAssignedPickups } from '../api/pickups';
+import { DELIVERY_STATUS, listMyDeliveries } from '../api/buyDeliveries';
+import { listRepairDeliveries } from '../api/repairDeliveries';
+import { eventLabel, sortEvents, trackingId } from '../utils/pickups';
 import { listMyStaffTasks } from '../api/staffTasks';
 import { taskNotification, taskReminder, dayKey } from '../utils/staffTasks';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,7 +17,7 @@ import { listMyTickets } from '../api/tickets';
 import { getMyTechnicianProfile, getMyLeaves } from '../api/technician';
 import { rf } from '../utils/responsive';
 
-const FILTERS = ['All', 'Jobs', 'Tasks', 'Attendance'];
+const FILTERS = ['All', 'Jobs', 'Pickups', 'Tasks', 'Attendance'];
 const POLL_MS = 15000; // refresh while the screen is open so status changes show quickly
 
 // NearGFix palette, same as Home / Ticket Detail.
@@ -125,6 +129,64 @@ function leaveNotification(l) {
   };
 }
 
+// Pickup updates: one per event on my pickups (assignment, acceptance, each
+// step, reassignment / cancellation by the shop), plus a sell pickup's revised
+// price decided by the shop owner.
+const PICKUP_TITLE = {
+  PICKUP_PERSON_ASSIGNED: 'New Pickup Assigned', PICKUP_ASSIGNED: 'New Pickup Assigned', PICKUP_REASSIGNED: 'Pickup Reassigned to You',
+  PICKUP_ACCEPTED: 'Pickup Accepted', CANCELLED: 'Pickup Cancelled',
+};
+function pickupNotifications(b) {
+  const ref = trackingId(b).replace(/^#/, '');
+  const out = sortEvents(b.events).filter((e) => e?.createdAt).map((e) => {
+    const s = String(e.status || '').toUpperCase();
+    return {
+      id: `pickup:${b.id}:${e.id || s}:${e.createdAt}`,
+      kind: 'pickup',
+      tone: s === 'CANCELLED' ? 'red' : PICKUP_TITLE[s] && s !== 'PICKUP_ACCEPTED' ? 'new' : s === 'RECEIVED_AT_SHOP' ? 'done' : 'blue',
+      title: PICKUP_TITLE[s] || `Pickup · ${eventLabel(s)}`,
+      body: [ref, e.note].filter(Boolean).join(' · '),
+      createdAt: e.createdAt,
+      bookingId: b.id,
+    };
+  });
+  const rev = b.kind === 'SELL' ? b.revision : null;
+  if (rev && (rev.status === 'SHOP_APPROVED' || rev.status === 'SHOP_REJECTED') && b.updatedAt) {
+    const ok = rev.status === 'SHOP_APPROVED';
+    out.push({
+      id: `pickup:${b.id}:revision:${rev.status}:${rev.amount}`,
+      kind: 'pickup',
+      tone: ok ? 'green' : 'red',
+      title: ok ? 'Revised Price Approved by Shop' : 'Revised Price Rejected by Shop',
+      body: [ref, rev.amount != null ? `₹${Number(rev.amount).toLocaleString('en-IN')}` : null, ok ? 'Ask the customer' : rev.shopNote].filter(Boolean).join(' · '),
+      createdAt: b.updatedAt,
+      bookingId: b.id,
+    });
+  }
+  return out;
+}
+
+// Delivery updates (Order Deliveries / Service Delivery): one per event, else the current status.
+function deliveryNotifications(d, kind) {
+  const buy = kind === 'buy';
+  const evs = Array.isArray(d.events) && d.events.length ? d.events
+    : [{ status: d.status, label: d.statusLabel, at: d.updatedAt || d.assignedAt || d.createdAt }];
+  return evs.filter((e) => e?.at).map((e) => {
+    const s = String(e.status || '').toUpperCase();
+    const label = e.label || DELIVERY_STATUS[s] || (s ? s.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase()) : 'Update');
+    return {
+      id: `${kind}:${d.id}:${s || label}:${e.at}`,
+      kind: 'delivery',
+      tone: s === 'ASSIGNED' ? 'new' : /FAIL|CANCEL/.test(s) ? 'red' : /DELIVERED|COMPLETED|RETURNED/.test(s) ? 'done' : 'blue',
+      title: s === 'ASSIGNED' ? `New ${buy ? 'Order' : 'Service'} Delivery Assigned` : `${buy ? 'Order' : 'Service'} Delivery · ${label}`,
+      body: [buy ? d.orderNumber : d.bookingNumber, buy ? d.productTitle : d.device, e.note].filter(Boolean).join(' · '),
+      createdAt: e.at,
+      route: buy ? 'BuyDelivery' : 'RepairDelivery',
+      deliveryId: d.id,
+    };
+  });
+}
+
 async function loadReadIds() {
   try {
     const raw = await AsyncStorage.getItem(READ_KEY);
@@ -139,7 +201,8 @@ async function loadReadIds() {
 // misleading "all caught up".
 async function buildFeed() {
   let failures = 0;
-  const [page, me, staffTasks] = await Promise.all([
+  const asList = (r) => (Array.isArray(r) ? r : (Array.isArray(r?.content) ? r.content : []));
+  const [page, me, staffTasks, pickups, buyDeliveries, repairDeliveries] = await Promise.all([
     listMyTickets({ page: 0, size: 20 }).catch(() => { failures += 1; return null; }),
     getMyTechnicianProfile().catch(() => null),
     // Staff tasks are optional: a server without them simply adds nothing.
@@ -147,6 +210,10 @@ async function buildFeed() {
       from: dayKey(new Date(Date.now() - 14 * 86400000)),
       to: dayKey(new Date(Date.now() + 30 * 86400000)),
     }).catch(() => []),
+    // Pickups and deliveries: empty for staff who have none (or a server without them).
+    listMyAssignedPickups().catch(() => []),
+    listMyDeliveries().then(asList).catch(() => []),
+    listRepairDeliveries().then(asList).catch(() => []),
   ]);
   const tickets = Array.isArray(page?.content) ? page.content : (Array.isArray(page) ? page : []);
   let leaves = [];
@@ -161,6 +228,9 @@ async function buildFeed() {
     ...leaves.map(leaveNotification),
     ...staffTasks.map(taskNotification),
     ...staffTasks.map((t) => taskReminder(t)),
+    ...(pickups || []).flatMap(pickupNotifications),
+    ...buyDeliveries.flatMap((d) => deliveryNotifications(d, 'buy')),
+    ...repairDeliveries.flatMap((d) => deliveryNotifications(d, 'repair')),
   ].filter((n) => n && n.createdAt);
   items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   return { items, failed: failures >= 2 && items.length === 0 };
@@ -219,6 +289,10 @@ export default function NotificationsScreen({ navigation }) {
       navigation.navigate('LeaveReport', { type: 'PERMISSION' });
     } else if (n.kind === 'task' && n.taskId) {
       navigation.navigate('TaskDetails', { taskId: n.taskId });
+    } else if (n.kind === 'pickup' && n.bookingId) {
+      navigation.navigate('PickupDetails', { bookingId: n.bookingId });
+    } else if (n.kind === 'delivery' && n.deliveryId) {
+      navigation.navigate(n.route, { id: n.deliveryId });
     }
   };
 
@@ -227,6 +301,7 @@ export default function NotificationsScreen({ navigation }) {
     // Jobs = ticket updates; Attendance = leave and permission requests.
     if (filter === 'Jobs') return items.filter((n) => n.kind === 'ticket');
     if (filter === 'Tasks') return items.filter((n) => n.kind === 'task');
+    if (filter === 'Pickups') return items.filter((n) => n.kind === 'pickup' || n.kind === 'delivery');
     return items.filter((n) => n.kind === 'leave' || n.kind === 'permission');
   }, [items, filter]);
 
@@ -273,7 +348,7 @@ export default function NotificationsScreen({ navigation }) {
             {loadFailed ? "Couldn't load notifications" : "You're all caught up"}
           </Text>
           <Text style={{ fontSize: rf(12), color: C.muted, marginTop: 4, textAlign: 'center' }}>
-            {loadFailed ? 'Check your connection and try again.' : "We'll show job updates and attendance requests here."}
+            {loadFailed ? 'Check your connection and try again.' : "We'll show job, pickup, delivery and attendance updates here."}
           </Text>
           {loadFailed ? (
             <TouchableOpacity onPress={onRefresh} activeOpacity={0.85} style={{ marginTop: 14, backgroundColor: C.green, borderRadius: 999, paddingHorizontal: 22, paddingVertical: 8 }}>
@@ -336,6 +411,12 @@ function iconFor(n) {
     if (n.leaveStatus === 'APPROVED') return { Icon: CalendarCheck2, color: C.lime, bg: C.limeTint };
     if (n.leaveStatus === 'REJECTED') return { Icon: CalendarX2, color: C.red, bg: C.redTint };
     return { Icon: CalendarClock, color: C.yellowInk, bg: C.yellowTint };
+  }
+  if (n.kind === 'pickup' || n.kind === 'delivery') {
+    if (n.tone === 'red') return { Icon: CircleX, color: C.red, bg: C.redTint };
+    if (n.tone === 'done') return { Icon: PackageCheck, color: C.lime, bg: C.limeTint };
+    if (n.tone === 'green') return { Icon: IndianRupee, color: C.lime, bg: C.limeTint };
+    return { Icon: Truck, color: n.tone === 'new' ? C.blue : C.green, bg: n.tone === 'new' ? C.blueTint : C.greenTint };
   }
   // Job updates, by tone.
   if (n.tone === 'new') return { Icon: ShieldCheck, color: C.blue, bg: C.blueTint };

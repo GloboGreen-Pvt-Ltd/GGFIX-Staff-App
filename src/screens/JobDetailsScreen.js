@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { markNotificationsSeen } from './NotificationsScreen';
-import { View, ScrollView, TouchableOpacity, Image, ActivityIndicator, Pressable, Platform, Alert, Animated, AppState, Modal, Easing, KeyboardAvoidingView, PanResponder } from 'react-native';
+import { View, RefreshControl, ScrollView, TouchableOpacity, Image, ActivityIndicator, Pressable, Platform, Alert, Animated, AppState, Modal, Easing, KeyboardAvoidingView, PanResponder } from 'react-native';
 import { Text, TextInput } from '../components/Typography';
 import { interFamily } from '../theme/typography';
 import * as ImagePicker from 'expo-image-picker';
@@ -16,7 +16,7 @@ import DatePickerField, { toISO } from '../components/DatePickerField';
 import {
   getTicket, setTechnicianPhotos, addRepairNote, updateRepairNote, listRepairNotes,
   listTicketEvents, postProgressEvent, acceptTicket,
-  requestReEstimate, acknowledgeReEstimate,
+  requestReEstimate, acknowledgeReEstimate, listReEstimates,
 } from '../api/tickets';
 import { ticketApi } from '../api/client';
 import { autoStartRepair } from '../utils/autoProgress';
@@ -202,7 +202,7 @@ const DEFAULT_PROGRESS_NOTE = {
 const COMPLETION_MESSAGES = {
   QUALITY_CHECK_COMPLETED: 'Your work is completed!',
 };
-const COMPLETION_SUBTITLE = 'Job moved to Completed. Redirecting to Job Report...';
+const COMPLETION_SUBTITLE = 'Job moved to Completed. Redirecting to My Jobs...';
 const COMPLETION_REDIRECT_MS = 1000;
 
 function parseJsonArray(raw) {
@@ -538,19 +538,29 @@ function deviceParts(ticket) {
   }
   const parts = raw.split(/[·•|]/).map(clean).filter(Boolean);
   if (!storage) storage = parts.slice(2).join(' / ');
+  // "LG LG Q60" (brand + a model name that already starts with it) → "LG Q60".
+  const dedupe = (s) => s.replace(/^(\S+)\s+\1(?=\s|$)/i, '$1');
   return {
-    name: parts[0] || [ticket?.brandName, ticket?.modelName].filter(Boolean).join(' ') || '—',
+    name: dedupe(parts[0] || [ticket?.brandName, ticket?.modelName].filter(Boolean).join(' ')) || '—',
     number: parts[1] || '—',
     storage: clean(storage.replace(/\s*\/\s*/g, ' / ')) || '—',
   };
 }
 
+// The issue text without booking / delivery / approval details typed into it —
+// those have their own rows (from the booking fields, not the text).
+const ISSUE_META = /^(booking\s*time|booked(\s*(at|on))?|expected\s*delivery|estimated\s*delivery|delivery\s*(date|time)?|customer\s*approval|approval)\s*[:\-–]/i;
+function issueText(ticket) {
+  const raw = String(ticket?.issueDescription || ticket?.repairServicesSummary || '');
+  return raw.split(/\n|\s+[|·]\s+/).map((x) => x.trim()).filter((x) => x && !ISSUE_META.test(x)).join('\n') || '—';
+}
+
 // One label → value line of a listing card (value may wrap freely).
-function InfoLine({ label, value, first }) {
+function InfoLine({ label, value, first, color }) {
   return (
     <View className="flex-row" style={{ marginTop: first ? 0 : 5 }}>
       <Text style={{ width: rs(96), fontSize: rf(11.5), color: C.muted }}>{label}</Text>
-      <Text style={{ flex: 1, fontSize: rf(12), fontWeight: '700', color: C.ink }}>{value}</Text>
+      <Text style={{ flex: 1, fontSize: rf(12), fontWeight: '700', color: color || C.ink }}>{value}</Text>
     </View>
   );
 }
@@ -738,6 +748,76 @@ function CompletionPopup({ visible, title, subtitle, durationMs, onClose, onActi
   );
 }
 
+// Re-estimate history: every revision (Revision 1, 2, …) oldest first, each
+// with its status, details and the technician / revision photos.
+const RE_TONE = {
+  REQUESTED: { label: 'Requested', bg: '#FFF4DB', fg: '#B45309' },
+  AWAITING_APPROVAL: { label: 'Pending Approval', bg: '#FFF4DB', fg: '#B45309' },
+  APPROVED: { label: 'Approved', bg: '#EDF4E7', fg: '#476B26' },
+  REJECTED: { label: 'Rejected', bg: '#FDEBEA', fg: '#C81E1A' },
+};
+const inr = (n) => (n == null || n === '' || Number.isNaN(Number(n)) ? null : `₹${Number(n).toLocaleString('en-IN')}`);
+function ReEstimateHistory({ ticketId, refreshKey }) {
+  const [revs, setRevs] = useState([]);
+  const [viewer, setViewer] = useState(null);
+  useEffect(() => {
+    if (!ticketId) return undefined;
+    let active = true;
+    listReEstimates(ticketId)
+      .then((rows) => { if (active) setRevs((Array.isArray(rows) ? rows : []).slice().sort((a, b) => (a.revisionNo || 0) - (b.revisionNo || 0))); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [ticketId, refreshKey]);
+  if (!revs.length) return null;
+  return (
+    <View style={{ marginTop: 6, borderRadius: 10, padding: 8, borderWidth: 1, backgroundColor: C.surface, borderColor: C.border }}>
+      <Text className="font-bold" style={{ fontSize: rf(11), color: C.ink }}>Service Re-Estimate History</Text>
+      {revs.map((r, idx) => {
+        const st = String(r.status || '').toUpperCase();
+        const tone = RE_TONE[st] || { label: st || '—', bg: '#F3F4F6', fg: C.muted };
+        const photos = [...new Set([...(r.requestImages || []), ...(r.revisionImages || [])]
+          .filter((u) => typeof u === 'string' && u.trim()))];
+        const lines = [
+          r.additionalIssue ? `Issue: ${r.additionalIssue}` : null,
+          r.reason ? `Reason: ${r.reason}` : null,
+          inr(r.proposedAmount) ? `Proposed: ${inr(r.proposedAmount)}` : null,
+          inr(r.revisedTotal) ? `Revised Total: ${inr(r.revisedTotal)}` : null,
+          r.revisionReason ? `Shop Note: ${r.revisionReason}` : null,
+          r.decisionReason ? `Remarks: ${r.decisionReason}` : null,
+        ].filter(Boolean);
+        const when = r.decidedAt || r.submittedAt || r.requestedAt;
+        return (
+          <View key={r.id || idx} style={{ marginTop: 8, paddingTop: idx ? 8 : 0, borderTopWidth: idx ? 1 : 0, borderTopColor: C.border }}>
+            <View className="flex-row items-center">
+              <Text className="font-bold" style={{ flex: 1, fontSize: rf(10.5), color: C.ink }}>Revision {r.revisionNo || idx + 1}</Text>
+              <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: tone.bg }}>
+                <Text className="font-bold" style={{ fontSize: rf(9.5), color: tone.fg }}>{tone.label}</Text>
+              </View>
+            </View>
+            {when ? <Text style={{ fontSize: rf(9.5), color: C.muted, marginTop: 2 }}>{new Date(when).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit' })}</Text> : null}
+            {lines.map((l) => <Text key={l} style={{ fontSize: rf(10.5), color: C.ink, marginTop: 2 }}>{l}</Text>)}
+            {photos.length ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingTop: 6 }}>
+                {photos.map((u, i) => (
+                  <Pressable key={`${u}-${i}`} onPress={() => setViewer({ photos, i })} accessibilityRole="imagebutton" accessibilityLabel={`Revision photo ${i + 1}`}>
+                    <Image source={{ uri: u }} style={{ width: 52, height: 52, borderRadius: 8, backgroundColor: '#E5E7EB' }} />
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : null}
+          </View>
+        );
+      })}
+      <ImageViewerModal
+        visible={!!viewer}
+        images={(viewer?.photos || []).map((u, i) => ({ uri: u, label: `Re-estimate photo ${i + 1}` }))}
+        index={viewer?.i || 0}
+        onClose={() => setViewer(null)}
+      />
+    </View>
+  );
+}
+
 export default function JobDetailsScreen({ route, navigation }) {
   const { ticketId } = route.params || {};
   // Bottom padding below the scroll content clears the system nav bar.
@@ -830,6 +910,9 @@ export default function JobDetailsScreen({ route, navigation }) {
     if (tickRef.current) clearInterval(tickRef.current);
   }, []);
 
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const onPullRefresh = async () => { setPullRefreshing(true); try { await loadRef.current?.(); } finally { setPullRefreshing(false); } };
+  const loadRef = useRef(null);
   const load = useCallback(async () => {
     if (!ticketId) { setLoading(false); return; } // else the spinner never clears
     setLoading(true);
@@ -851,6 +934,7 @@ export default function JobDetailsScreen({ route, navigation }) {
       setLoading(false);
     }
   }, [ticketId, markSync]);
+  loadRef.current = load;
 
   useEffect(() => { load(); }, [load]);
 
@@ -1079,6 +1163,14 @@ export default function JobDetailsScreen({ route, navigation }) {
     setCompletedBanner(false);
     navigation.popTo('TaskReport', { filter: 'Completed', refreshAt: Date.now() });
   }, [navigation]);
+  // Quality Check saved (the popup only opens after the API succeeds) → back
+  // to My Jobs on Completed once the redirect bar has filled; Close stays here.
+  // Only the repair QC — no Ready / Delivered is posted from this app.
+  useEffect(() => {
+    if (!completedBanner) return undefined;
+    const id = setTimeout(goToCompletedJobs, COMPLETION_REDIRECT_MS);
+    return () => clearTimeout(id);
+  }, [completedBanner, goToCompletedJobs]);
 
   const submitProgress = useCallback(async (row, lockReason) => {
     if (lockReason) {
@@ -1859,7 +1951,10 @@ export default function JobDetailsScreen({ route, navigation }) {
     issueCategory: null,
     issueSubcategory: null,
     deviceName: ticket?.deviceDisplayName || null,
-  }), [ticket?.brandId, ticket?.modelId, ticket?.brandName, ticket?.modelName, ticket?.deviceDisplayName]);
+    // Upload New pre-fills the issue and shows "From Job: <ref>".
+    issue: ticket ? (issueText(ticket) === '—' ? '' : issueText(ticket)) : '',
+    jobRef: ticket ? ticketRef(ticket) : null,
+  }), [ticket]);
 
   const openReferenceView = () => {
     navigation.navigate('SolutionPackReferenceView', { ticketId, defaults: solutionPackDefaults });
@@ -2284,6 +2379,8 @@ export default function JobDetailsScreen({ route, navigation }) {
 
       {reEstimateBanner}
 
+      <ReEstimateHistory ticketId={ticket?.id} refreshKey={`${ticket?.latestReEstimate?.id || ''}-${ticket?.latestReEstimate?.status || ''}-${ticket?.updatedAt || ''}`} />
+
       {/* Service Re-Estimate → Awaiting Customer Approval, with the customer's
           answer as it stands on the booking (stays as history once decided). */}
       {reStatus ? (
@@ -2619,7 +2716,8 @@ export default function JobDetailsScreen({ route, navigation }) {
     <View className="flex-1" style={{ backgroundColor: C.bg }}>
       <JobHeader navigation={navigation} sub={ticketRef(ticket)} />
       {/* No tab bar on this screen, so clear the system nav bar ourselves. */}
-      <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 10, paddingBottom: 32 + insets.bottom }} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} contentContainerStyle={{ padding: 10, paddingBottom: 32 + insets.bottom }} showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={pullRefreshing} onRefresh={onPullRefresh} colors={['#035C6C']} tintColor="#035C6C" />}>
         {/* Device card: photo, then Model Name / Model Number / Storage one per
             line, and the issue in full (no truncation). */}
         <Card>
@@ -2643,7 +2741,15 @@ export default function JobDetailsScreen({ route, navigation }) {
               <InfoLine first label="Model Name" value={deviceParts(ticket).name} />
               <InfoLine label="Model Number" value={deviceParts(ticket).number} />
               <InfoLine label="Storage" value={deviceParts(ticket).storage} />
-              <InfoLine label="Issue" value={ticket.issueDescription || ticket.repairServicesSummary || '—'} />
+              <InfoLine label="Issue" value={issueText(ticket)} />
+              <InfoLine label="Booking Time" value={fmtDateTime(ticket.createdAt) || '—'} />
+              <InfoLine label="Expected Delivery" value={fmtDateTime(ticket.estimatedDeliveryAt || ticket.estimatedReadyAt) || '—'} />
+              {/* Verified status only (approval events / the booking's customerApproval flag), never the description text. */}
+              {(() => {
+                const approved = estimateApproval.approvalIsCurrent || (!estimateApproval.approved && ticket.customerApproval === true);
+                const st = estimateApproval.rejectedIsCurrent ? { t: 'Rejected', c: C.red } : approved ? { t: 'Approved', c: C.green } : { t: 'Pending', c: C.yellowInk };
+                return <InfoLine label="Customer Approval" value={st.t} color={st.c} />;
+              })()}
             </View>
           </View>
         </Card>
@@ -2667,18 +2773,22 @@ export default function JobDetailsScreen({ route, navigation }) {
               {devicePhotos.length === 0 ? (
                 <Text className="font-bold mt-0.5" style={{ fontSize: rf(12), color: C.muted }}>No images uploaded yet</Text>
               ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
-                  <View className="flex-row">
-                    {devicePhotos.map((url, i) => (
-                      <Pressable key={i} onPress={() => setPhotoAt(i)}>
-                        <Image
-                          source={{ uri: url }}
-                          style={{ width: 56, height: 62, borderRadius: 10, marginRight: 8, backgroundColor: C.surface }}
-                        />
-                      </Pressable>
-                    ))}
-                  </View>
-                </ScrollView>
+                <>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 6 }}>
+                    <View className="flex-row">
+                      {devicePhotos.map((url, i) => (
+                        <Pressable key={i} onPress={() => setPhotoAt(i)} accessibilityRole="imagebutton" accessibilityLabel={`Customer device image ${i + 1}, open full screen`}>
+                          <Image
+                            source={{ uri: url }}
+                            resizeMode="cover"
+                            style={{ width: 64, height: 64, borderRadius: 10, marginRight: 8, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border }}
+                          />
+                        </Pressable>
+                      ))}
+                    </View>
+                  </ScrollView>
+                  <Text style={{ fontSize: rf(10), color: C.muted, marginTop: 4 }}>{devicePhotos.length} photo{devicePhotos.length === 1 ? '' : 's'} · tap to view full screen</Text>
+                </>
               )}
             </View>
           </View>
@@ -2795,7 +2905,7 @@ export default function JobDetailsScreen({ route, navigation }) {
             value={note}
             onChangeText={setNote}
             multiline
-            placeholder="Describe the issue you verified — what was found, what's been updated, anything the customer should know."
+            placeholder="What did you find and fix?"
             placeholderTextColor={C.faint}
             style={{
               fontSize: rf(12), color: C.ink,
@@ -2897,8 +3007,8 @@ export default function JobDetailsScreen({ route, navigation }) {
                   <Text className="font-bold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>
                     Attach Photos <Text style={{ color: C.red }}>*</Text>
                   </Text>
-                  <Text className="font-bold" style={{ fontSize: rf(10), color: notePhotosNeeded ? C.muted : C.green }}>
-                    {filled}/3 · min {MIN_NOTE_PHOTOS}
+                  <Text className="font-bold" style={{ fontSize: rf(10), color: notePhotosNeeded ? C.red : C.green }}>
+                    {notePhotosNeeded ? `${filled}/${MIN_NOTE_PHOTOS} Required` : `${filled}/3 added`}
                   </Text>
                 </View>
                 <View className="flex-row -mx-1">

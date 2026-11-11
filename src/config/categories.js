@@ -23,7 +23,7 @@ export const CATEGORY_DEFS = {
   apply_permission: { label: 'Apply\nPermission', icon: Timer, route: 'PermissionApply' },
   leave_report:     { label: 'Leave\nReport', icon: ClipboardList, route: 'LeaveReport' },
   permission_report: { label: 'Permission\nReport', icon: ClipboardList, route: 'LeaveReport', params: { type: 'PERMISSION' } },
-  assign_task:      { label: 'Assign\nTask', icon: Laptop, route: 'TaskAssign' },
+  assign_task:      { label: 'Assign\nTask', icon: Laptop, route: 'TaskReport', params: { filter: 'Assigned' } },
   task_report:      { label: 'Job\nReport', icon: ListChecks, route: 'TaskReport' },
   assign_pickup:    { label: 'Assign\nPickup', icon: Truck, route: 'PickupAssign' },
   pickup_report:    { label: 'Pickup\nReport', icon: ScrollText, route: 'PickupReport' },

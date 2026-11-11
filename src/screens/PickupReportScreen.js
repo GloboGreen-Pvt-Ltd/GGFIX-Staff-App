@@ -290,12 +290,13 @@ function HeroArt() {
 function StatTile({ width, icon: Icon, value, label, tint }) {
   const dot = rs(34);
   return (
-    <View style={[styles.statTile, { width, backgroundColor: tint.bg, borderColor: tint.border }]}>
+    // My Jobs tile look: white tile, grey edge, coloured disc, dark label.
+    <View style={[styles.statTile, { width, backgroundColor: '#FFFFFF', borderColor: '#EFEFEF' }]}>
       <View style={{ width: dot, height: dot, borderRadius: dot / 2, backgroundColor: tint.dot, alignItems: 'center', justifyContent: 'center' }}>
         <Icon size={rs(17)} color="#FFFFFF" strokeWidth={2.4} />
       </View>
       <Text style={styles.statTileValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{value}</Text>
-      <Text style={[styles.statTileLabel, { color: tint.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{label}</Text>
+      <Text style={[styles.statTileLabel, { color: '#111111' }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{label}</Text>
     </View>
   );
 }
@@ -315,8 +316,9 @@ function PickupRow({ booking, bucket, onDetails, onHistory }) {
       : isInProcess ? `In Pickup Process On ${formatDateTime(booking.updatedAt || booking.createdAt)}`
         : `Completed On ${formatDateTime(booking.updatedAt || booking.createdAt)}`;
 
+  // No View Details button: tapping the card opens the pickup.
   return (
-    <View style={styles.taskCard}>
+    <TouchableOpacity style={styles.taskCard} onPress={onDetails} activeOpacity={0.9}>
       <View style={styles.taskAccent} />
       <View style={styles.taskInner}>
         <View style={styles.taskTopRow}>
@@ -333,18 +335,13 @@ function PickupRow({ booking, bucket, onDetails, onHistory }) {
           </View>
         </View>
         <View style={styles.taskActionsRow}>
-          <TouchableOpacity onPress={onDetails} style={styles.taskActionBtn} activeOpacity={0.8}>
-            <Ionicons name="document-text-outline" size={14} color={MINT.primary} />
-            <Text style={styles.taskActionText}>View Details</Text>
-          </TouchableOpacity>
-          <View style={styles.taskActionDivider} />
           <TouchableOpacity onPress={onHistory} style={styles.taskActionBtn} activeOpacity={0.8}>
             <Ionicons name="time-outline" size={14} color={MINT.primary} />
             <Text style={[styles.taskActionText, { color: MINT.primary }]}>Pickup History</Text>
           </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

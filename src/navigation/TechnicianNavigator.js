@@ -53,6 +53,8 @@ const TAB_FOR_ROUTE = {
   SellInspection: 'Tasks',
   BuyDeliveries: 'Tasks',
   BuyDelivery: 'Tasks',
+  RepairDeliveries: 'Tasks',
+  RepairDelivery: 'Tasks',
   SellPriceRevision: 'Tasks',
   SellCustomerConfirm: 'Tasks',
   SellPayment: 'Tasks',
@@ -62,6 +64,9 @@ const TAB_FOR_ROUTE = {
   UploadRepairImages: 'Tasks',
   SolutionPackUpload: 'Tasks',
   SolutionPackReferenceView: 'Tasks',
+  SolutionPackDetails: 'Tasks',
+  SolutionPacks: 'Account',
+  SolutionPackRecords: 'Account',
 
   AccountTab: 'Account',
   TechnicianProfile: 'Account',
@@ -117,6 +122,8 @@ const HIDE_BOTTOM_TAB_ROUTES = new Set([
   'SellInspection',
   'BuyDeliveries',
   'BuyDelivery',
+  'RepairDeliveries',
+  'RepairDelivery',
   'SellPriceRevision',
   'SellCustomerConfirm',
   'SellPayment',
@@ -126,8 +133,6 @@ const HIDE_BOTTOM_TAB_ROUTES = new Set([
   'Payslip',
   // Service-history rail has its own gradient hero + back chevron — no tab bar.
   'TechnicianBookingTimeline',
-  // Assign Report: full-screen list, no tab bar.
-  'TaskAssign',
   // Job Details: full-screen, no tab bar.
   'TechnicianTicketDetail',
 ]);
@@ -143,7 +148,6 @@ import DailyAttendanceScreen from '../screens/DailyAttendanceScreen';
 import DailyShiftScheduleScreen from '../screens/DailyShiftScheduleScreen';
 import MonthlySummaryScreen from '../screens/MonthlySummaryScreen';
 import LeaveReportScreen from '../screens/LeaveReportScreen';
-import TaskAssignScreen from '../screens/TaskAssignScreen';
 import JobReportScreen from '../screens/JobReportScreen';
 import PickupAssignScreen from '../screens/PickupAssignScreen';
 import PickupDetailsScreen from '../screens/PickupDetailsScreen';
@@ -172,6 +176,8 @@ import SellVerifyOtpScreen from '../screens/sell/SellVerifyOtpScreen';
 import SellCompareScreen from '../screens/sell/SellCompareScreen';
 import SellInspectionScreen from '../screens/sell/SellInspectionScreen';
 import BuyDeliveriesScreen from '../screens/delivery/BuyDeliveriesScreen';
+import RepairDeliveriesScreen from '../screens/delivery/RepairDeliveriesScreen';
+import RepairDeliveryScreen from '../screens/delivery/RepairDeliveryScreen';
 import BuyDeliveryScreen from '../screens/delivery/BuyDeliveryScreen';
 import SellPriceRevisionScreen from '../screens/sell/SellPriceRevisionScreen';
 import SellCustomerConfirmScreen from '../screens/sell/SellCustomerConfirmScreen';
@@ -189,6 +195,9 @@ import TechnicianApplyLeaveScreen from '../screens/TechnicianApplyLeaveScreen';
 import PermissionApplyScreen from '../screens/PermissionApplyScreen';
 import SolutionPackUploadScreen from '../screens/SolutionPackUploadScreen';
 import SolutionPackReferenceViewScreen from '../screens/SolutionPackReferenceViewScreen';
+import SolutionPacksHomeScreen from '../screens/SolutionPacksHomeScreen';
+import SolutionPackDetailsScreen from '../screens/SolutionPackDetailsScreen';
+import SolutionPackRecordsScreen from '../screens/SolutionPackRecordsScreen';
 import WorkExperienceScreen from '../screens/WorkExperienceScreen';
 import HelpSupportScreen from '../screens/HelpSupportScreen';
 import TechnicianKycIntroScreen from '../screens/TechnicianKycIntroScreen';
@@ -264,7 +273,6 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="DailyShiftSchedule" component={DailyShiftScheduleScreen} options={{ headerShown: false }} />
         <Stack.Screen name="MonthlySummary" component={MonthlySummaryScreen} options={{ title: 'Monthly Summary' }} />
         <Stack.Screen name="LeaveReport" component={LeaveReportScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="TaskAssign" component={TaskAssignScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TaskReport" component={JobReportScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupAssign" component={PickupAssignScreen} options={{ title: 'My Pickups' }} />
         <Stack.Screen name="PickupDetails" component={PickupDetailsScreen} options={{ headerShown: false }} />
@@ -294,6 +302,8 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="SellInspection" component={SellInspectionScreen} options={{ headerShown: false }} />
         <Stack.Screen name="BuyDeliveries" component={BuyDeliveriesScreen} options={{ headerShown: false }} />
         <Stack.Screen name="BuyDelivery" component={BuyDeliveryScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="RepairDeliveries" component={RepairDeliveriesScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="RepairDelivery" component={RepairDeliveryScreen} options={{ headerShown: false }} />
         <Stack.Screen name="SellPriceRevision" component={SellPriceRevisionScreen} options={{ headerShown: false }} />
         <Stack.Screen name="SellCustomerConfirm" component={SellCustomerConfirmScreen} options={{ headerShown: false }} />
         <Stack.Screen name="SellPayment" component={SellPaymentScreen} options={{ headerShown: false }} />
@@ -308,8 +318,11 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="UploadRepairImages" component={UploadRepairImagesScreen} options={{ title: 'Upload Images' }} />
         <Stack.Screen name="TechnicianApplyLeave" component={TechnicianApplyLeaveScreen} options={{ title: 'Apply for leave' }} />
         <Stack.Screen name="PermissionApply" component={PermissionApplyScreen} options={{ title: 'Apply for Permission' }} />
-        <Stack.Screen name="SolutionPackUpload" component={SolutionPackUploadScreen} options={{ title: 'New Issue Solution Pack Upload' }} />
-        <Stack.Screen name="SolutionPackReferenceView" component={SolutionPackReferenceViewScreen} options={{ title: 'Issue Reference Solution Pack View' }} />
+        <Stack.Screen name="SolutionPackUpload" component={SolutionPackUploadScreen} options={{ title: 'Upload New' }} />
+        <Stack.Screen name="SolutionPackReferenceView" component={SolutionPackReferenceViewScreen} options={{ title: 'View Reference' }} />
+        <Stack.Screen name="SolutionPacks" component={SolutionPacksHomeScreen} options={{ title: 'Solution Packs' }} />
+        <Stack.Screen name="SolutionPackDetails" component={SolutionPackDetailsScreen} options={{ title: 'Reference Details' }} />
+        <Stack.Screen name="SolutionPackRecords" component={SolutionPackRecordsScreen} options={{ title: 'My Repair Records' }} />
         <Stack.Screen name="WorkExperience" component={WorkExperienceScreen} options={{ title: 'Work Experience' }} />
         <Stack.Screen name="HelpSupport" component={HelpSupportScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TechnicianKycIntro" component={TechnicianKycIntroScreen} options={{ title: 'KYC Details' }} />

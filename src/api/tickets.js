@@ -121,3 +121,8 @@ export async function requestReEstimate(
 export async function acknowledgeReEstimate(ticketId, revisionId) {
   return ticketApi.post(`/tickets/${ticketId}/re-estimates/${revisionId}/acknowledge`);
 }
+
+// Every re-estimate revision of the ticket (newest first).
+export async function listReEstimates(ticketId) {
+  return ticketApi.get(`/tickets/${ticketId}/re-estimates`);
+}

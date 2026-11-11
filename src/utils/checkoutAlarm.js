@@ -116,12 +116,29 @@ export async function notifyNow(title, body) {
 }
 
 // ── Pickup reminders ─────────────────────────────────────────────────────
-// 30 and 15 minutes before each assigned pickup's slot, on the same lazy
+// 30, 15 and 10 minutes before each assigned pickup's slot, on the same lazy
 // expo-notifications setup (no-op in Expo Go / web). Re-synced from the
 // pickup list, so a reassigned / started / cancelled pickup drops its reminders.
 const PICKUP_KIND = 'pickup-reminder';
 const PICKUP_CHANNEL_ID = 'pickup-reminder-v1';
-const PICKUP_LEADS = [30, 15];
+const PICKUP_LEADS = [30, 15, 10];
+// Tapped reminders already routed (getLastNotificationResponseAsync keeps returning the last one).
+const handledTaps = new Set();
+
+/** onOpen(bookingId) when a pickup reminder is tapped — including the one that opened the app. Returns an unsubscribe. */
+export function onPickupReminderTap(onOpen) {
+  if (!load()) return () => {};
+  const handle = (r) => {
+    const data = r?.notification?.request?.content?.data;
+    const key = `${r?.notification?.request?.identifier}@${r?.notification?.date}`;
+    if (data?.kind !== PICKUP_KIND || !data.bookingId || handledTaps.has(key)) return;
+    handledTaps.add(key);
+    onOpen(data.bookingId);
+  };
+  Notifications.getLastNotificationResponseAsync().then(handle).catch(() => {});
+  const sub = Notifications.addNotificationResponseReceivedListener(handle);
+  return () => sub.remove();
+}
 
 /** pickups: [{ id, startAt: Date, title, body }] — replaces every pickup reminder. */
 export async function syncPickupReminders(pickups) {

@@ -14,34 +14,31 @@ import {
   Inbox,
   WifiOff,
   Wrench,
+  FileText,
+  Users,
+  X,
 } from 'lucide-react-native';
-import { selectTechnicianId } from '../store/authSlice';
-import { listMyTickets, listTicketEvents } from '../api/tickets';
-import { loadProgressFlags } from '../utils/repairDone';
+import { selectTechnicianId, selectShopId } from '../store/authSlice';
+import { ticketApi, shopApi } from '../api/client';
+import { listMyTickets, listTicketEvents, acceptTicket } from '../api/tickets';
+import { autoStartRepair } from '../utils/autoProgress';
+import { JOB_STAGES, jobStage, isLiveStage, isAwaitingAccept } from '../utils/jobStage';
+import { userMessage } from '../utils/userMessages';
 import { rf, rs } from '../utils/responsive';
-import { notify } from '../components/confirm';
+import { confirm, notify } from '../components/confirm';
 import { ticketRef } from '../utils/ticketRef';
 import { SearchBar } from '../components/rnr';
-import { JobHeader, JobRail, JobPictureCard } from '../components/JobCardKit';
+import { JobHeader, JobRail, JobPictureCard, KText, toneOf } from '../components/JobCardKit';
+import AcceptJobDialog from '../components/AcceptJobDialog';
 
-const FILTERS = ['All', 'In Process', 'Pending', 'Completed'];
-
-// Ticket statuses → display buckets used by the cards. Mirrors the owner-side
-// WorkingRecord screen so a technician sees the same "Recent Pending" /
-// "In Process" split they'd see on a manager's screen.
-// The technician's work is done once Repair Completed is recorded (repairDone,
-// read off the job's events) — no waiting for the shop to verify. READY and
-// every later status are the shop's handover, so they count as Completed too.
-const COMPLETED_STATUSES = new Set([
-  'READY', 'INVOICE_GENERATED', 'INVOICE_READY', 'DELIVERED_PROCESSING', 'DELIVERED', 'CANCELLED',
-]);
-function bucketize(t) {
-  const s = (t?.status || '').toUpperCase();
-  if (COMPLETED_STATUSES.has(s) || t?.repairDone) return 'COMPLETED';
-  // A job held on an open Spare Parts Waiting row (partsWait) sits in Pending.
-  if (s === 'CREATED' || s === 'IN_DIAGNOSIS' || s === 'QUOTED' || t?.partsWait) return 'PENDING';
-  return 'IN_PROCESS';
-}
+// One My Jobs screen (the old Job Assign Report merged in): the rail filters
+// by the job's stage (utils/jobStage), read from the backend ticket + events.
+const FILTERS = JOB_STAGES;
+// Older links (Home tiles, Job Details) still pass the previous filter names.
+const LEGACY_FILTERS = { Working: 'In Process', 'QC Pending': 'Pending', Rejected: 'Cancelled' };
+const filterFromParam = (f) => (FILTERS.includes(f) ? f : LEGACY_FILTERS[f] || null);
+// Event fetch fan-out per pass.
+const EVENT_BATCH = 8;
 
 // Human label for each macro ticket status. The card needs to reflect what
 // the *current* ticket actually is — not a fixed sentence per bucket —
@@ -226,29 +223,19 @@ const TONES = {
   ink: { fg: C.ink, text: C.ink, bg: '#E5E7EB', soft: '#F3F4F6' },
 };
 
-// One colour per filter, shared by the rail tile, its counter and the card's
-// status badge.
-// Partner Job Report colours.
+// One colour per stage, shared by the rail tile and the card's status tab.
 const CATEGORY_COLOR = {
   All: '#035C6C',
+  Assigned: '#0788C9',
   'In Process': '#FAA700',
   Pending: '#F32C26',
   Completed: '#609138',
-  // Badge only: a cancelled job is counted under Completed (closed).
-  Cancelled: '#F32C26',
+  Reassigned: '#1C3053',
+  // Grey, so it stands apart from Pending's red.
+  Cancelled: '#6B7280',
 };
 // Tab only: a re-estimate awaiting the customer (QUOTED) reads in amber.
 const PENDING_APPROVAL_COLOR = '#FAA700';
-
-// Exactly one category per job, so the category counts add up to All.
-// Spare Parts Waiting and re-estimates (QUOTED) sit in Pending; cancelled
-// jobs are closed, so they sit in Completed.
-function categoryOf(t) {
-  const bk = bucketize(t);
-  if (bk === 'COMPLETED') return 'Completed';
-  if (bk === 'PENDING') return 'Pending';
-  return 'In Process';
-}
 
 // A displayable value, or null for empty / placeholder text (N/A, null, -, …).
 const PLACEHOLDER_RE = /^(n\/?a|na|null|undefined|none|nil|0|-+|—+|–+|\.+|not specified|issue not specified|not available)$/i;
@@ -271,7 +258,7 @@ function issueText(t) {
 
 function filterByChip(list, chip) {
   if (chip === 'All') return list;
-  return list.filter((b) => categoryOf(b) === chip);
+  return list.filter((b) => b.stage === chip);
 }
 
 // Latest createdAt among the booking events with one of these keys, if any.
@@ -285,6 +272,20 @@ function latestEventAt(events, keys) {
 }
 // Latest (re)assignment time.
 const assignedAtFrom = (events) => latestEventAt(events, ['ASSIGNED_TO_TECHNICIAN', 'REASSIGNED_TO_TECHNICIAN']);
+// "Assigned / Reassigned by": a person's name only if the latest assignment
+// event's actor carries one (the backend writes role codes like "SHOP").
+function assignerOf(events) {
+  let ev = null;
+  let reassigned = false;
+  (Array.isArray(events) ? events : []).forEach((e) => {
+    const k = String(e?.status || '').toUpperCase();
+    if (k !== 'ASSIGNED_TO_TECHNICIAN' && k !== 'REASSIGNED_TO_TECHNICIAN') return;
+    if (k === 'REASSIGNED_TO_TECHNICIAN') reassigned = true;
+    if (!ev || new Date(e.createdAt || 0) >= new Date(ev.createdAt || 0)) ev = e;
+  });
+  const actor = ev?.actor && !/^(SHOP|SYSTEM|TECHNICIAN|OWNER|ADMIN|CUSTOMER)$/i.test(ev.actor) ? ev.actor : null;
+  return { reassigned, actor };
+}
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 10;
@@ -301,21 +302,56 @@ export default function JobReportScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState(() => (FILTERS.includes(route?.params?.filter) ? route.params.filter : 'All'));
-  // Latest event-status key per ticket id, fetched after the ticket list so
-  // each row can show the actual current phase (e.g. "Repair Completed",
-  // "Quality Check Completed") instead of the coarse macro status. Treated as
-  // best-effort: row falls back to macro-status label if events aren't ready.
-  const [eventStatusById, setEventStatusById] = useState({});
-  // Assignment time per ticket id, off the same events.
-  const [assignedAtById, setAssignedAtById] = useState({});
+  const [filter, setFilter] = useState(() => filterFromParam(route?.params?.filter) || 'All');
+  // Booking events per ticket id (GET /tickets/{id}/events) — one cache for the
+  // stage, the current-phase pill and the assignment time / assigner.
+  const [eventsById, setEventsById] = useState({});
+  const eventsRef = useRef({});
+  const eventsInFlight = useRef(new Set());
+  const shopId = useSelector(selectShopId);
+  const [shopName, setShopName] = useState(null);
+  // Accept / Reject on an Assigned card: one at a time (ref blocks double taps).
+  const actingRef = useRef(false);
+  const [actingOn, setActingOn] = useState(null);
+  const [acceptFor, setAcceptFor] = useState(null);
 
   const scrollRef = useRef(null);
   const [showSearch, setShowSearch] = useState(false);
   const [listWidth, setListWidth] = useState(0);
 
+  // Events for these ids, EVENT_BATCH at a time; ids already being fetched are
+  // skipped, and force=false only fetches ids not read yet.
+  const fetchEvents = useCallback(async (ids, force) => {
+    const todo = ids.filter((id) => id && !eventsInFlight.current.has(id) && (force || !(id in eventsRef.current)));
+    todo.forEach((id) => eventsInFlight.current.add(id));
+    for (let i = 0; i < todo.length; i += EVENT_BATCH) {
+      const chunk = todo.slice(i, i + EVENT_BATCH);
+      const rows = await Promise.all(chunk.map((id) => listTicketEvents(id)
+        .then((r) => (Array.isArray(r) ? r : []))
+        .catch(() => null)));
+      const upd = {};
+      chunk.forEach((id, j) => {
+        eventsInFlight.current.delete(id);
+        if (rows[j]) upd[id] = rows[j];
+      });
+      if (Object.keys(upd).length) {
+        eventsRef.current = { ...eventsRef.current, ...upd };
+        setEventsById(eventsRef.current);
+      }
+    }
+  }, []);
+
   // silent: background poll — no spinner, and a failed poll keeps the list.
-  const load = useCallback(async (isRefresh = false, silent = false) => {
+  // One request at a time: a call while one is running (focus + poll + after
+  // an action) waits for it and then re-reads once, so nothing is stale.
+  const loadInFlight = useRef(null);
+  const loadAgain = useRef(false);
+  const load = useCallback((isRefresh = false, silent = false) => {
+    if (loadInFlight.current) {
+      loadAgain.current = true;
+      return loadInFlight.current;
+    }
+    const run = (async () => {
     if (silent) { /* quiet */ } else if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
       // assignedToMe is scoped server-side to the signed-in technician; read
@@ -328,10 +364,14 @@ export default function JobReportScreen({ navigation, route }) {
         if (!Array.isArray(page?.content) || page.last !== false || content.length < PAGE_SIZE) break;
       }
       const seen = new Set();
-      setList(items.filter((t) => t?.id && !seen.has(t.id) && seen.add(t.id)));
+      const unique = items.filter((t) => t?.id && !seen.has(t.id) && seen.add(t.id));
+      setList(unique);
       setError(false);
-      // Booking-timeline events are fetched separately, only for the tickets
-      // actually rendered (see the displayedIds effect) — not for all 100.
+      // Re-read the events of every job whose section can still move (all but
+      // Completed, which is read once, when shown).
+      fetchEvents(unique
+        .filter((t) => isLiveStage(jobStage(t, eventsRef.current[t.id])))
+        .map((t) => t.id), true);
     } catch {
       if (silent) return;
       setError(true);
@@ -339,13 +379,21 @@ export default function JobReportScreen({ navigation, route }) {
         notify('Could not refresh', 'Check your connection and pull down to try again.', { type: 'error' });
       } else {
         setList([]);
-        setEventStatusById({});
       }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+    })();
+    loadInFlight.current = run;
+    return run.finally(() => {
+      loadInFlight.current = null;
+      if (loadAgain.current) {
+        loadAgain.current = false;
+        load(false, true);
+      }
+    });
+  }, [fetchEvents]);
 
   // Re-pull on every focus, not just mount, so a job finished on Job Details
   // is under Completed as soon as the technician lands back here.
@@ -362,27 +410,31 @@ export default function JobReportScreen({ navigation, route }) {
   const routeFilter = route?.params?.filter;
   const routeFilterAt = route?.params?.refreshAt;
   useEffect(() => {
-    if (!FILTERS.includes(routeFilter)) return;
-    setFilter(routeFilter);
+    const f = filterFromParam(routeFilter);
+    if (!f) return;
+    setFilter(f);
     scrollRef.current?.scrollTo?.({ y: 0, animated: false });
   }, [routeFilter, routeFilterAt]);
 
-  // Per-job flags read off the booking events: Repair Completed recorded
-  // (→ Completed) or an open Spare Parts Waiting row (→ Pending), whatever
-  // the ticket status still says.
-  const [flagsById, setFlagsById] = useState({});
+  // Shop name stands in for "Assigned by" (events only carry role codes).
   useEffect(() => {
     let active = true;
-    loadProgressFlags(list).then((flags) => { if (active) setFlagsById(flags); });
+    if (!shopId) return undefined;
+    shopApi.get(`/shops/${shopId}`)
+      .then((s) => { if (active && s?.name) setShopName(s.name); })
+      .catch(() => {});
     return () => { active = false; };
-  }, [list]);
+  }, [shopId]);
+
   // Second guard on top of the server scope: drop anything not assigned to
-  // this technician (e.g. reassigned since the list was fetched).
+  // this technician (reassigned since the list was fetched), so a reassigned
+  // job never stays active for the previous employee. Each job carries its
+  // stage from the backend ticket + events.
   const jobs = useMemo(
     () => list
       .filter((t) => !technicianId || String(t.assignedTechnicianId || '') === String(technicianId))
-      .map((t) => (flagsById[t.id] ? { ...t, ...flagsById[t.id] } : t)),
-    [list, flagsById, technicianId],
+      .map((t) => ({ ...t, stage: jobStage(t, eventsById[t.id]) })),
+    [list, eventsById, technicianId],
   );
 
   // Newest first (by last update, else creation), every job — no month
@@ -402,7 +454,11 @@ export default function JobReportScreen({ navigation, route }) {
     [searched],
   );
 
-  const previousShown = useMemo(() => filterByChip(searched, filter), [searched, filter]);
+  // Jobs still awaiting Accept / Reject stay on top (as on the old Assign Report).
+  const previousShown = useMemo(() => {
+    const shown = filterByChip(searched, filter);
+    return [...shown.filter((t) => isAwaitingAccept(t.stage)), ...shown.filter((t) => !isAwaitingAccept(t.stage))];
+  }, [searched, filter]);
 
   // IDs of the tickets whose rows actually render an event label, capped.
   // Joined into a string key so the events effect below only re-runs when the
@@ -412,37 +468,79 @@ export default function JobReportScreen({ navigation, route }) {
     [previousShown],
   );
 
-  // Fetch booking-timeline events only for the displayed tickets, and only
-  // when that set changes; ids already resolved are skipped.
+  // Displayed tickets not read yet (Assigned / Completed / Rejected — the live
+  // ones are re-read on every load) get their events once, for the pill and
+  // the assignment line.
   useEffect(() => {
     const displayedIds = displayedKey ? displayedKey.split('|') : [];
-    if (displayedIds.length === 0) return undefined;
-    let active = true;
-    (async () => {
-      const updates = {};
-      const assigned = {};
-      await Promise.all(displayedIds.map(async (id) => {
-        try {
-          const events = await listTicketEvents(id);
-          const key = pickLatestEventKey(events);
-          if (key) updates[id] = key;
-          const at = assignedAtFrom(events);
-          if (at) assigned[id] = at;
-        } catch { /* leave fallback to macro status */ }
-      }));
-      if (active && Object.keys(updates).length) {
-        setEventStatusById((prev) => ({ ...prev, ...updates }));
-      }
-      if (active && Object.keys(assigned).length) {
-        setAssignedAtById((prev) => ({ ...prev, ...assigned }));
-      }
-    })();
-    return () => { active = false; };
-    // Re-fetch after a pull-to-refresh too, so phases stay current.
-  }, [displayedKey, list]);
+    if (displayedIds.length) fetchEvents(displayedIds, false);
+  }, [displayedKey, fetchEvents]);
+
+  // Per-ticket values off the cached events.
+  const eventInfo = useMemo(() => {
+    const out = {};
+    Object.keys(eventsById).forEach((id) => {
+      const ev = eventsById[id];
+      out[id] = { key: pickLatestEventKey(ev), assignedAt: assignedAtFrom(ev), ...assignerOf(ev) };
+    });
+    return out;
+  }, [eventsById]);
 
   const openTicket = (t) => {
     navigation.navigate('TechnicianTicketDetail', { ticketId: t.id });
+  };
+
+  // Accept (POST /tickets/{id}/accept) → straight into Job Details; the list
+  // re-reads so the job moves to Working. The toast follows the API's answer.
+  const askAccept = (t) => {
+    if (!actingRef.current) setAcceptFor(t.id);
+  };
+  const confirmAccept = async () => {
+    const ticketId = acceptFor;
+    if (!ticketId || actingRef.current) return;
+    actingRef.current = true;
+    setActingOn(ticketId);
+    try {
+      await acceptTicket(ticketId);
+    } catch (e) {
+      actingRef.current = false;
+      setActingOn(null);
+      setAcceptFor(null);
+      notify('Could not accept job', userMessage(e, 'Please try again.'), { type: 'error' });
+      return;
+    }
+    // Repair Work Started once the customer approval is current (best-effort).
+    await autoStartRepair(ticketId);
+    actingRef.current = false;
+    setActingOn(null);
+    setAcceptFor(null);
+    notify('Job accepted', '', { type: 'success' });
+    load(false, true);
+    navigation.navigate('TechnicianTicketDetail', { ticketId });
+  };
+
+  // Reject cancels the ticket (existing status endpoint) → Rejected.
+  const rejectJob = async (t) => {
+    if (actingRef.current) return;
+    const ok = await confirm({
+      title: 'Decline ticket?',
+      message: 'The ticket will be cancelled. Continue?',
+      confirmText: 'Decline',
+      destructive: true,
+    });
+    if (!ok || actingRef.current) return;
+    actingRef.current = true;
+    setActingOn(t.id);
+    try {
+      await ticketApi.patch(`/tickets/${t.id}/status`, { query: { status: 'CANCELLED' } });
+      notify('Job rejected', '', { type: 'success' });
+    } catch (e) {
+      notify('Could not reject job', userMessage(e, 'Please try again.'), { type: 'error' });
+    } finally {
+      actingRef.current = false;
+      setActingOn(null);
+    }
+    load(false, true);
   };
 
   const toggleSearch = () => {
@@ -455,7 +553,7 @@ export default function JobReportScreen({ navigation, route }) {
     scrollRef.current?.scrollTo?.({ y: 0, animated: true });
   };
 
-  const phaseFor = (t) => technicianEventLabel(eventStatusById[t.id]) || statusLabel(t.status);
+  const phaseFor = (t) => technicianEventLabel(eventInfo[t.id]?.key) || statusLabel(t.status);
   const showInitialSpinner = loading && list.length === 0;
   const showError = error && list.length === 0 && !loading;
 
@@ -467,7 +565,7 @@ export default function JobReportScreen({ navigation, route }) {
       <JobHeader
         navigation={navigation}
         title="My Jobs"
-        sub="Working Jobs"
+        sub="Assigned & Working Jobs"
         searchOn={showSearch}
         onSearch={toggleSearch}
         onScan={() => navigation.navigate('ScanTicketQr')}
@@ -487,7 +585,7 @@ export default function JobReportScreen({ navigation, route }) {
       ) : null}
 
       <View style={styles.body}>
-        <JobRail items={RAIL} counts={counts} active={filter} onPick={pickFilter} softBorder />
+        <JobRail items={RAIL} counts={counts} active={filter} onPick={pickFilter} softBorder plain />
 
         <ScrollView
           ref={scrollRef}
@@ -522,21 +620,31 @@ export default function JobReportScreen({ navigation, route }) {
               <EmptyRow text={query.trim() ? `No jobs match "${query.trim()}".` : filter === 'All' ? 'No jobs yet.' : `No ${filter.toLowerCase()} jobs.`} />
             ) : (
               <View style={[styles.grid, twoCol && { marginHorizontal: -rs(5) }]}>
-                {previousShown.map((t) => (
-                  <View key={t.id} style={{ width: twoCol ? '50%' : '100%', paddingHorizontal: twoCol ? rs(5) : 0 }}>
-                    <JobCard
-                      ticket={t}
-                      phase={phaseFor(t)}
-                      assignedAt={assignedAtById[t.id] || t.createdAt}
-                      onPress={() => openTicket(t)}
-                    />
-                  </View>
-                ))}
+                {previousShown.map((t) => {
+                  const info = eventInfo[t.id] || {};
+                  const by = info.actor || shopName;
+                  return (
+                    <View key={t.id} style={{ width: twoCol ? '50%' : '100%', paddingHorizontal: twoCol ? rs(5) : 0 }}>
+                      <JobCard
+                        ticket={t}
+                        phase={phaseFor(t)}
+                        assignedAt={info.assignedAt || t.createdAt}
+                        assignedBy={by ? `${info.reassigned ? 'Reassigned' : 'Assigned'} by ${by}` : null}
+                        busy={actingOn === t.id}
+                        onAccept={() => askAccept(t)}
+                        onReject={() => rejectJob(t)}
+                        // Not accepted yet → Job Details shows only the assignment preview.
+                        onPress={() => openTicket(t)}
+                      />
+                    </View>
+                  );
+                })}
               </View>
             )
           )}
         </ScrollView>
       </View>
+      <AcceptJobDialog visible={!!acceptFor} busy={!!actingOn} onCancel={() => setAcceptFor(null)} onConfirm={confirmAccept} />
     </SafeAreaView>
   );
 }
@@ -548,9 +656,12 @@ export default function JobReportScreen({ navigation, route }) {
 // Rail filters (Partner Job Report icons and gradient tones).
 const RAIL = [
   { key: 'All', label: 'All', icon: ChartColumn, tone: 'teal' },
+  { key: 'Assigned', label: 'Assigned', icon: FileText, tone: 'blue' },
+  { key: 'Reassigned', label: 'Reassigned', icon: Users, tone: toneOf(CATEGORY_COLOR.Reassigned) },
   { key: 'In Process', label: 'In Process', icon: RefreshCw, tone: 'orange' },
   { key: 'Pending', label: 'Pending', icon: CircleAlert, tone: 'red' },
   { key: 'Completed', label: 'Completed', icon: Check, tone: 'green' },
+  { key: 'Cancelled', label: 'Cancelled', icon: X, tone: toneOf(CATEGORY_COLOR.Cancelled) },
 ];
 
 const timeOf = (iso) => { if (!iso) return ''; const d = new Date(iso); if (Number.isNaN(d.getTime())) return ''; const h = d.getHours(); return `${String(h % 12 || 12).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
@@ -564,12 +675,16 @@ function splitDevice(ticket) {
 // Partner Job Report card: status tab · photo · VIEW, then ref, device,
 // customer, the technician's description, issue, assigned date | time and the
 // current phase pill. Empty fields are skipped.
-function JobCard({ ticket, phase, assignedAt, onPress }) {
+// Assigned (awaiting Accept): the assigner line and Reject · Accept under the
+// details instead of the phase pill.
+function JobCard({ ticket, phase, assignedAt, assignedBy, busy, onAccept, onReject, onPress }) {
   const st = (ticket.status || '').toUpperCase();
-  const category = st === 'CANCELLED' ? 'Cancelled' : categoryOf(ticket);
+  const category = ticket.stage;
+  const awaiting = isAwaitingAccept(ticket.stage);
   // A re-estimate awaiting the customer reads Pending Approval on the tab.
-  const tab = st === 'QUOTED' ? 'Pending Approval' : category;
-  const tone = st === 'QUOTED' ? PENDING_APPROVAL_COLOR : CATEGORY_COLOR[category];
+  const quoted = st === 'QUOTED' && category === 'Pending';
+  const tab = quoted ? 'Pending Approval' : category;
+  const tone = quoted ? PENDING_APPROVAL_COLOR : CATEGORY_COLOR[category];
   const techNote = clean(ticket.complianceNote);
   const status = clean(phase);
   return (
@@ -581,12 +696,32 @@ function JobCard({ ticket, phase, assignedAt, onPress }) {
       model={splitDevice(ticket).model}
       lines={[
         { text: clean(ticket.customerName) },
-        { icon: UserCog, text: techNote ? `Technician: ${techNote}` : null },
+        awaiting
+          ? { icon: Users, text: assignedBy }
+          : { icon: UserCog, text: techNote ? `Technician: ${techNote}` : null },
         { icon: Wrench, text: issueText(ticket) },
       ]}
       date={assignedAt ? formatDate(assignedAt) : null}
       time={assignedAt ? timeOf(assignedAt) : null}
-      pill={status ? { text: status } : null}
+      pill={!awaiting && status ? { text: status } : null}
+      footer={awaiting ? (
+        <View style={styles.cardActions}>
+          <TouchableOpacity style={styles.rejectBtn} onPress={onReject} disabled={busy}
+            activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Reject job">
+            <View style={styles.rejectDot}><X size={rs(10)} color={C.white} strokeWidth={3} /></View>
+            <KText size={11.5} weight="700" color={C.red} numberOfLines={1}>Reject</KText>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.acceptBtn} onPress={onAccept} disabled={busy}
+            activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Accept job">
+            {busy ? <ActivityIndicator color={C.white} size="small" /> : (
+              <>
+                <View style={styles.acceptDot}><Check size={rs(10)} color={C.green} strokeWidth={3} /></View>
+                <KText size={11.5} weight="700" color={C.white} numberOfLines={1}>Accept</KText>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : null}
       onPress={onPress}
     />
   );
@@ -634,4 +769,20 @@ const styles = StyleSheet.create({
   stateText: { fontSize: rf(12), color: C.muted, textAlign: 'center' },
   retryBtn: { marginTop: rs(6), backgroundColor: C.green, borderRadius: 999, paddingHorizontal: rs(22), paddingVertical: rs(8) },
   retryText: { color: C.white, fontWeight: '700', fontSize: rf(12) },
+
+  // Reject · Accept on Assigned cards (same look as the old Assign Report).
+  cardActions: { flexDirection: 'row', gap: rs(6), marginTop: rs(6) },
+  rejectBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(5),
+    backgroundColor: '#FDECEC', borderWidth: 1, borderColor: '#F9C9C7', borderRadius: rs(10),
+    paddingVertical: rs(4), paddingLeft: rs(5), paddingRight: rs(8),
+  },
+  rejectDot: { width: rs(18), height: rs(18), borderRadius: rs(9), backgroundColor: C.red, alignItems: 'center', justifyContent: 'center' },
+  acceptBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(5),
+    backgroundColor: C.green, borderRadius: rs(10),
+    paddingVertical: rs(4), paddingLeft: rs(5), paddingRight: rs(8),
+    shadowColor: C.green, shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 3,
+  },
+  acceptDot: { width: rs(18), height: rs(18), borderRadius: rs(9), backgroundColor: C.white, alignItems: 'center', justifyContent: 'center' },
 });

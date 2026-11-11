@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import {
-  BatteryFull, BatteryLow, BatteryMedium, Check, ChevronDown, ChevronUp, Hand, Images, LayoutGrid, Plus, Smartphone, TriangleAlert, X,
+  BatteryFull, BatteryLow, BatteryMedium, Check, Laptop, Tablet, Watch, ChevronDown, ChevronUp, Hand, Images, LayoutGrid, Plus, Smartphone, TriangleAlert, X,
 } from 'lucide-react-native';
 import { Text } from '../../components/Typography';
 import { notify } from '../../components/confirm';
@@ -13,6 +13,7 @@ import { uploadMedia } from '../../api/media';
 import { rf } from '../../utils/responsive';
 import { SC, SK, SellCard, SellCta, SellLoader, SellPage, goToSellStage, isGone, sellError, useSellPickup } from './sellKit';
 import { getFunctionalIssueIcon } from './functionalIssueIcons';
+import ConditionArt, { conditionArtFor, deviceShapeOf } from './conditionArt';
 
 // Device inspection after Compare Details, in three steps on one page:
 // 1 Inspection — one pick per condition group (Screen / Display, Touch Glass,
@@ -35,14 +36,15 @@ const MAX_PHOTOS = 8;
 
 const isBattery = (g) => /battery|power/i.test(`${g.name} ${g.code}`);
 const isClean = (label) => /^(no\b|good|working properly|flawless)|no (damage|defect|spot)/i.test(String(label || '').trim());
-const groupIcon = (g) => (isBattery(g) ? BatteryMedium : /touch|glass/i.test(`${g.name} ${g.code}`) ? Hand : Smartphone);
+const DEVICE_ICON = { laptop: Laptop, tablet: Tablet, watch: Watch, phone: Smartphone };
+const groupIcon = (g, shape) => (isBattery(g) ? BatteryMedium : /touch|glass/i.test(`${g.name} ${g.code}`) ? Hand : DEVICE_ICON[shape] || Smartphone);
 const luhn = (d) => [...d].reverse().reduce((sum, ch, i) => {
   let n = Number(ch);
   if (i % 2) { n *= 2; if (n > 9) n -= 9; }
   return sum + n;
 }, 0) % 10 === 0;
 
-function OptionArt({ group, label, on }) {
+function OptionArt({ group, label, on, shape }) {
   const color = on ? SK.teal : SK.navy;
   if (isBattery(group)) {
     const l = String(label).toLowerCase();
@@ -50,7 +52,8 @@ function OptionArt({ group, label, on }) {
     if (/weak|drain/.test(l)) return <BatteryMedium size={28} color={SK.amber} strokeWidth={1.7} />;
     return <BatteryFull size={28} color={SC.green} strokeWidth={1.7} />;
   }
-  return <Smartphone size={28} color={color} strokeWidth={1.5} />;
+  // Same condition pictures as the Partner app (no spot, minor spots, scratches, cracks…).
+  return <ConditionArt kind={conditionArtFor(label)} size={40} shape={shape} />;
 }
 
 function Tick() {
@@ -128,6 +131,8 @@ export default function SellInspectionScreen({ navigation, route }) {
   const seq = useRef(0);
   const restored = useRef(false);
   const draftKey = `sellInspectionDraft:${id}`;
+  // Laptop / tablet / watch / phone outline for the condition pictures, from the booked device.
+  const shape = deviceShapeOf([booking?.categoryName, booking?.categoryCode, booking?.deviceCategory, booking?.brandName, booking?.modelName, booking?.deviceName, booking?.device?.categoryName, booking?.device?.modelName, p.device?.categoryName, p.device?.modelName, p.device?.name].filter(Boolean).join(' '));
 
   // Condition groups / functional issues from master data for the device's category (fallback: the phone list).
   useEffect(() => {
@@ -139,8 +144,13 @@ export default function SellInspectionScreen({ navigation, route }) {
       const out = [];
       for (const g of base) {
         const fromApi = list.length ? await getConditionOptions(g.id).catch(() => []) : [];
-        const opts = fromApi.length ? fromApi.map((o) => ({ id: o.id, label: o.label || o.name })) : (g.options || []).map((o, i) => ({ id: `${g.id}-${i}`, label: o }));
-        if (opts.length) out.push({ id: g.id, code: g.code || g.id, name: g.name, opts });
+        const raw = fromApi.length ? fromApi.map((o) => ({ id: o.id, label: o.label || o.name })) : (g.options || []).map((o, i) => ({ id: `${g.id}-${i}`, label: o }));
+        // Master data can repeat a group (same name, or two Battery groups) or an option — show each once.
+        const seenOpt = new Set();
+        const opts = raw.filter((o) => o.label && !seenOpt.has(o.label.trim().toLowerCase()) && seenOpt.add(o.label.trim().toLowerCase()));
+        const key = String(g.name || g.code || '').trim().toLowerCase();
+        const dup = out.some((x) => String(x.name || x.code || '').trim().toLowerCase() === key || (isBattery(x) && isBattery(g)));
+        if (opts.length && !dup) out.push({ id: g.id, code: g.code || g.id, name: g.name, opts });
       }
       if (!out.some(isBattery)) out.push({ ...BATTERY_GROUP, opts: BATTERY_GROUP.options.map((o, i) => ({ id: `${BATTERY_GROUP.id}-${i}`, label: o })) });
       const fi = await getFunctionalIssues(cat).catch(() => []);
@@ -277,12 +287,12 @@ export default function SellInspectionScreen({ navigation, route }) {
           {step === 1 ? (
             <>
               {groups.map((g) => (
-                <Section key={g.id} title={g.name} Icon={groupIcon(g)} open={!closed[g.id]} onToggle={() => setClosed((c) => ({ ...c, [g.id]: !c[g.id] }))}>
+                <Section key={g.id} title={g.name} Icon={groupIcon(g, shape)} open={!closed[g.id]} onToggle={() => setClosed((c) => ({ ...c, [g.id]: !c[g.id] }))}>
                   {g.opts.map((o) => {
                     const on = picks[g.id] === o.id;
                     return (
                       <Tile key={o.id} on={on} role="radio" label={o.label} onPress={() => setPicks((s) => ({ ...s, [g.id]: o.id }))}>
-                        <OptionArt group={g} label={o.label} on={on} />
+                        <OptionArt group={g} label={o.label} on={on} shape={shape} />
                       </Tile>
                     );
                   })}

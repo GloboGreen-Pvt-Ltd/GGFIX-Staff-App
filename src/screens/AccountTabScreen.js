@@ -10,6 +10,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   User as UserIcon,
   Briefcase,
+  BookOpen,
   CreditCard,
   FileText,
   ShieldCheck,
@@ -142,6 +143,7 @@ export default function AccountTabScreen({ navigation }) {
       items: [
         { key: 'work', label: 'Work Experience', icon: Briefcase,  tint: '#E0E7FF', fg: '#1C3053', onPress: () => navigation.navigate('WorkExperience') },
         { key: 'kyc',  label: 'KYC Documents',   icon: CreditCard, tint: '#DCFCE7', fg: '#609138', onPress: openKyc },
+        { key: 'packs', label: 'Solution Packs', icon: BookOpen,   tint: '#E6F2F4', fg: '#035C6C', onPress: () => navigation.navigate('SolutionPacks') },
       ],
     },
     {

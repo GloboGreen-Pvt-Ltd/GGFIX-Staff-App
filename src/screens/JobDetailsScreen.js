@@ -11,7 +11,12 @@ import {
   Mic, Play, Pause, Trash2, Plus, Image as ImageIcon,
   ShieldCheck, PackageX, Square, IndianRupee, BadgeCheck, Hourglass,
   Package, ChevronRight, ChevronsRight, Lock, CircleCheck,
+  CalendarDays, Clock, UserRound, BriefcaseBusiness, Wrench, Hammer, MapPin,
 } from 'lucide-react-native';
+import Svg, { Path } from 'react-native-svg';
+import { StatusBar } from 'expo-status-bar';
+import { DevicePhoto } from '../components/JobCardKit';
+import { getTodayAttendance } from '../api/technician';
 import DatePickerField, { toISO } from '../components/DatePickerField';
 import {
   getTicket, setTechnicianPhotos, addRepairNote, updateRepairNote, listRepairNotes,
@@ -38,6 +43,7 @@ import { selectTechnicianId, selectUserId } from '../store/authSlice';
 import { resolveDeviceImageSource } from '../utils/images';
 import { listModelsForBrand } from '../api/master';
 import ImageViewerModal from '../components/ImageViewerModal';
+import ReEstimateIssuePicker, { issuesNotes, issuesText, issuesTotal } from '../components/ReEstimateIssuePicker';
 
 // Service Progress checklist rows shown above the Issue Reference buttons.
 // Submitting a row POSTs /tickets/{id}/progress-events; the matching
@@ -112,13 +118,7 @@ const TIMELINE_ROWS = [
 ];
 
 // Request Service Re-Estimate form (POST /tickets/{id}/re-estimate-requests).
-const EMPTY_RE_ESTIMATE = { issue: '', reason: '', amount: '', notes: '' };
 const RE_ESTIMATE_SUBMITTED = 'Service re-estimate request submitted to the Partner App.';
-// Rupee amount input: digits and one dot, at most 2 decimals.
-const cleanAmount = (v) => {
-  const [whole, ...rest] = String(v || '').replace(/[^0-9.]/g, '').split('.');
-  return rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole;
-};
 // Backend 409 while a revision is still open (request or awaiting approval).
 const isReEstimatePending = (e) => e?.status === 409
   && /REESTIMATE_PENDING/i.test(`${JSON.stringify(e?.payload || '')} ${e?.message || ''}`);
@@ -475,51 +475,190 @@ function JobHeader({ navigation, sub }) {
 // Assignment preview for a job not accepted yet: just what's needed to decide
 // (device, issue, when it was assigned, due date) and Accept / Not Accepted.
 // A declined or closed job shows no actions.
+const spanText = (ms) => {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  const d = Math.floor(m / 1440);
+  const h = Math.floor((m % 1440) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m % 60}m` : `${m % 60}m`;
+};
+
 function AssignmentPreview({ ticket, navigation, busy, onAccept, onReject }) {
+  const insets = useSafeAreaInsets();
   const status = String(ticket.status || '').toUpperCase();
   const open = !['DELIVERED', 'CANCELLED'].includes(status);
-  const issue = ticket.repairServicesSummary || ticket.issueDescription;
+  const issue = issueText(ticket);
   const due = ticket.estimatedDeliveryAt || ticket.estimatedReadyAt;
-  const Line = ({ label, value }) => (value ? (
-    <View style={{ marginTop: rs(10) }}>
-      <Text style={{ fontSize: rf(11), color: C.muted }}>{label}</Text>
-      <Text style={{ fontSize: rf(13.5), fontWeight: '700', color: C.ink, marginTop: 2 }}>{value}</Text>
+  const dev = deviceParts(ticket);
+  const title = [dev.name, dev.number !== '—' ? dev.number : null].filter(Boolean).join(' · ');
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
+  const left = due ? new Date(due).getTime() - now : NaN;
+  const leftText = !open || !Number.isFinite(left) ? null : left >= 0 ? `${spanText(left)} Left` : `Overdue ${spanText(-left)}`;
+  // Today's attendance (shown only when the server answers — never assumed).
+  const [att, setAtt] = useState(undefined);
+  useEffect(() => {
+    let alive = true;
+    getTodayAttendance().then((a) => { if (alive) setAtt(a || null); }).catch(() => { if (alive) setAtt(undefined); });
+    return () => { alive = false; };
+  }, []);
+  const duty = att === undefined ? null
+    : att?.checkOutTime ? { title: 'Checked Out', sub: 'Done for today.', pill: 'Done', fg: '#6B7280', bg: '#F3F4F6' }
+      : att?.checkInTime ? { title: 'Checked In', sub: 'You’re on duty.', pill: 'Active', fg: '#3F8F2F', bg: '#E3F5DC' }
+        : { title: 'Not Checked In', sub: 'Check in from Home to start work.', pill: 'Off Duty', fg: '#C77700', bg: '#FFF1D6' };
+  const InfoRow = ({ icon: Icon, label, value, right }) => (value ? (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: rs(16) }}>
+      <View style={{ width: rs(44), height: rs(44), borderRadius: rs(12), backgroundColor: '#EEF5F6', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={rs(22)} color={C.green} strokeWidth={2} />
+      </View>
+      <View style={{ flex: 1, marginLeft: rs(12) }}>
+        <Text style={{ fontSize: rf(12.5), color: C.muted }}>{label}</Text>
+        <Text style={{ fontSize: rf(15), fontWeight: '800', color: '#0F1B3D', marginTop: 2 }}>{value}</Text>
+      </View>
+      {right}
     </View>
   ) : null);
+
   return (
-    <View className="flex-1" style={{ backgroundColor: C.bg }}>
-      <JobHeader navigation={navigation} sub={ticketRef(ticket)} />
-      <ScrollView contentContainerStyle={{ padding: rs(14) }}>
-        <View style={{ backgroundColor: '#FFFFFF', borderRadius: rs(16), borderWidth: 1, borderColor: C.border, padding: rs(14) }}>
-          <Text style={{ fontSize: rf(15), fontWeight: '800', color: '#1C3053' }}>
-            {open ? 'New job assigned' : status === 'CANCELLED' ? 'Job declined' : 'Job closed'}
-          </Text>
-          <Line label="Device" value={ticket.deviceDisplayName || 'Device'} />
-          <Line label="Issue" value={issue} />
-          <Line label="Assigned" value={fmtDateTime(ticket.assignedAt || ticket.createdAt)} />
-          <Line label="Due" value={fmtDateTime(due)} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: rs(6), marginTop: rs(14), padding: rs(10), borderRadius: rs(10), backgroundColor: C.surface }}>
-            <Lock size={rs(14)} color={C.muted} />
-            <Text style={{ flex: 1, fontSize: rf(11.5), color: C.muted }}>
+    <View style={{ flex: 1, backgroundColor: '#F7FAFA' }}>
+      <StatusBar style="light" />
+      {/* Teal header with a soft wave edge */}
+      <View style={{ backgroundColor: C.green, paddingTop: insets.top + rs(8), paddingBottom: rs(26) }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: rs(16) }}>
+          <View style={{ width: rs(44) }}>
+            {navigation.canGoBack() ? (
+              <TouchableOpacity
+                onPress={() => navigation.goBack()} hitSlop={8} accessibilityLabel="Back" activeOpacity={0.8}
+                style={{ width: rs(44), height: rs(44), borderRadius: rs(12), backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <ChevronLeft size={rs(22)} color="#0F1B3D" strokeWidth={2.6} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={{ fontSize: rf(20), fontWeight: '800', color: '#FFFFFF' }} numberOfLines={1}>Job Details</Text>
+            <View style={{ marginTop: rs(6), backgroundColor: '#FCE7D6', borderRadius: rs(14), paddingHorizontal: rs(14), paddingVertical: rs(3) }}>
+              <Text style={{ fontSize: rf(13.5), fontWeight: '800', color: '#0F3D45' }} numberOfLines={1}>{ticketRef(ticket)}</Text>
+            </View>
+          </View>
+          <View style={{ width: rs(44), height: rs(44), alignItems: 'center', justifyContent: 'center' }}>
+            <Wrench size={rs(26)} color="rgba(255,255,255,0.55)" strokeWidth={1.8} style={{ position: 'absolute' }} />
+            <Hammer size={rs(26)} color="rgba(255,255,255,0.55)" strokeWidth={1.8} style={{ position: 'absolute', transform: [{ scaleX: -1 }] }} />
+          </View>
+        </View>
+      </View>
+      <Svg width="100%" height={rs(34)} viewBox="0 0 400 34" preserveAspectRatio="none" style={{ marginTop: -rs(26) }}>
+        <Path d="M0 10 C 110 34, 250 34, 400 0 L 400 34 L 0 34 Z" fill="#BFE3E6" />
+        <Path d="M0 18 C 120 38, 260 30, 400 8 L 400 34 L 0 34 Z" fill="#F7FAFA" />
+      </Svg>
+
+      <ScrollView contentContainerStyle={{ paddingHorizontal: rs(16), paddingTop: rs(4), paddingBottom: rs(16) }} showsVerticalScrollIndicator={false}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: open ? '#FFF4EA' : '#F3F4F6', borderWidth: 1, borderColor: open ? '#F6C79B' : C.border, borderRadius: rs(16), padding: rs(12) }}>
+          <View style={{ width: rs(46), height: rs(46), borderRadius: rs(12), backgroundColor: open ? '#FFE2C7' : '#E5E7EB', alignItems: 'center', justifyContent: 'center' }}>
+            <UserRound size={rs(24)} color={open ? '#F28C28' : C.muted} strokeWidth={2} />
+            <BriefcaseBusiness size={rs(13)} color={open ? '#F28C28' : C.muted} strokeWidth={2.4} style={{ position: 'absolute', right: rs(7), bottom: rs(7) }} />
+          </View>
+          <View style={{ flex: 1, marginLeft: rs(12) }}>
+            <Text style={{ fontSize: rf(16), fontWeight: '800', color: '#0F1B3D' }}>
+              {open ? 'New Job Assigned' : status === 'CANCELLED' ? 'Job Declined' : 'Job Closed'}
+            </Text>
+            <Text style={{ fontSize: rf(12.5), color: '#4B5563', marginTop: 2 }}>
+              {open ? 'A repair job has been assigned to you.' : 'This job is no longer open for you.'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ marginTop: rs(14), backgroundColor: '#FFFFFF', borderRadius: rs(20), borderWidth: 1, borderColor: '#EEF1F3', padding: rs(16), shadowColor: '#0F3D45', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ width: rs(88), height: rs(106) }}>
+              <DevicePhoto ticket={ticket} />
+            </View>
+            <View style={{ flex: 1, marginLeft: rs(16) }}>
+              <Text style={{ fontSize: rf(18), fontWeight: '800', color: '#0F1B3D' }} numberOfLines={3}>{title || 'Device'}</Text>
+              {dev.storage !== '—' ? (
+                <View style={{ alignSelf: 'flex-start', marginTop: rs(8), backgroundColor: '#E8F0F2', borderRadius: rs(10), paddingHorizontal: rs(10), paddingVertical: rs(4) }}>
+                  <Text style={{ fontSize: rf(13.5), fontWeight: '700', color: '#35505A' }}>{dev.storage}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          {issue && issue !== '—' ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: rs(16), backgroundColor: '#E8F3F4', borderRadius: rs(14), padding: rs(12) }}>
+              <View style={{ width: rs(40), height: rs(40), borderRadius: rs(12), backgroundColor: '#F4FAFA', alignItems: 'center', justifyContent: 'center' }}>
+                <Wrench size={rs(22)} color={C.green} strokeWidth={2.2} />
+              </View>
+              <View style={{ flex: 1, marginLeft: rs(12) }}>
+                <Text style={{ fontSize: rf(12.5), color: C.muted }}>Issue / Service</Text>
+                <Text style={{ fontSize: rf(15), fontWeight: '800', color: '#0F1B3D', marginTop: 2 }}>{issue}</Text>
+              </View>
+            </View>
+          ) : null}
+
+          <InfoRow icon={CalendarDays} label="Assigned On" value={fmtDateTime(ticket.assignedAt || ticket.createdAt)} />
+          <InfoRow
+            icon={Clock}
+            label="Due By"
+            value={fmtDateTime(due)}
+            right={leftText ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: left >= 0 ? '#FFF0E0' : '#FEE2E2', borderRadius: rs(12), paddingHorizontal: rs(10), paddingVertical: rs(6), marginLeft: rs(6) }}>
+                <Clock size={rs(14)} color={left >= 0 ? '#E8740C' : C.red} strokeWidth={2.4} />
+                <Text style={{ marginLeft: rs(4), fontSize: rf(12), fontWeight: '800', color: left >= 0 ? '#E8740C' : C.red }}>{leftText}</Text>
+              </View>
+            ) : null}
+          />
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: rs(18), padding: rs(12), borderRadius: rs(14), backgroundColor: '#F3F5F7' }}>
+            <Lock size={rs(20)} color="#6B7280" strokeWidth={2} />
+            <Text style={{ flex: 1, marginLeft: rs(10), fontSize: rf(12.5), color: '#374151', lineHeight: rf(18) }}>
               {open
-                ? 'Device security, customer photos and the repair steps open after you accept.'
+                ? 'Device security, customer photos and the repair steps will be available after you accept this job.'
                 : 'This job was not accepted, so its details are not available.'}
             </Text>
           </View>
         </View>
+
         {open ? (
-          <View style={{ flexDirection: 'row', gap: rs(10), marginTop: rs(14) }}>
+          <View style={{ flexDirection: 'row', gap: rs(12), marginTop: rs(16) }}>
             <TouchableOpacity onPress={onReject} disabled={busy} activeOpacity={0.85} accessibilityRole="button"
-              style={{ flex: 1, minHeight: rs(46), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center', backgroundColor: C.red, opacity: busy ? 0.6 : 1 }}>
-              <Text style={{ fontSize: rf(14), fontWeight: '800', color: '#FFFFFF' }}>Not Accepted</Text>
+              style={{ flex: 1, flexDirection: 'row', height: rs(52), borderRadius: rs(14), alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF6F6', borderWidth: 1.5, borderColor: C.red, opacity: busy ? 0.6 : 1 }}>
+              <X size={rs(20)} color={C.red} strokeWidth={2.6} />
+              <Text style={{ marginLeft: rs(8), fontSize: rf(15), fontWeight: '800', color: C.red }}>Not Accept</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={onAccept} disabled={busy} activeOpacity={0.85} accessibilityRole="button"
-              style={{ flex: 1, minHeight: rs(46), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center', backgroundColor: C.green, opacity: busy ? 0.6 : 1 }}>
-              {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={{ fontSize: rf(14), fontWeight: '800', color: '#FFFFFF' }}>Accept</Text>}
+              style={{ flex: 1, flexDirection: 'row', height: rs(52), borderRadius: rs(14), alignItems: 'center', justifyContent: 'center', backgroundColor: C.green, opacity: busy ? 0.6 : 1 }}>
+              {busy ? <ActivityIndicator color="#FFFFFF" /> : (
+                <>
+                  <Check size={rs(20)} color="#FFFFFF" strokeWidth={2.6} />
+                  <Text style={{ marginLeft: rs(8), fontSize: rf(15), fontWeight: '800', color: '#FFFFFF' }}>Accept</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         ) : null}
       </ScrollView>
+
+      {/* Bottom wave + today's duty status */}
+      {duty ? (
+        <View style={{ paddingHorizontal: rs(16), paddingBottom: insets.bottom + rs(12), paddingTop: rs(34) }}>
+          <Svg width="100%" height="100%" viewBox="0 0 400 120" preserveAspectRatio="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}>
+            <Path d="M0 20 C 120 0, 220 50, 400 10 L 400 120 L 0 120 Z" fill="#E3F1F2" />
+            <Path d="M230 40 C 300 30, 350 20, 400 6 L 400 22 C 350 34, 300 44, 230 48 Z" fill="#F7A54A" />
+          </Svg>
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4FAF2', borderRadius: rs(16), borderWidth: 1, borderColor: '#E3EFE0', padding: rs(12), shadowColor: '#0F3D45', shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 }}>
+            <View style={{ width: rs(42), height: rs(42), borderRadius: rs(21), backgroundColor: duty.fg, alignItems: 'center', justifyContent: 'center' }}>
+              <MapPin size={rs(20)} color="#FFFFFF" strokeWidth={2.4} />
+            </View>
+            <View style={{ flex: 1, marginLeft: rs(12) }}>
+              <Text style={{ fontSize: rf(15), fontWeight: '800', color: '#0F1B3D' }}>{duty.title}</Text>
+              <Text style={{ fontSize: rf(12.5), color: '#4B5563', marginTop: 1 }}>{duty.sub}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: duty.bg, borderRadius: rs(16), paddingHorizontal: rs(12), paddingVertical: rs(6) }}>
+              <CircleCheck size={rs(15)} color={duty.fg} strokeWidth={2.4} />
+              <Text style={{ marginLeft: rs(5), fontSize: rf(13), fontWeight: '800', color: duty.fg }}>{duty.pill}</Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -1374,8 +1513,9 @@ export default function JobDetailsScreen({ route, navigation }) {
   // card; the shop answers it from the Partner App. The ref blocks a second
   // submit landing before `reSubmitting` re-renders.
   const [reOpen, setReOpen] = useState(false);
-  const [reForm, setReForm] = useState(EMPTY_RE_ESTIMATE);
   const [reImages, setReImages] = useState([null, null, null]);
+  // Additional issues / services picked from the master list (or Other Issue).
+  const [reIssues, setReIssues] = useState([]);
   const [reSubmitting, setReSubmitting] = useState(false);
   const [ackBusy, setAckBusy] = useState(false);
   const reInFlight = useRef(false);
@@ -1387,17 +1527,19 @@ export default function JobDetailsScreen({ route, navigation }) {
   };
 
   const submitReEstimate = async () => {
-    const issue = reForm.issue.trim();
-    const reason = reForm.reason.trim();
-    const notes = reForm.notes.trim();
-    const amountText = reForm.amount.trim();
-    const amount = amountText === '' ? null : Number(amountText);
-    if (reason.length < 3) { notify('Reason required', 'Enter the reason for the re-estimate (at least 3 characters).', { type: 'warning' }); return; }
-    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) { notify('Check the amount', 'Additional estimated cost must be 0 or more.', { type: 'warning' }); return; }
-    if (!issue && amount === null && !notes) {
-      notify('Add the change', 'Enter the additional issue / service, an additional cost or technician notes.', { type: 'warning' });
+    // Everything comes from the selected services: their names (+ prices) are
+    // the additional issue, per-service notes the technician notes, and the
+    // priced total the additional cost. The API needs a reason, so it names
+    // the services added.
+    if (!reIssues.length) {
+      notify('Select a service', 'Pick the additional issue / service for the re-estimate.', { type: 'warning' });
       return;
     }
+    const issue = issuesText(reIssues).trim();
+    const notes = issuesNotes(reIssues);
+    const pricedTotal = issuesTotal(reIssues);
+    const amount = pricedTotal ? pricedTotal : null;
+    const reason = `Additional ${reIssues.length > 1 ? 'services' : 'service'} needed: ${reIssues.map((i) => i.name).join(', ')}`;
     if (reInFlight.current || reEstimate.pending) return;
     reInFlight.current = true;
     setReSubmitting(true);
@@ -1428,7 +1570,7 @@ export default function JobDetailsScreen({ route, navigation }) {
         imagesJson: JSON.stringify(imageUrls),
       });
       setReOpen(false);
-      setReForm(EMPTY_RE_ESTIMATE);
+      setReIssues([]);
       setReImages([null, null, null]);
       notify(RE_ESTIMATE_SUBMITTED, '', { type: 'success' });
       refreshTicket();
@@ -2220,6 +2362,13 @@ export default function JobDetailsScreen({ route, navigation }) {
     fontSize: rf(12), color: C.ink, backgroundColor: '#FFFFFF',
     borderWidth: 1, borderColor: C.border, borderRadius: 9, paddingHorizontal: 9, paddingVertical: 6,
   };
+  // Re-estimate sheet section label.
+  const reLabel = (text, required, optional) => (
+    <Text style={{ fontSize: rf(12.5), fontWeight: '700', color: '#374151', marginTop: 14, marginBottom: 6 }}>
+      {text}{required ? <Text style={{ color: C.red }}> *</Text> : null}
+      {optional ? <Text style={{ color: C.muted, fontWeight: '400' }}> (optional)</Text> : null}
+    </Text>
+  );
   const fieldLabel = (text, required) => (
     <Text className="font-bold" style={{ fontSize: rf(9.5), color: C.muted, marginBottom: 3, marginTop: 6 }}>
       {text}{required ? <Text style={{ color: C.red }}> *</Text> : null}
@@ -3396,79 +3545,50 @@ export default function JobDetailsScreen({ route, navigation }) {
           </>
         ) : null}
       </ScrollView>
-      {/* Request Service Re-Estimate — compact centred form over the dimmed
-          screen; the backdrop or X closes it unless a submit is in flight. */}
-      <Modal visible={reOpen} transparent animationType="fade" statusBarTranslucent onRequestClose={closeReEstimate}>
+      {/* Request Service Re-Estimate — bottom sheet over the dimmed screen;
+          the backdrop or X closes it unless a submit is in flight. Additional
+          issues come from the same master list as Devices & Repair. */}
+      <Modal visible={reOpen} transparent animationType="slide" statusBarTranslucent onRequestClose={closeReEstimate}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-          <View
-            style={{
-              flex: 1, justifyContent: 'center', backgroundColor: 'rgba(17,24,39,0.55)',
-              paddingHorizontal: rs(16), paddingTop: insets.top + rs(16), paddingBottom: insets.bottom + rs(16),
-            }}
-          >
+          <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(17,24,39,0.55)', paddingTop: insets.top + rs(24) }}>
             <Pressable
               onPress={closeReEstimate}
               accessibilityLabel="Close"
               style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
             />
-            <View style={{ width: '100%', maxWidth: 440, maxHeight: '100%', alignSelf: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, overflow: 'hidden' }}>
-              <View className="flex-row items-center" style={{ paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border }}>
-                <View className="rounded-full items-center justify-center" style={{ width: 26, height: 26, backgroundColor: ACTION_TONE.navy.fg }}>
-                  <IndianRupee size={14} color="#FFFFFF" strokeWidth={2.6} />
+            <View style={{ width: '100%', maxWidth: 560, maxHeight: '100%', alignSelf: 'center', backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' }}>
+              <View style={{ alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: C.border, marginTop: 8 }} />
+              <View className="flex-row items-center" style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: C.border }}>
+                <View className="rounded-full items-center justify-center" style={{ width: 34, height: 34, backgroundColor: ACTION_TONE.navy.fg }}>
+                  <IndianRupee size={17} color="#FFFFFF" strokeWidth={2.6} />
                 </View>
-                <Text className="flex-1" style={{ marginLeft: 8, fontSize: rf(14), fontWeight: '800', color: '#1C3053' }} numberOfLines={1}>
-                  Request Service Re-Estimate
-                </Text>
+                <View className="flex-1" style={{ marginLeft: 10 }}>
+                  <Text style={{ fontSize: rf(15.5), fontWeight: '800', color: '#1C3053' }} numberOfLines={1}>Request Service Re-Estimate</Text>
+                  <Text style={{ fontSize: rf(11), color: C.muted, marginTop: 1 }} numberOfLines={1}>
+                    {ticket ? `${ticketRef(ticket)} · ` : ''}Sent to the shop for approval
+                  </Text>
+                </View>
                 <TouchableOpacity onPress={closeReEstimate} disabled={reSubmitting} hitSlop={10} accessibilityLabel="Close">
-                  <X size={rs(20)} color={C.muted} />
+                  <X size={rs(22)} color={C.muted} />
                 </TouchableOpacity>
               </View>
-              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: 12 }}>
-                {fieldLabel('Additional Issue / Service')}
-                <TextInput
-                  value={reForm.issue}
-                  onChangeText={(v) => setReForm((f) => ({ ...f, issue: v }))}
-                  placeholder="e.g. Charging port also damaged"
-                  placeholderTextColor={C.faint}
-                  editable={!reSubmitting}
-                  style={fieldStyle}
+              <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16 }}>
+                {reLabel('Additional Issues / Services')}
+                <ReEstimateIssuePicker
+                  value={reIssues}
+                  onChange={setReIssues}
+                  deviceCategoryId={ticket?.deviceCategoryId || null}
+                  brandId={ticket?.brandId || null}
+                  modelId={ticket?.modelId || null}
+                  deviceName={ticket?.deviceDisplayName || ticket?.deviceType || null}
+                  disabled={reSubmitting}
                 />
-                {fieldLabel('Reason for Re-Estimate', true)}
-                <TextInput
-                  value={reForm.reason}
-                  onChangeText={(v) => setReForm((f) => ({ ...f, reason: v }))}
-                  placeholder="Why the estimate needs to change"
-                  placeholderTextColor={C.faint}
-                  editable={!reSubmitting}
-                  multiline
-                  style={[fieldStyle, { minHeight: 44, textAlignVertical: 'top' }]}
-                />
-                {fieldLabel('Additional Estimated Cost (₹)')}
-                <TextInput
-                  value={reForm.amount}
-                  onChangeText={(v) => setReForm((f) => ({ ...f, amount: cleanAmount(v) }))}
-                  placeholder="Optional"
-                  placeholderTextColor={C.faint}
-                  keyboardType="decimal-pad"
-                  editable={!reSubmitting}
-                  style={fieldStyle}
-                />
-                {fieldLabel('Technician Notes')}
-                <TextInput
-                  value={reForm.notes}
-                  onChangeText={(v) => setReForm((f) => ({ ...f, notes: v }))}
-                  placeholder="Anything the shop should know"
-                  placeholderTextColor={C.faint}
-                  editable={!reSubmitting}
-                  multiline
-                  style={[fieldStyle, { minHeight: 44, textAlignVertical: 'top' }]}
-                />
-                {fieldLabel('Supporting Photos (optional)')}
+                {reLabel('Supporting Photos', false, true)}
                 <View className="flex-row -mx-1">
                   {reImages.map((slot, i) => (
                     <View key={i} className="flex-1 px-1">
                       {slot ? (
-                        <View className="overflow-hidden" style={{ height: 64, borderRadius: 10, backgroundColor: C.surface }}>
+                        <View className="overflow-hidden" style={{ height: 78, borderRadius: 12, backgroundColor: C.surface }}>
                           <Image source={{ uri: slot.uri }} style={{ width: '100%', height: '100%' }} />
                           {!reSubmitting ? (
                             <TouchableOpacity
@@ -3482,15 +3602,16 @@ export default function JobDetailsScreen({ route, navigation }) {
                           ) : null}
                         </View>
                       ) : (
-                        <AddPhotoSlot onPress={() => { if (!reSubmitting) promptPickImageInto(setReImages, i); }} height={64} />
+                        <AddPhotoSlot onPress={() => { if (!reSubmitting) promptPickImageInto(setReImages, i); }} height={78} />
                       )}
                     </View>
                   ))}
                 </View>
-                {!reSubmitting && (reForm.reason.trim().length < 3
-                  || (!reForm.issue.trim() && !reForm.amount.trim() && !reForm.notes.trim())) ? (
-                  <Text style={{ fontSize: rf(10), color: C.muted, marginTop: 8 }}>
-                    Reason is required, plus an additional issue / service, cost or technician notes.
+              </ScrollView>
+              <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 12, borderTopWidth: 1, borderTopColor: C.border }}>
+                {!reSubmitting && !reIssues.length ? (
+                  <Text style={{ fontSize: rf(10.5), color: C.muted, marginBottom: 8, textAlign: 'center' }}>
+                    Select at least one additional issue / service.
                   </Text>
                 ) : null}
                 <TouchableOpacity
@@ -3499,13 +3620,13 @@ export default function JobDetailsScreen({ route, navigation }) {
                   activeOpacity={0.85}
                   accessibilityRole="button"
                   className="rounded-full items-center justify-center"
-                  style={{ backgroundColor: C.green, marginTop: 10, minHeight: 40, opacity: reSubmitting || reEstimate.pending ? 0.6 : 1 }}
+                  style={{ backgroundColor: C.green, height: 50, opacity: reSubmitting || reEstimate.pending ? 0.6 : 1 }}
                 >
                   {reSubmitting
                     ? <ActivityIndicator color="#FFFFFF" size="small" />
-                    : <Text className="font-bold text-white" style={{ fontSize: rf(12.5) }}>Submit Re-Estimate Request</Text>}
+                    : <Text className="font-bold text-white" style={{ fontSize: rf(14) }}>Submit Re-Estimate Request</Text>}
                 </TouchableOpacity>
-              </ScrollView>
+              </View>
             </View>
           </View>
         </KeyboardAvoidingView>

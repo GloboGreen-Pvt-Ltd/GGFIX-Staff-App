@@ -2,7 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Image, Platform, Pressable, View } from 'react-native';
 import { Text } from './Typography';
 import { Lock } from 'lucide-react-native';
-import { isAppLockEnabled, authenticate, isDeviceSecure } from '../auth/appLock';
+import { isAppLockEnabledStrict, authenticate, isDeviceSecureStrict } from '../auth/appLock';
+
+// A lock check that hangs counts as a failed check (locked + Retry), never as "off".
+const LOCK_CHECK_TIMEOUT_MS = 8000;
+const withTimeout = (p) => Promise.race([
+  p, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), LOCK_CHECK_TIMEOUT_MS)),
+]);
 import { rf, rlh } from '../utils/responsive';
 
 // Recents-thumbnail cover: iOS only. iOS turns 'inactive' as the app switcher
@@ -21,6 +27,8 @@ export default function AppLockGate({ children, onLogout }) {
   const [enabled, setEnabled] = useState(null); // null = still checking
   const [locked, setLocked] = useState(true);
   const [checking, setChecking] = useState(false);
+  // The lock setting / device check itself failed: stay locked, offer Retry.
+  const [checkFailed, setCheckFailed] = useState(false);
   // When the app is not "active" (multitasking switcher / partially backgrounded)
   // an opaque cover hides the current screen so customer PII / ticket data isn't
   // captured into the OS recents thumbnail. Works regardless of App Lock.
@@ -48,21 +56,40 @@ export default function AppLockGate({ children, onLogout }) {
   // secure. Fail OPEN when the user removed their biometric/PIN after enabling
   // App Lock — otherwise authenticate() can never succeed and the user would be
   // permanently trapped on the lock screen with only "Log out" available.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const on = await isAppLockEnabled();
-      if (cancelled) return;
-      if (!on || !(await isDeviceSecure())) {
-        if (!cancelled) { setEnabled(false); setLocked(false); }
-        return;
-      }
-      setEnabled(true);
-      setLocked(true);
-      runUnlock();
-    })();
-    return () => { cancelled = true; };
+  // Errors never unlock: a failed or timed-out read of the setting keeps the
+  // app locked with Retry (it also bounds the blank boot check). Only a
+  // successful "lock off" read, or a device confirmed to have no
+  // biometric/PIN at all (the documented fail-open), opens without unlock.
+  const cancelledRef = useRef(false);
+  const runCheck = useCallback(async () => {
+    setChecking(true); // Retry shows a spinner while the setting is re-read
+    let on;
+    try {
+      on = await withTimeout(isAppLockEnabledStrict());
+    } catch (_) {
+      if (cancelledRef.current) return;
+      setChecking(false);
+      setEnabled(true); setLocked(true); setCheckFailed(true);
+      return;
+    }
+    if (cancelledRef.current) return;
+    setChecking(false);
+    setCheckFailed(false);
+    if (!on) { setEnabled(false); setLocked(false); return; }
+    let secure = null; // null = the device check errored → still require unlock
+    try { secure = await withTimeout(isDeviceSecureStrict()); } catch (_) { secure = null; }
+    if (cancelledRef.current) return;
+    if (secure === false) { setEnabled(false); setLocked(false); return; }
+    setEnabled(true);
+    setLocked(true);
+    runUnlock();
   }, [runUnlock]);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+    runCheck();
+    return () => { cancelledRef.current = true; };
+  }, [runCheck]);
 
   // Re-lock when the app comes back to the foreground.
   useEffect(() => {
@@ -73,11 +100,11 @@ export default function AppLockGate({ children, onLogout }) {
       setObscured(USE_PRIVACY_COVER && next !== 'active');
       if (enabled && /inactive|background/.test(prev) && next === 'active') {
         setLocked(true);
-        runUnlock();
+        if (checkFailed) runCheck(); else runUnlock();
       }
     });
     return () => sub.remove();
-  }, [enabled, runUnlock]);
+  }, [enabled, checkFailed, runUnlock, runCheck]);
 
   if (enabled === null) return null;         // brief boot check
   if (!enabled || !locked) {
@@ -102,14 +129,16 @@ export default function AppLockGate({ children, onLogout }) {
       </View>
       <Text style={{ color: '#FFFFFF', fontSize: rf(18), fontWeight: '800' }}>App Locked</Text>
       <Text style={{ color: '#E5F3F5', fontSize: rf(13), marginTop: 6, textAlign: 'center', lineHeight: rlh(18) }}>
-        Unlock with your fingerprint, pattern or PIN to continue.
+        {checkFailed
+          ? 'Could not check App Lock on this device. Tap Retry to continue.'
+          : 'Unlock with your fingerprint, pattern or PIN to continue.'}
       </Text>
       <Pressable
-        onPress={runUnlock}
+        onPress={checkFailed ? runCheck : runUnlock}
         disabled={checking}
         style={{ marginTop: 22, backgroundColor: '#609138', paddingHorizontal: 30, paddingVertical: 12, borderRadius: 14, opacity: checking ? 0.6 : 1, minWidth: 150, alignItems: 'center' }}
       >
-        {checking ? <ActivityIndicator color="#FFFFFF" /> : <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: rf(15) }}>Unlock</Text>}
+        {checking ? <ActivityIndicator color="#FFFFFF" /> : <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: rf(15) }}>{checkFailed ? 'Retry' : 'Unlock'}</Text>}
       </Pressable>
       <Pressable onPress={onLogout} style={{ marginTop: 16 }}>
         <Text style={{ color: '#E5F3F5', fontSize: rf(13), fontWeight: '700' }}>Log out instead</Text>

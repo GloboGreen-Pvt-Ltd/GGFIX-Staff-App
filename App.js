@@ -1,5 +1,5 @@
 import './global.css';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Provider } from 'react-redux';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -27,10 +27,20 @@ const navTheme = {
   },
 };
 
+// Font load that neither finishes nor errors must not hold the app on a blank
+// screen: after this wait the app renders with the system font.
+const FONT_WAIT_MS = 4000;
+
 export default function App() {
-  // Inter faces; render on load or on error (system font fallback).
+  // Inter faces; render on load, on error or after FONT_WAIT_MS (system font fallback).
   const [fontsLoaded, fontError] = useFonts(fontAssets);
-  if (!fontsLoaded && !fontError) return null;
+  const [fontWaitOver, setFontWaitOver] = useState(false);
+  useEffect(() => {
+    if (fontsLoaded || fontError) return undefined;
+    const t = setTimeout(() => setFontWaitOver(true), FONT_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [fontsLoaded, fontError]);
+  if (!fontsLoaded && !fontError && !fontWaitOver) return null;
   return (
     <Provider store={store}>
       <GluestackUIProvider config={config}>

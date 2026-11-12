@@ -16,7 +16,10 @@ function normalize(style, { input = false, osScaled = true } = {}) {
   if (flat.fontSize == null && flat.fontWeight == null && flat.fontFamily == null) return style;
   const { fontWeight, fontFamily, fontSize, lineHeight, ...rest } = flat;
   const size = resolveFontSize(fontSize ?? rf(13), { input, osScaled });
-  const out = { ...rest, fontFamily: fontFamily && !fontFamily.startsWith('Inter') ? fontFamily : interFamily(fontWeight), fontSize: size };
+  const family = fontFamily && !fontFamily.startsWith('Inter') ? fontFamily : interFamily(fontWeight);
+  const out = { ...rest, fontSize: size };
+  // Inter not loaded → system font, keeping the requested weight.
+  if (family) out.fontFamily = family; else if (fontWeight != null) out.fontWeight = fontWeight;
   // Keep line heights proportional when the size was snapped.
   if (lineHeight != null) out.lineHeight = fontSize ? Math.round(lineHeight * (size / fontSize)) : lineHeight;
   return out;

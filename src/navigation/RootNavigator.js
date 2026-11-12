@@ -14,6 +14,13 @@ import { notify } from '../components/confirm';
 
 // Keep the boot splash up long enough for its intro animation to play.
 const MIN_SPLASH_MS = 1600;
+// A storage read that hangs or fails must never keep the splash up forever:
+// it resolves to `fallback` after BOOT_TIMEOUT_MS (nothing is cleared).
+const BOOT_TIMEOUT_MS = 8000;
+const bounded = (promise, fallback) => Promise.race([
+  Promise.resolve().then(() => promise).catch((e) => { console.warn('[boot] storage read failed', e?.message || e); return fallback; }),
+  new Promise((r) => setTimeout(() => r(fallback), BOOT_TIMEOUT_MS)),
+]);
 
 const Stack = createNativeStackNavigator();
 
@@ -34,20 +41,27 @@ export default function RootNavigator() {
   useEffect(() => {
     // The token now lives in secure storage (not the persisted profile blob),
     // so re-attach it to the in-memory session for the logged-in routing check.
+    // try/finally + bounded reads: the splash always ends, even when storage
+    // throws or hangs. A failed read only means "no session this launch" — the
+    // stored token is never cleared for it, so the next launch restores it.
     (async () => {
-      const [profile, token] = await Promise.all([
-        getSession(), getToken(), new Promise((r) => setTimeout(r, MIN_SPLASH_MS)),
-      ]);
-      // An expired stored token gets 403 from every service — start at Login instead.
-      if (token && isJwtExpired(token)) {
-        await clearSession();
+      try {
+        const [profile, token] = await Promise.all([
+          bounded(getSession(), null), bounded(getToken(), null), new Promise((r) => setTimeout(r, MIN_SPLASH_MS)),
+        ]);
+        // An expired stored token gets 403 from every service — start at Login instead.
+        if (token && isJwtExpired(token)) {
+          await bounded(clearSession(), null);
+          return;
+        }
+        const s = token ? { ...(profile || {}), accessToken: token } : profile;
+        setSessionState(s);
+        dispatch(setSession(s));
+      } catch (e) {
+        console.warn('[boot] session restore failed', e?.message || e);
+      } finally {
         setLoading(false);
-        return;
       }
-      const s = token ? { ...(profile || {}), accessToken: token } : profile;
-      setSessionState(s);
-      dispatch(setSession(s));
-      setLoading(false);
     })();
   }, [dispatch]);
 

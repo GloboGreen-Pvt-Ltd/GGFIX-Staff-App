@@ -1,6 +1,7 @@
 // App-wide type scale (Inter). Use `type.*` for new text; existing screens are
 // normalised automatically by src/components/Typography.js.
 import { PixelRatio } from 'react-native';
+import { isLoaded as isFontLoaded } from 'expo-font';
 import { fontScale, osCorrection } from '../utils/responsive';
 import {
   Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold, Inter_800ExtraBold, Inter_900Black,
@@ -16,9 +17,23 @@ const FAMILY_BY_WEIGHT = {
   100: 'Inter_400Regular', 200: 'Inter_400Regular', 300: 'Inter_400Regular', 400: 'Inter_400Regular',
   500: 'Inter_500Medium', 600: 'Inter_600SemiBold', 700: 'Inter_700Bold', 800: 'Inter_800ExtraBold', 900: 'Inter_900Black',
 };
+// null when that Inter face isn't loaded (font load failed / timed out in
+// App.js) — callers then fall back to the system font with its fontWeight.
+// Loaded faces are remembered; a miss (which asks the native side) is
+// re-checked at most once a second, since this runs on every Text render.
+const seenFaces = new Set();
+let lastMissAt = 0;
 export function interFamily(fontWeight) {
-  if (fontWeight === 'bold') return FAMILY_BY_WEIGHT[700];
-  return FAMILY_BY_WEIGHT[Number(fontWeight) || 400] || FAMILY_BY_WEIGHT[400];
+  const family = fontWeight === 'bold' ? FAMILY_BY_WEIGHT[700] : (FAMILY_BY_WEIGHT[Number(fontWeight) || 400] || FAMILY_BY_WEIGHT[400]);
+  if (seenFaces.has(family)) return family;
+  if (Date.now() - lastMissAt < 1000) return null;
+  try {
+    if (isFontLoaded(family)) { seenFaces.add(family); return family; }
+  } catch {
+    return family;
+  }
+  lastMissAt = Date.now();
+  return null;
 }
 
 export const font = {

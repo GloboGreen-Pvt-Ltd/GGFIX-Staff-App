@@ -32,6 +32,21 @@ export async function isAppLockEnabled() {
   }
 }
 
+// Gate-only variants: they THROW on a read/native error instead of answering
+// "off" / "not secure", so AppLockGate can tell "lock is off" apart from
+// "couldn't check" and never bypass an enabled lock because of an error.
+export async function isAppLockEnabledStrict() {
+  return (await AsyncStorage.getItem(KEY)) === '1';
+}
+
+export async function isDeviceSecureStrict() {
+  const level = await LocalAuthentication.getEnrolledLevelAsync();
+  if (level && level !== LocalAuthentication.SecurityLevel.NONE) return true;
+  const hw = await LocalAuthentication.hasHardwareAsync();
+  const enrolled = await LocalAuthentication.isEnrolledAsync();
+  return !!(hw && enrolled);
+}
+
 export async function setAppLockEnabled(on) {
   try { await AsyncStorage.setItem(KEY, on ? '1' : '0'); } catch (_) {}
 }

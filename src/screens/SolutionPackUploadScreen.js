@@ -236,6 +236,7 @@ export default function SolutionPackUploadScreen({ route, navigation }) {
   };
 
   const pickStep = (n) => {
+    if (n === rec.step) return undefined;
     if (n < rec.step) return goStep(n);
     if (n === 2 && !step1Missing(rec).length) return goStep(2);
     if (n === 3 && !step1Missing(rec).length && !step2Missing(rec).length) return goStep(3);

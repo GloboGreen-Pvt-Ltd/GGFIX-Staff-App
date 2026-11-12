@@ -1364,7 +1364,7 @@ function ImeiScanModal({ visible, onClose, onScanned }) {
   );
 }
 
-function IssueTile({ name, Icon, picked, onPress }) {
+export function IssueTile({ name, Icon, picked, onPress }) {
   const on = picked > 0;
   return (
     <Pressable
@@ -1448,7 +1448,7 @@ function SelectedIssueRow({ name, Icon, price, onPriceChange, warranty, onWarran
   );
 }
 
-function groupIconFor(name) {
+export function groupIconFor(name) {
   const n = String(name || '').toLowerCase().trim().replace(/\s+/g, ' ');
   if (/screen|display/.test(n)) return Smartphone;
   if (/battery|power/.test(n)) return BatteryMedium;
@@ -1481,7 +1481,7 @@ function groupIconFor(name) {
   return Wrench;
 }
 
-function iconFor(code, name) {
+export function iconFor(code, name) {
   switch (code) {
     case 'DISPLAY': return Smartphone;
     case 'BATTERY': return BatteryMedium;

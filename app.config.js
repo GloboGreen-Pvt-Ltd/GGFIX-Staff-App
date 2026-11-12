@@ -30,6 +30,8 @@ export default {
     },
     android: {
       package: 'com.neargfix.employee',
+      // No adb/cloud backup of app data (session profile, cached jobs).
+      allowBackup: false,
       // Firebase (project "neargfix") — needed for Android push (FCM).
       // EAS: secret file env var GOOGLE_SERVICES_JSON (the JSON is not in git);
       // local builds fall back to the untracked ./google-services.json.
@@ -62,12 +64,27 @@ export default {
         'expo-build-properties',
         {
           android: {
-            usesCleartextTraffic: true,
+            // Only LAN dev (EXPO_PUBLIC_API_HOST) talks plain http; EAS builds are https-only.
+            usesCleartextTraffic: !!host,
             // Ship native libraries for real phones only (arm64-v8a). This drops the
             // emulator-only ABIs (x86/x86_64) and old 32-bit devices (armeabi-v7a),
             // shrinking the universal APK from ~114MB to ~50MB. buildArchs writes
             // `reactNativeArchitectures` into gradle.properties.
             buildArchs: ['arm64-v8a'],
+            // R8: shrink + optimize + obfuscate code, drop unused resources (release only).
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+            // SDK 58 template enables R8 in release. Room finds WorkManager's DB by
+            // reflection (WorkDatabase_Impl); without these keeps R8 strips/renames it
+            // and androidx.startup crashes before React Native starts.
+            extraProguardRules: [
+              '-keep class * extends androidx.room.RoomDatabase { <init>(); }',
+              '-keep class androidx.work.impl.WorkDatabase_Impl { *; }',
+              '-keep class androidx.work.** { *; }',
+              '-keep class androidx.room.** { *; }',
+              '-keep class androidx.startup.** { *; }',
+              '-keep class * implements androidx.startup.Initializer { <init>(); }',
+            ].join('\n'),
           },
         },
       ],

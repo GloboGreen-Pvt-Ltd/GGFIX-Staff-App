@@ -26,10 +26,10 @@ const tileOf = (o) => TILES.find((t) => t.statuses && t.statuses.includes(o.stat
 
 // My Deliveries — fixed-price Buy orders this employee picks up from the shop
 // and delivers. Counts come from the server list; only own orders are returned.
-export default function BuyDeliveriesScreen({ navigation }) {
+export default function BuyDeliveriesScreen({ navigation, route }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
-  const [filter, setFilter] = useState(null); // a TILES key, or null for the sections
+  const [filter, setFilter] = useState(route?.params?.filter || null); // a TILES key, or null for the sections
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {

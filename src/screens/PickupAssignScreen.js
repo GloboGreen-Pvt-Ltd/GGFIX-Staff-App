@@ -68,6 +68,7 @@ const TILES = [
 // pickups, pickups reassigned to them and their other active assignments.
 export default function PickupAssignScreen({ navigation, route }) {
   useHideNativeHeader(navigation);
+  const sellOnly = route?.params?.kind === 'SELL';
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -92,7 +93,8 @@ export default function PickupAssignScreen({ navigation, route }) {
       // One entry per server pickup id (distinct pickups are never merged).
       const seen = new Set();
       const rows = (Array.isArray(items) ? items : []).filter((b) => b?.id && !seen.has(b.id) && seen.add(b.id));
-      setList(rows);
+      // Repair pickups vs device-purchase (kind SELL) pickups: separate screens.
+      setList(rows.filter((b) => (sellOnly ? b.kind === 'SELL' : b.kind !== 'SELL')));
       // 30 / 15-minute reminders for pickups not yet started (OS notifications;
       // a no-op in Expo Go). Re-synced every load, so changes drop stale ones.
       syncPickupReminders(rows.filter((b) => bucketOf(b.status) === 'ASSIGNED').map((b) => ({
@@ -108,7 +110,7 @@ export default function PickupAssignScreen({ navigation, route }) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [sellOnly]);
 
   useFocusEffect(useCallback(() => {
     if (!loadedOnce.current) setLoading(true);
@@ -178,6 +180,24 @@ export default function PickupAssignScreen({ navigation, route }) {
   // My Jobs picture card. VIEW = Pickup Details; the pill is the next step the
   // server allows (tap = advance), shown only when there is one; History under
   // it opens the full event timeline.
+  // Call + Directions, right of the status line. Not accepted yet: the
+  // customer details are hidden, so a tap asks to accept first.
+  const contactIcons = (b, locked = false) => (
+          <>
+            {locked || customerPhone(b) ? (
+              <TouchableOpacity onPress={() => (locked ? acceptFirst() : callCustomer(b))} hitSlop={6} accessibilityRole="button" accessibilityLabel="Call customer"
+                style={{ width: rs(26), height: rs(26), borderRadius: rs(13), backgroundColor: '#E4EFDA', alignItems: 'center', justifyContent: 'center', marginLeft: rs(8) }}>
+                <Phone size={rs(13)} color="#609138" strokeWidth={2.4} />
+              </TouchableOpacity>
+            ) : null}
+            {locked || b.pickupAddressText ? (
+              <TouchableOpacity onPress={() => (locked ? acceptFirst() : openDirections(b))} hitSlop={6} accessibilityRole="button" accessibilityLabel="Directions"
+                style={{ width: rs(26), height: rs(26), borderRadius: rs(13), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center', marginLeft: rs(8) }}>
+                <Navigation size={rs(13)} color="#035C6C" strokeWidth={2.4} />
+              </TouchableOpacity>
+            ) : null}
+          </>
+  );
   const renderCards = (rows) => rows.map((b) => {
     const st = statusMeta(b.status);
     const re = isReassigned(b) && isActive(b);
@@ -202,7 +222,10 @@ export default function PickupAssignScreen({ navigation, route }) {
           ]}
           date={[cardDate(pickupDay(b)), slotLabel(b).replace(/ – /g, '–')].filter(Boolean).join(' · ')}
           time={null}
-          pill={next ? { text: busy ? 'Updating…' : next.label, onPress: busy ? () => {} : () => advance(b) } : null}
+          bottomPill={next ? { text: busy ? 'Updating…' : next.label, onPress: busy ? () => {} : () => advance(b) } : null}
+          statusLine={re ? 'Reassigned to you' : 'Awaiting your acceptance'}
+          statusColor={re ? '#FAA700' : st.color}
+          statusRight={contactIcons(b, true)}
           footer={serverAcceptance(b) ? (
             <TouchableOpacity onPress={() => setDeclineFor(b)} disabled={busy} activeOpacity={0.85} accessibilityRole="button"
               accessibilityLabel="Decline pickup" style={styles.declineBtn}>
@@ -225,15 +248,18 @@ export default function PickupAssignScreen({ navigation, route }) {
         model={deviceLabel(b)}
         lines={[
           { text: b.customerName || 'Customer' },
-          { icon: Wrench, text: issueLabel(b) },
-          { icon: MapPin, text: b.pickupAddressText },
+          { text: issueLabel(b) },
+          { text: b.pickupAddressText },
           { icon: CircleAlert, text: cancelInfo(b)?.note },
           // Schedule clash with another pickup still in hand the same day.
           { icon: AlertTriangle, text: clash.length ? `Overlaps ${clash.map((o) => `${trackingId(o)} (${slotLabel(o)})`).join(', ')}` : null },
         ]}
         date={[cardDate(pickupDay(b)), slotLabel(b).replace(/ – /g, '–')].filter(Boolean).join(' · ')}
         time={null}
-        pill={next ? { text: busy ? 'Updating…' : next.label, onPress: busy ? () => {} : () => advance(b) } : null}
+        {...{ [b.kind === 'SELL' ? 'bottomPill' : 'pill']: next ? { text: busy ? 'Updating…' : next.label, onPress: busy ? () => {} : () => advance(b) } : null }}
+        statusLine={st.label}
+        statusColor={st.color}
+        statusRight={contactIcons(b)}
         footer={(
           <PickupActions
             booking={b}
@@ -250,11 +276,11 @@ export default function PickupAssignScreen({ navigation, route }) {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <JobHeader
         navigation={navigation}
-        title="My Pickups"
-        sub="Assigned Pickups"
+        title={sellOnly ? 'Purchase Pickups' : 'My Pickups'}
+        sub={sellOnly ? 'Marketplace' : 'Repair Pickups'}
         searchOn={showSearch}
         onSearch={() => { if (showSearch) setQ(''); setShowSearch(!showSearch); }}
-        right={(
+        right={sellOnly ? null : (
           <>
             <TouchableOpacity onPress={() => navigation.navigate('PickupCalendar')} hitSlop={6} accessibilityLabel="Pickup calendar" activeOpacity={0.8} style={styles.headBtn}>
               <CalendarRange size={rs(17)} color={KIT.teal} strokeWidth={2.3} />
@@ -280,25 +306,7 @@ export default function PickupAssignScreen({ navigation, route }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load('refresh')} colors={[KIT.teal]} tintColor={KIT.teal} />}
         showsVerticalScrollIndicator={false}
       >
-        {buyOpen ? (
-          <TouchableOpacity onPress={() => navigation.navigate('BuyDeliveries')} accessibilityRole="button" accessibilityLabel="Buy deliveries"
-            style={{ flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 14, borderWidth: 1, borderColor: '#01AC77', backgroundColor: '#E6F7F0', marginBottom: 10 }}>
-            <Text style={{ flex: 1, fontSize: rf(14), fontWeight: '800', color: '#111111' }}>Buy Deliveries</Text>
-            <Text style={{ fontSize: rf(13), fontWeight: '800', color: '#01AC77' }}>{buyOpen} active ›</Text>
-          </TouchableOpacity>
-        ) : null}
         <View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-            {DATE_FILTERS.map((d) => {
-              const on = dateFilter === d.key;
-              return (
-                <TouchableOpacity key={d.key} onPress={() => setDateFilter(d.key)} activeOpacity={0.8} accessibilityRole="tab" accessibilityState={{ selected: on }}
-                  style={[styles.chip, on && styles.chipOn]}>
-                  <Text style={[styles.chipText, on && { color: '#FFFFFF' }]}>{d.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
 
           {error ? (
             <TouchableOpacity onPress={() => load('refresh')} activeOpacity={0.85} style={styles.errorCard} accessibilityRole="button">
@@ -309,7 +317,7 @@ export default function PickupAssignScreen({ navigation, route }) {
           ) : null}
 
           {firstLoad ? <ActivityIndicator color={KIT.teal} style={{ marginTop: rs(24) }} /> : filtering ? (
-            <Section title={filterTitle} icon={term ? Search : activeTile?.icon || CalendarDays}
+            <Section hideHead title={filterTitle} icon={term ? Search : activeTile?.icon || CalendarDays}
               color={activeTile?.color || '#035C6C'} count={filteredList.length}
               empty={term ? `No pickups match "${q.trim()}".` : activeTile && dateFilter === 'all' ? activeTile.empty : 'No pickups for this filter.'}
               onClear={activeTile?.key === 'total' && !term && dateFilter === 'all' ? null : clearFilters}>
@@ -322,13 +330,13 @@ export default function PickupAssignScreen({ navigation, route }) {
             ) : (
             <>
               {todayList.length ? (
-                <Section title="Today's Pickups" icon={CalendarDays} color="#0788C9" count={todayList.length}>{renderCards(todayList)}</Section>
+                <>{renderCards(todayList)}</>
               ) : null}
               {reassignList.length ? (
                 <Section title="Reassigned to You" icon={Repeat} color="#FAA700" count={reassignList.length}>{renderCards(reassignList)}</Section>
               ) : null}
               {recentList.length ? (
-                <Section title="All Pickups" icon={Package} color="#035C6C" count={recentList.length}>{renderCards(recentList)}</Section>
+                <>{renderCards(recentList)}</>
               ) : null}
             </>
             )
@@ -346,9 +354,6 @@ export default function PickupAssignScreen({ navigation, route }) {
 function PickupActions({ booking, onHistory, onVerify }) {
   const phone = customerPhone(booking);
   const btns = [
-    { key: 'call', Icon: Phone, color: '#609138', text: 'Call', label: 'Call customer', onPress: () => callCustomer(booking), off: !phone },
-    { key: 'map', Icon: Navigation, color: '#035C6C', text: 'Directions', label: 'Directions', onPress: () => openDirections(booking), off: !booking.pickupAddressText },
-    { key: 'history', Icon: History, color: '#1C3053', text: 'History', label: 'Pickup history', onPress: onHistory },
     ...(onVerify ? [{ key: 'verify', Icon: ClipboardCheck, color: '#0788C9', text: 'Verify', label: 'Pickup verification', onPress: onVerify }] : []),
   ];
   return (
@@ -368,10 +373,10 @@ function PickupActions({ booking, onHistory, onVerify }) {
 
 // Section title with a count; an empty section is a single muted line.
 // onClear (filtered list): a "Show all" link back to the normal sections.
-export function Section({ title, icon: Icon, color, count, empty, onClear, children }) {
+export function Section({ title, icon: Icon, color, count, empty, onClear, children, hideHead = false }) {
   return (
     <View style={styles.section}>
-      <View style={styles.sectionHead}>
+      {hideHead ? null : <View style={styles.sectionHead}>
         <View style={[styles.sectionDisc, { backgroundColor: color }]}><Icon size={rs(12)} color="#FFFFFF" strokeWidth={2.5} /></View>
         <Text style={styles.sectionTitle}>{title}</Text>
         <View style={[styles.countPill, { backgroundColor: `${color}1A` }]}><Text style={[styles.countText, { color }]}>{count}</Text></View>
@@ -380,7 +385,7 @@ export function Section({ title, icon: Icon, color, count, empty, onClear, child
             <Text style={styles.clearText}>Show all</Text>
           </TouchableOpacity>
         ) : null}
-      </View>
+      </View>}
       {count ? children : <Text style={styles.emptyLine}>{empty}</Text>}
     </View>
   );

@@ -1,10 +1,20 @@
 import { ticketApi } from './client';
+import { store } from '../store';
+import { selectTechnicianId } from '../store/authSlice';
+import { isAssignedTo } from '../utils/assignment';
 
 // `assignedToMe=true` is honored by ticket-service's TicketController#list —
 // it ignores the status param in that branch, so any status filter is
 // applied client-side after the fetch.
 export async function listMyTickets({ page = 0, size = 20 } = {}) {
-  return ticketApi.get('/tickets', { query: { assignedToMe: true, page, size } });
+  const res = await ticketApi.get('/tickets', { query: { assignedToMe: true, page, size } });
+  // Drop jobs reassigned away from me (to another employee or the owner),
+  // in case the list still carries them.
+  const me = selectTechnicianId(store.getState());
+  const keep = (rows) => rows.filter((t) => isAssignedTo(t, me));
+  if (Array.isArray(res)) return keep(res);
+  if (Array.isArray(res?.content)) return { ...res, content: keep(res.content) };
+  return res;
 }
 
 export async function getTicket(ticketId) {

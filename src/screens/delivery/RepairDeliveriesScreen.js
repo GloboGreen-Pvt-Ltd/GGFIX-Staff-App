@@ -18,10 +18,10 @@ export function slotText(d) {
 }
 export const statusTone = (s) => (s === 'DELIVERED' ? SC.green : ['FAILED', 'RETURNING', 'UNASSIGNED'].includes(s) ? '#B45309' : SK.teal);
 
-export default function RepairDeliveriesScreen({ navigation }) {
+export default function RepairDeliveriesScreen({ navigation, route }) {
   const [list, setList] = useState(null);
   const [error, setError] = useState(null);
-  const [tab, setTab] = useState('ACTIVE');
+  const [tab, setTab] = useState(route?.params?.tab === 'HISTORY' ? 'HISTORY' : 'ACTIVE');
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {

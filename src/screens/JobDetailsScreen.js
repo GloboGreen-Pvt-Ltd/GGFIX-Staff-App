@@ -40,6 +40,7 @@ import { ChevronLeft } from 'lucide-react-native';
 import { ticketRef } from '../utils/ticketRef';
 import { useSelector } from 'react-redux';
 import { selectTechnicianId, selectUserId } from '../store/authSlice';
+import { isAssignedTo, isAssignmentConflict, withCurrentAcceptance } from '../utils/assignment';
 import { resolveDeviceImageSource } from '../utils/images';
 import { listModelsForBrand } from '../api/master';
 import ImageViewerModal from '../components/ImageViewerModal';
@@ -962,13 +963,15 @@ export default function JobDetailsScreen({ route, navigation }) {
   // Bottom padding below the scroll content clears the system nav bar.
   const insets = useSafeAreaInsets();
 
-  const [ticket, setTicket] = useState(null);
+  const [ticket, setTicketRaw] = useState(null);
+  // An accept from before the latest reassignment isn't this technician's.
+  const eventsRef = useRef(null);
+  const setTicket = useCallback((t) => setTicketRaw(withCurrentAcceptance(t, eventsRef.current)), []);
   // A job is shown only to the employee it's assigned to — e.g. a stale
   // notification after a reassignment lands here. Unknown ids don't block.
   const myTechId = useSelector(selectTechnicianId);
   const myUserId = useSelector(selectUserId);
-  const notMine = !!(myTechId && ticket?.assignedTechnicianId
-    && String(ticket.assignedTechnicianId) !== String(myTechId));
+  const notMine = !!ticket && !isAssignedTo(ticket, myTechId);
   // Opening a ticket auto-reads its notification.
   useEffect(() => { if (ticket?.id) markNotificationsSeen({ tickets: [ticket] }); }, [ticket?.id, ticket?.updatedAt]);
   const [loading, setLoading] = useState(true);
@@ -1144,7 +1147,9 @@ export default function JobDetailsScreen({ route, navigation }) {
     if (!ticketId) return;
     try {
       const rows = await listTicketEvents(ticketId);
-      setTicketEvents(Array.isArray(rows) ? rows : []);
+      eventsRef.current = Array.isArray(rows) ? rows : [];
+      setTicketRaw((t) => withCurrentAcceptance(t, eventsRef.current));
+      setTicketEvents(eventsRef.current);
       const done = {};
       // Latest non-default note per row, keyed by status. We need this so
       // a re-opened ticket pre-fills the PARTS_REQUIRED input with what the
@@ -1215,6 +1220,16 @@ export default function JobDetailsScreen({ route, navigation }) {
       .catch(() => { if (active) setDeviceImage(null); });
     return () => { active = false; };
   }, [ticket?.id, ticket?.deviceImageUrl, ticket?.modelImageUrl, ticket?.brandId, ticket?.modelId]);
+
+  // Re-reads the assignment right before a write; false (and the screen
+  // switches to "reassigned") when the job has moved to someone else.
+  const stillMine = useCallback(async () => {
+    try {
+      const fresh = await getTicket(ticketId);
+      setTicket(fresh);
+      return isAssignedTo(fresh, myTechId);
+    } catch { return true; /* the write itself will surface any error */ }
+  }, [ticketId, myTechId, setTicket]);
 
   const refreshTicket = useCallback(async () => {
     if (!ticketId) return;
@@ -1331,6 +1346,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     progressInFlight.current = true;
     setProgressBusy(row.key);
     try {
+      if (!(await stillMine())) return;
       await postProgressEvent(ticketId, {
         statusKey: row.key,
         note: noteToSend,
@@ -1351,12 +1367,13 @@ export default function JobDetailsScreen({ route, navigation }) {
       }
     } catch (e) {
       markSync(e);
+      if (isAssignmentConflict(e)) { refreshTicket(); return; }
       notify('Could not save', userMessage(e, 'Please try again.'), { type: 'error' });
     } finally {
       progressInFlight.current = false;
       setProgressBusy(null);
     }
-  }, [ticketId, progressNotes, refreshProgress, progressDone, completedBanner, refreshTicket, showCompletion, markSync]);
+  }, [ticketId, progressNotes, refreshProgress, progressDone, completedBanner, refreshTicket, showCompletion, markSync, stillMine]);
 
   // Finish Repair — the only way to record Repair Completed. The lock (see
   // finishLock below) already holds it until the issue note is complete and
@@ -1378,6 +1395,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     setProgressBusy('REPAIR_COMPLETED');
     try {
       const [fresh, events] = await Promise.all([getTicket(ticketId), listTicketEvents(ticketId)]);
+      if (!isAssignedTo(fresh, myTechId)) { setTicket(fresh); return; }
       // A re-estimate opened or decided elsewhere meanwhile still holds it.
       const heldBy = reEstimateState(fresh).lock;
       if (heldBy) {
@@ -1408,7 +1426,7 @@ export default function JobDetailsScreen({ route, navigation }) {
       progressInFlight.current = false;
       setProgressBusy(null);
     }
-  }, [ticketId, progressDone, completedBanner, refreshProgress, refreshTicket, markSync]);
+  }, [ticketId, progressDone, completedBanner, refreshProgress, refreshTicket, markSync, myTechId, setTicket]);
 
   // Resume Repair — the spare parts are in. See PARTS_RECEIVED_ENABLED.
   const resumeRepair = useCallback(async (waitEvent) => {
@@ -1746,7 +1764,8 @@ export default function JobDetailsScreen({ route, navigation }) {
         || (estimateApproval.rejectedIsCurrent ? 'The customer rejected the estimate. Do not continue the repair.' : null)
         || (!approvedNow ? 'Waiting for customer approval.' : null) || noteReason
         || (autoState.partsEvent && !autoState.partsReceived ? 'Tap Resume Repair once the spare parts arrive.' : null),
-      QUALITY_CHECK_COMPLETED: (!progressDone.REPAIR_COMPLETED ? 'Finish the repair first.' : null) || noteReason,
+      QUALITY_CHECK_COMPLETED: (autoState.unableEvent ? 'Unable to repair — this job is closed for you. The shop returns the device to the customer.' : null)
+        || (!progressDone.REPAIR_COMPLETED ? 'Finish the repair first.' : null) || noteReason,
       REPAIR_NOT_COMPLETED: verifyReason,
     };
     Object.keys(lock).forEach((k) => { if (!lock[k] || progressDone[k]) delete lock[k]; });
@@ -2118,10 +2137,12 @@ export default function JobDetailsScreen({ route, navigation }) {
     if (acceptBusy) return;
     setAcceptBusy(true);
     try {
+      if (!(await stillMine())) { setAcceptBusy(false); setAcceptAsk(false); return; }
       await acceptTicket(ticketId);
     } catch (e) {
       setAcceptBusy(false);
       setAcceptAsk(false);
+      if (isAssignmentConflict(e)) { refreshTicket(); return; }
       notify('Could not accept job', userMessage(e, 'Please try again.'), { type: 'error' });
       return;
     }
@@ -2186,10 +2207,18 @@ export default function JobDetailsScreen({ route, navigation }) {
       <View className="flex-1" style={{ backgroundColor: C.bg }}>
         <JobHeader navigation={navigation} />
         <View className="flex-1 items-center justify-center px-6">
-          <Text className="font-bold mb-2" style={{ color: C.ink }}>Not assigned to you</Text>
+          <Text className="font-bold mb-2" style={{ color: C.ink }}>This job has been reassigned</Text>
           <Text className="text-center" style={{ fontSize: rf(12), color: C.muted }}>
-            This job is assigned to another employee. You can only open jobs assigned to you.
+            It is now assigned to another technician, so you can no longer update it.
           </Text>
+          <TouchableOpacity
+            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('MyTasks'))}
+            activeOpacity={0.85}
+            className="rounded-full px-5 py-2.5 mt-4"
+            style={{ backgroundColor: C.green }}
+          >
+            <Text className="font-bold" style={{ color: '#FFFFFF', fontSize: rf(12) }}>Back to My Tasks</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -2333,6 +2362,7 @@ export default function JobDetailsScreen({ route, navigation }) {
           : { kind: 'pending', text: 'Pending · tap Finish Repair above' };
       case 'QUALITY_CHECK_COMPLETED':
         if (rowDone(key)) return done(progressAt[key], progressActor[key]);
+        if (autoState.unableEvent) return { kind: 'locked', text: 'Not required · unable to repair' };
         return lock
           ? { kind: 'locked', text: `Locked · ${lock}` }
           : { kind: 'pending', text: 'Pending · tick after checking the device' };
@@ -2888,8 +2918,18 @@ export default function JobDetailsScreen({ route, navigation }) {
             )}
             <View className="flex-1" style={{ marginLeft: 12 }}>
               <InfoLine first label="Model Name" value={deviceParts(ticket).name} />
-              <InfoLine label="Model Number" value={deviceParts(ticket).number} />
-              <InfoLine label="Storage" value={deviceParts(ticket).storage} />
+              {/* Shown only when the booking has a value. */}
+              {(() => {
+                const dp = deviceParts(ticket);
+                const has = (v) => v && String(v).trim() && !['—', '-', 'N/A', 'NA', 'NULL'].includes(String(v).trim().toUpperCase());
+                return (
+                  <>
+                    {has(dp.number) ? <InfoLine label="Model Number" value={dp.number} /> : null}
+                    {has(ticket.color) ? <InfoLine label="Color" value={ticket.color} /> : null}
+                    {has(dp.storage) ? <InfoLine label="Storage" value={dp.storage} /> : null}
+                  </>
+                );
+              })()}
               <InfoLine label="Issue" value={issueText(ticket)} />
               <InfoLine label="Booking Time" value={fmtDateTime(ticket.createdAt) || '—'} />
               <InfoLine label="Expected Delivery" value={fmtDateTime(ticket.estimatedDeliveryAt || ticket.estimatedReadyAt) || '—'} />
@@ -2901,13 +2941,10 @@ export default function JobDetailsScreen({ route, navigation }) {
               })()}
             </View>
           </View>
-        </Card>
 
-        {/* Device summary: customer images, security and missing / damage
-            parts listed in one card, one icon row each. */}
-        <SectionHeader title="Device Summary" />
-        <Card>
-          {/* Customer device images row */}
+          {/* Customer device images row — hidden when none were uploaded. */}
+          {devicePhotos.length > 0 ? (<>
+          <View style={{ height: 1, backgroundColor: C.surface, marginVertical: 8 }} />
           <View className="flex-row">
             <View
               className="rounded-full items-center justify-center"
@@ -2941,75 +2978,15 @@ export default function JobDetailsScreen({ route, navigation }) {
               )}
             </View>
           </View>
+          </>) : null}
 
-          {/* Divider */}
-          <View style={{ height: 1, backgroundColor: C.surface, marginVertical: 8 }} />
-
-          {/* Security row */}
-          <View className="flex-row items-center">
-            <View
-              className="rounded-full items-center justify-center"
-              style={{ width: 28, height: 28, backgroundColor: C.greenTint }}
-            >
-              <ShieldCheck size={14} color={C.green} />
-            </View>
-            <View className="flex-1" style={{ marginLeft: 10 }}>
-              <Text className="font-bold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>
-                Device Security
-              </Text>
-              {ticket.deviceSecurityType && ticket.deviceSecurityType !== 'NONE' ? (
-                <View className="flex-row items-center mt-0.5">
-                  <Text className="font-bold" style={{ fontSize: rf(12), color: C.ink }}>
-                    {ticket.deviceSecurityType}
-                  </Text>
-                  <Text className="font-bold mx-1" style={{ fontSize: rf(12), color: C.ink }}>·</Text>
-                  <Text
-                    className="font-bold"
-                    style={{ fontSize: rf(12), color: C.ink, letterSpacing: 1 }}
-                  >
-                    {ticket.deviceSecurityValue || '—'}
-                  </Text>
-                </View>
-              ) : (
-                <Text className="font-bold mt-0.5" style={{ fontSize: rf(12), color: C.muted }}>No lock set</Text>
-              )}
-            </View>
-          </View>
-
-          {/* Divider */}
-          <View style={{ height: 1, backgroundColor: C.surface, marginVertical: 8 }} />
-
-          {/* Missing / Damage parts row */}
-          <View className="flex-row">
-            <View
-              className="rounded-full items-center justify-center"
-              style={{ width: 28, height: 28, backgroundColor: C.redTint }}
-            >
-              <PackageX size={14} color={C.red} />
-            </View>
-            <View className="flex-1" style={{ marginLeft: 10 }}>
-              <Text className="font-bold uppercase tracking-wider" style={{ fontSize: rf(9.5), color: C.muted }}>
-                Missing / Damage Parts
-              </Text>
-              {missingPartsLabels.length > 0 ? (
-                <View className="flex-row flex-wrap mt-1 -mx-0.5">
-                  {missingPartsLabels.map((label, i) => (
-                    <View
-                      key={`${label}-${i}`}
-                      className="rounded-full px-2 py-0.5 mx-0.5 mb-1"
-                      style={{ backgroundColor: C.redTint, borderWidth: 1, borderColor: C.redLine }}
-                    >
-                      <Text className="font-bold" style={{ fontSize: rf(10.5), color: C.red }}>
-                        {label}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text className="font-bold mt-0.5" style={{ fontSize: rf(12), color: C.muted }}>Nil</Text>
-              )}
-            </View>
-          </View>
+          {/* Security + missing / damage parts, after the images — each hidden when empty. */}
+          {ticket.deviceSecurityType && ticket.deviceSecurityType !== 'NONE' ? (
+            <InfoLine label="Device Security" value={`${ticket.deviceSecurityType} · ${ticket.deviceSecurityValue || '—'}`} />
+          ) : null}
+          {missingPartsLabels.length > 0 ? (
+            <InfoLine label="Missing / Damage Parts" value={missingPartsLabels.join(', ')} color={C.red} />
+          ) : null}
         </Card>
 
         {/* Finished repair / closed job: the note / voice / image entry form is
@@ -3368,7 +3345,7 @@ export default function JobDetailsScreen({ route, navigation }) {
             button, with Unable to Repair under it. The header badge reports
             the real sync state of this screen's reads and saves. */}
         <SectionHeader
-          title="Service Progress"
+          title="Service Status"
           right={syncBadge ? (
             <TouchableOpacity
               onPress={retrySync}
@@ -3387,9 +3364,17 @@ export default function JobDetailsScreen({ route, navigation }) {
         />
         <Card>
           {progressClosed ? (
-            <Text style={{ fontSize: rf(12), color: '#6B7280', marginBottom: 2 }}>
-              Quality check completed — service progress is closed.
-            </Text>
+            <View
+              className="flex-row items-center"
+              style={{ backgroundColor: C.greenTint, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 6 }}
+            >
+              <View className="rounded-full items-center justify-center" style={{ width: 22, height: 22, backgroundColor: C.green }}>
+                <Check size={13} color="#FFFFFF" strokeWidth={3} />
+              </View>
+              <Text className="font-bold" style={{ flex: 1, marginLeft: 10, fontSize: rf(12), color: C.green }}>
+                Quality check completed — service status is closed.
+              </Text>
+            </View>
           ) : null}
           {visibleProgressRows.map((row, idx) => {
             const status = stepStatus(row.key);
@@ -3438,14 +3423,14 @@ export default function JobDetailsScreen({ route, navigation }) {
                   />
                 </View>
 
-                <View style={{ flex: 1, marginLeft: 10, paddingVertical: 7 }}>
+                <View style={{ flex: 1, marginLeft: 12, paddingVertical: 9, borderBottomWidth: isLast ? 0 : 1, borderBottomColor: C.line }}>
                   <View className="flex-row items-start">
                     <View style={{ flex: 1, paddingTop: 4 }}>
-                      <Text className="font-bold" style={{ fontSize: rf(12), color: C.ink }} numberOfLines={1}>
+                      <Text className="font-bold" style={{ fontSize: rf(13), color: C.ink }} numberOfLines={1}>
                         {rowLabel(row)}
                       </Text>
                       {status.text ? (
-                        <Text className="mt-0.5" style={{ fontSize: rf(10), color: STATUS_COLOR[status.kind] }} numberOfLines={2}>
+                        <Text className="mt-0.5" style={{ fontSize: rf(11), color: status.kind === 'done' ? '#6B7280' : STATUS_COLOR[status.kind] }} numberOfLines={2}>
                           {status.text}
                         </Text>
                       ) : null}

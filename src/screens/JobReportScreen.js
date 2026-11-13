@@ -90,6 +90,9 @@ const CANONICAL_EVENT_ORDER = [
   'PARTS_REQUIRED',
   'QUALITY_CHECK_COMPLETED',
   'REPAIR_COMPLETED',
+  // Unable to repair → the return path (server adds Return Delivery).
+  'REPAIR_NOT_COMPLETED',
+  'RETURN_DELIVERY',
   'READY',
   'DELIVERED',
   'CANCELLED',
@@ -137,6 +140,8 @@ const EVENT_LABEL = {
   PARTS_REQUIRED: 'Spare Parts Waiting',
   QUALITY_CHECK_COMPLETED: 'Quality Check Completed',
   REPAIR_COMPLETED: 'Repair Completed',
+  REPAIR_NOT_COMPLETED: 'Repair Not Completed',
+  RETURN_DELIVERY: 'Repair Not Completed',
   READY: 'Repair Completed',
   DELIVERED: 'Repair Completed',
   CANCELLED: 'Work Cancelled',
@@ -672,6 +677,30 @@ function splitDevice(ticket) {
   return { model: parts[0] || 'Device', specs: parts.slice(1).join(' - ') };
 }
 
+// Partner Jobs screen status labels/tones (JobsScreen.js STATUS_VARIANT).
+const PARTNER_STATUS = {
+  CREATED: { label: 'Service Accepted', tone: 'amber' },
+  ASSIGNED: { label: 'Technician Assigned', tone: 'blue' },
+  IN_DIAGNOSIS: { label: 'In Diagnosis', tone: 'purple' },
+  IN_REPAIR: { label: 'Repair Work in Progress', tone: 'purple' },
+  QUOTED: { label: 'Re-Estimated', tone: 'amber' },
+  APPROVED: { label: 'Customer Approved', tone: 'blue' },
+  READY: { label: 'Ready for Delivery', tone: 'green' },
+  INVOICE_GENERATED: { label: 'Invoice Generated', tone: 'amber' },
+  INVOICE_READY: { label: 'Invoice Ready', tone: 'amber' },
+  DELIVERED_PROCESSING: { label: 'Out for Delivery', tone: 'amber' },
+  DELIVERED: { label: 'Delivered', tone: 'green' },
+  CANCELLED: { label: 'Cancelled', tone: 'red' },
+  RETURNED: { label: 'Returned', tone: 'red' },
+};
+const PARTNER_TONE = { amber: '#B45309', blue: '#035C6C', purple: '#035C6C', green: '#035C6C', red: '#B91C1C' };
+const PRE_ACCEPT = ['CREATED', 'ASSIGNED', 'IN_DIAGNOSIS', 'IN_REPAIR', 'QUOTED', 'APPROVED'];
+function partnerStatus(t) {
+  const st = String(t?.status || '').toUpperCase();
+  if (t?.assignedTechnicianId && t?.technicianAcceptedAt === null && PRE_ACCEPT.includes(st)) return PARTNER_STATUS.ASSIGNED;
+  return PARTNER_STATUS[st] || null;
+}
+
 // Partner Job Report card: status tab · photo · VIEW, then ref, device,
 // customer, the technician's description, issue, assigned date | time and the
 // current phase pill. Empty fields are skipped.
@@ -683,10 +712,15 @@ function JobCard({ ticket, phase, assignedAt, assignedBy, busy, onAccept, onReje
   const awaiting = isAwaitingAccept(ticket.stage);
   // A re-estimate awaiting the customer reads Pending Approval on the tab.
   const quoted = st === 'QUOTED' && category === 'Pending';
-  const tab = quoted ? 'Pending Approval' : category;
-  const tone = quoted ? PENDING_APPROVAL_COLOR : CATEGORY_COLOR[category];
+  // Tab = ticket status, as the Partner app's Jobs cards show it.
+  const pv = partnerStatus(ticket);
+  const tab = pv?.label || (quoted ? 'Pending Approval' : category);
+  const tone = pv ? PARTNER_TONE[pv.tone] : (quoted ? PENDING_APPROVAL_COLOR : CATEGORY_COLOR[category]);
   const techNote = clean(ticket.complianceNote);
-  const status = clean(phase);
+  const re = String(ticket.activeReEstimate?.status || ticket.reEstimateStatus || '').toUpperCase();
+  const status = re === 'REQUESTED' ? 'Technician Re-Estimate Requested'
+    : re === 'AWAITING_APPROVAL' ? 'Re-Estimated – Awaiting Customer Approval'
+    : clean(phase);
   return (
     <JobPictureCard
       ticket={ticket}
@@ -698,12 +732,13 @@ function JobCard({ ticket, phase, assignedAt, assignedBy, busy, onAccept, onReje
         { text: clean(ticket.customerName) },
         awaiting
           ? { icon: Users, text: assignedBy }
-          : { icon: UserCog, text: techNote ? `Technician: ${techNote}` : null },
-        { icon: Wrench, text: issueText(ticket) },
+          : { text: techNote ? `Technician: ${techNote}` : null },
+        { text: issueText(ticket) },
       ]}
       date={assignedAt ? formatDate(assignedAt) : null}
       time={assignedAt ? timeOf(assignedAt) : null}
-      pill={!awaiting && status ? { text: status } : null}
+      statusLine={!awaiting && status ? status : null}
+      statusColor={re ? '#B45309' : tone}
       footer={awaiting ? (
         <View style={styles.cardActions}>
           <TouchableOpacity style={styles.rejectBtn} onPress={onReject} disabled={busy}

@@ -1,3 +1,4 @@
+import { acceptedForCurrentAssignment } from './assignment';
 import { currentEvents, eventTime, findEvent, partsWaitFromEvents } from './serviceProgress';
 
 // My Jobs sections, in the rail's order. Each job sits in exactly one, decided
@@ -32,10 +33,13 @@ export function jobStage(ticket, events) {
   if (s === 'CANCELLED') return 'Cancelled';
   if (HANDOVER_STATUSES.has(s)) return 'Completed';
   const rows = Array.isArray(events) ? events : null;
-  if (!ticket?.technicianAcceptedAt) return rows && wasReassigned(rows) ? 'Reassigned' : 'Assigned';
+  if (!acceptedForCurrentAssignment(ticket, rows)) return rows && wasReassigned(rows) ? 'Reassigned' : 'Assigned';
   if (!rows) return WAITING_STATUSES.has(s) ? 'Pending' : 'In Process';
   const cur = currentEvents(rows);
   if (findEvent(cur, 'QUALITY_CHECK_COMPLETED')) return 'Completed';
+  // Unable to repair: the technician's part is over (unless resumed after it).
+  const notDone = findEvent(cur, 'REPAIR_NOT_COMPLETED');
+  if (notDone && !cur.some((e) => ['REPAIR_WORK_RESUMED', 'IN_REPAIR'].includes(up(e?.status)) && eventTime(e) > eventTime(notDone))) return 'Completed';
   const done = findEvent(cur, 'REPAIR_COMPLETED');
   if (done) {
     const doneAt = eventTime(done);

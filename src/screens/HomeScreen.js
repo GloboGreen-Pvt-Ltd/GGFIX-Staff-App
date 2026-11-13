@@ -41,6 +41,8 @@ import {
 } from '../api/technician';
 import { listMyTickets, listTicketEvents } from '../api/tickets';
 import { listMyAssignedPickups } from '../api/pickups';
+import { DELIVERY_TABS, listMyDeliveries } from '../api/buyDeliveries';
+import { REPAIR_DELIVERY_TABS, listRepairDeliveries } from '../api/repairDeliveries';
 import { bucketOf } from '../utils/pickups';
 import { jobStage, isLiveStage, isAwaitingAccept } from '../utils/jobStage';
 import { listTechnicianWorkStatuses } from '../api/master';
@@ -431,6 +433,22 @@ export default function HomeScreen({ navigation }) {
     const sub = AppState.addEventListener('change', (s) => { if (s === 'active') loadPickups(); });
     return () => { active = false; clearInterval(id); sub.remove(); };
   }, [isPickupPerson]));
+  // Marketplace (Buy) orders for the Marketplace Pickups tiles.
+  const [buyOrders, setBuyOrders] = useState(null);
+  useFocusEffect(useCallback(() => {
+    if (!isPickupPerson) return undefined;
+    let active = true;
+    listMyDeliveries().then((rows) => { if (active) setBuyOrders(Array.isArray(rows) ? rows : []); }).catch(() => { if (active) setBuyOrders((p) => p || []); });
+    return () => { active = false; };
+  }, [isPickupPerson]));
+  // Repair return deliveries (shop → customer) the Partner App assigned to me.
+  const [repairDeliveries, setRepairDeliveries] = useState(null);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    listRepairDeliveries().then((r) => { if (active) setRepairDeliveries(Array.isArray(r) ? r : (Array.isArray(r?.content) ? r.content : [])); })
+      .catch(() => { if (active) setRepairDeliveries((p) => p || []); });
+    return () => { active = false; };
+  }, []));
   // Pull to refresh: tickets, attendance and (pickup person) pickups.
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const onPullRefresh = useCallback(async () => {
@@ -443,7 +461,7 @@ export default function HomeScreen({ navigation }) {
     } finally { setPullRefreshing(false); }
   }, [reloadTickets, reloadAttendance, isPickupPerson]);
   const pickupSummary = useMemo(() => {
-    const list = pickups || [];
+    const list = (pickups || []).filter((b) => b.kind !== 'SELL'); // repair pickups only
     const count = (bucket) => list.filter((b) => bucketOf(b.status) === bucket).length;
     return { total: list.length, assigned: count('ASSIGNED'), inProgress: count('IN_PROGRESS'), completed: count('COMPLETED') };
   }, [pickups]);
@@ -844,30 +862,11 @@ export default function HomeScreen({ navigation }) {
           {/* Deliveries are pickup-person work: hidden for technicians. */}
           {isPickupPerson ? (
           <>
-          {/* Shop → customer Buy deliveries (marketplace /staff/buy-orders). */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate('BuyDeliveries')}
-            accessibilityRole="button"
-            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, padding: rs(12), marginTop: rs(12), ...shadow(0.04, 8, 2, 1) }}
-          >
-            <RNText style={{ flex: 1, fontSize: rf(14), fontWeight: '700', color: C.text }}>Order Deliveries</RNText>
-            <RNText style={{ fontSize: rf(12), fontWeight: '700', color: C.primary }}>Shop pickup → Customer ›</RNText>
-          </TouchableOpacity>
-
-          {/* Repaired devices back to the customer (ticket-service /technicians/me/repair-deliveries). */}
-          <TouchableOpacity
-            onPress={() => navigation.navigate('RepairDeliveries')}
-            accessibilityRole="button"
-            style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, padding: rs(12), marginTop: rs(10), ...shadow(0.04, 8, 2, 1) }}
-          >
-            <RNText style={{ flex: 1, fontSize: rf(14), fontWeight: '700', color: C.text }}>Service Delivery</RNText>
-            <RNText style={{ fontSize: rf(12), fontWeight: '700', color: C.primary }}>Repaired device → Customer ›</RNText>
-          </TouchableOpacity>
           </>
           ) : null}
 
           {/* 3b. Job Overview — counts per bucket; red dot = new unseen assignments */}
-          <SectionTitle title="Job Overview" />
+          <SectionTitle title={isPickupPerson ? 'Repair Pickups' : 'Job Overview'} />
           <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
             {isPickupPerson ? (
               <>
@@ -922,6 +921,48 @@ export default function HomeScreen({ navigation }) {
             </>
             )}
           </View>
+          {/* Marketplace pickups: their own screen (Buy deliveries), not mixed into My Pickups. */}
+          {isPickupPerson ? (
+          <>
+          <SectionTitle title="Marketplace Pickups" />
+          {/* Same tile design as Repair Pickups; each opens Buy Deliveries on that tile. */}
+          <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
+            {[
+              { key: 'SELL', label: 'Purchase', icon: Briefcase, fg: TILE_TONES.teal, tint: C.greenTint },
+              { key: 'PICKUP', label: 'Pickup', icon: ClipboardList, fg: TILE_TONES.blue, tint: C.redTint },
+              { key: 'DELIVERY', label: 'Delivery', icon: Clock, fg: TILE_TONES.orange, tint: C.yellowTint },
+              { key: 'HISTORY', label: 'Completed', icon: CircleCheck, fg: TILE_TONES.green, tint: C.greenTint },
+            ].map((t) => (
+              <TaskCountCard key={t.key} icon={t.icon} fg={t.fg} tint={t.tint} label={t.label}
+                value={t.key === 'SELL' ? (pickups || []).filter((b) => b.kind === 'SELL').length
+                  : buyOrders === null ? 0 : buyOrders.filter((o) => DELIVERY_TABS.find((d) => d.key === t.key)?.statuses.includes(o.status)).length}
+                loading={t.key === 'SELL' ? pickups === null : buyOrders === null}
+                onPress={() => (t.key === 'SELL'
+                  ? navigation.push('PickupAssign', { kind: 'SELL' })
+                  : navigation.navigate('BuyDeliveries', { filter: t.key }))} />
+            ))}
+          </View>
+
+          </>
+          ) : null}
+          {/* Repair return deliveries: shown to whoever the Partner App assigns them to. */}
+          {isPickupPerson || (repairDeliveries || []).length ? (
+          <>
+          <SectionTitle title="Repair Deliveries" />
+          <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
+            {[
+              { key: 'ASSIGNED', label: 'New', icon: ClipboardList, fg: TILE_TONES.blue, tint: C.redTint, match: (s) => s === 'ASSIGNED' },
+              { key: 'ACTIVE', label: 'Active', icon: Clock, fg: TILE_TONES.orange, tint: C.yellowTint, match: (s) => s !== 'ASSIGNED' && REPAIR_DELIVERY_TABS[0].statuses.includes(s) },
+              { key: 'HISTORY', label: 'Completed', icon: CircleCheck, fg: TILE_TONES.green, tint: C.greenTint, match: (s) => REPAIR_DELIVERY_TABS[1].statuses.includes(s) },
+            ].map((t) => (
+              <TaskCountCard key={t.key} icon={t.icon} fg={t.fg} tint={t.tint} label={t.label}
+                value={(repairDeliveries || []).filter((d) => t.match(d.status)).length}
+                loading={repairDeliveries === null}
+                onPress={() => navigation.navigate('RepairDeliveries', { tab: t.key === 'HISTORY' ? 'HISTORY' : 'ACTIVE' })} />
+            ))}
+          </View>
+          </>
+          ) : null}
           {!isPickupPerson && !tasksLoaded && !ticketsLoading && errors.tickets ? (
             <Text style={{ fontSize: rf(11), color: C.muted, marginTop: rs(4) }} numberOfLines={1}>
               Couldn’t load tasks — will retry automatically.

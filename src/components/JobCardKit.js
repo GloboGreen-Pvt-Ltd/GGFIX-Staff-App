@@ -407,13 +407,15 @@ export function DevicePhoto({ ticket, tone = KIT.teal }) {
 //   lines: [{ icon?, text }] — no icon renders as a plain muted line (customer).
 // compact: smaller picture column and 12px detail lines (My Pickups cards).
 export function JobPictureCard({
-  ticket, tab, tabColor, refText, model, lines = [], date, time, pill, footer, onPress, onLongPress, compact = false,
+  ticket, tab, tabColor, refText, model, lines = [], date, time, pill, footer, onPress, onLongPress, compact = false, statusLine, statusColor, statusRight, bottomPill,
 }) {
   const shown = lines.filter((l) => l && l.text);
   const fs = compact ? 12 : 12.5;
   const lh = compact ? 16.5 : 17.5;
   return (
-    <TouchableOpacity onPress={onPress} onLongPress={onLongPress} activeOpacity={0.9} style={s.card}>
+    <TouchableOpacity onPress={onPress} onLongPress={onLongPress} activeOpacity={0.9} style={[s.card, statusLine ? { flexDirection: 'column' } : null]}>
+    {/* statusLine: full-width bottom row from the card's left edge (Partner Jobs card). */}
+    <View style={statusLine ? { flexDirection: 'row' } : { flexDirection: 'row', flex: 1 }}>
       <View style={[s.picCol, compact && s.picColCompact]}>
         <View style={[s.tab, { backgroundColor: tabColor }]}>
           <KText size={11} weight="800" color={KIT.white} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{tab}</KText>
@@ -454,6 +456,22 @@ export function JobPictureCard({
         ) : null}
         {footer}
       </View>
+    </View>
+    {statusLine ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: KIT.line, paddingHorizontal: rs(12), paddingVertical: rs(6) }}>
+        <KText size={11.5} weight="700" color={statusColor || KIT.teal} numberOfLines={1} style={{ flex: 1 }}>{statusLine}</KText>
+        {statusRight}
+      </View>
+    ) : null}
+    {/* bottomPill: full-width action on its own line under the status row. */}
+    {bottomPill ? (
+      <TouchableOpacity onPress={bottomPill.onPress || onPress} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel={bottomPill.text}
+        style={[s.pill, { alignSelf: 'stretch', justifyContent: 'center', marginTop: 0, marginHorizontal: rs(10), marginBottom: rs(10) }]}>
+        <Clock size={rs(13)} color={KIT.teal} strokeWidth={2.3} />
+        <KText size={12.5} weight="700" color={KIT.teal} numberOfLines={1}>{bottomPill.text}</KText>
+        <ChevronRight size={rs(14)} color={KIT.teal} strokeWidth={2.4} />
+      </TouchableOpacity>
+    ) : null}
     </TouchableOpacity>
   );
 }

@@ -7,7 +7,8 @@ import {
   Phone, Smartphone, User, Video, Wrench,
 } from 'lucide-react-native';
 import { Text } from '../components/Typography';
-import MintScreenHeader, { useHideNativeHeader } from '../components/MintScreenHeader';
+import { useHideNativeHeader } from '../components/MintScreenHeader';
+import { JobHeader, DevicePhoto } from '../components/JobCardKit';
 import { callCustomer, openDirections } from '../components/PickupCard';
 import PickupProblemSheet from '../components/PickupProblemSheet';
 import PickupDeclineSheet from '../components/PickupDeclineSheet';
@@ -17,7 +18,7 @@ import {
   PICKUP_STEPS, stepsFor, actorLabel, awaitingAccept, canReportProblem, cancelInfo, customerPhone, deviceLabel, eventColor, eventLabel, fmtDay, fmtStamp,
   isPastPickup, issueLabel, nextStepFor, overlapsFor, pickupDay, relDay, serverAcceptance, slotLabel, sortEvents, statusMeta, stepIndex, trackingId,
 } from '../utils/pickups';
-import { rf, rs } from '../utils/responsive';
+import { rf, rs, rlh } from '../utils/responsive';
 import { userMessage } from '../utils/userMessages';
 
 const STEP_FROM = PICKUP_STEPS.findIndex((st) => st.key === 'ESTIMATE');
@@ -74,7 +75,7 @@ export default function PickupDetailsScreen({ navigation, route }) {
   if (loading && !booking) {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
-        <MintScreenHeader title="Pickup Details" navigation={navigation} />
+        <JobHeader navigation={navigation} title="Pickup Details" sub={booking ? trackingId(booking) : undefined} />
         <ActivityIndicator color="#035C6C" style={{ marginTop: rs(40) }} />
       </SafeAreaView>
     );
@@ -82,7 +83,7 @@ export default function PickupDetailsScreen({ navigation, route }) {
   if (!booking || missing) {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
-        <MintScreenHeader title="Pickup Details" navigation={navigation} />
+        <JobHeader navigation={navigation} title="Pickup Details" sub={booking ? trackingId(booking) : undefined} />
         <View style={s.state}>
           <AlertTriangle size={rs(26)} color="#FAA700" />
           <Text style={s.stateText}>{error || 'This pickup is no longer assigned to you.'}</Text>
@@ -106,7 +107,7 @@ export default function PickupDetailsScreen({ navigation, route }) {
     const canDecline = serverAcceptance(booking);
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
-        <MintScreenHeader title="Pickup Details" navigation={navigation} />
+        <JobHeader navigation={navigation} title="Pickup Details" sub={booking ? trackingId(booking) : undefined} />
         <View style={s.state}>
           <AlertTriangle size={rs(26)} color="#FAA700" />
           <Text style={s.stateText}>Accept this pickup to view its details.</Text>
@@ -157,7 +158,7 @@ export default function PickupDetailsScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      <MintScreenHeader title="Pickup Details" navigation={navigation} />
+      <JobHeader navigation={navigation} title="Pickup Details" sub={booking ? trackingId(booking) : undefined} />
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={['#035C6C']} tintColor="#035C6C" />}>
         {error ? <Text style={s.error}>{error}</Text> : null}
@@ -165,9 +166,7 @@ export default function PickupDetailsScreen({ navigation, route }) {
         {/* Device + status */}
         <View style={s.card}>
           <View style={s.row}>
-            {img ? <Image source={{ uri: img }} style={s.deviceImg} resizeMode="contain" /> : (
-              <View style={[s.deviceImg, s.deviceStub]}><Smartphone size={rs(22)} color="#035C6C" /></View>
-            )}
+            <View style={[s.deviceImg, s.deviceStub, { overflow: 'hidden' }]}><DevicePhoto ticket={{ ...booking, deviceImageUrl: img || booking?.deviceImageUrl }} /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={s.id} numberOfLines={1}>{trackingId(booking)}</Text>
               <Text style={s.device} numberOfLines={2}>{deviceLabel(booking)}</Text>
@@ -187,10 +186,27 @@ export default function PickupDetailsScreen({ navigation, route }) {
         {/* Customer + where / when */}
         <View style={s.card}>
           <Text style={s.cardTitle}>Customer & Pickup</Text>
-          <Line icon={User} text={booking.customerName || 'Customer'} strong />
-          {phone ? <Line icon={Phone} text={phone} /> : null}
-          <Line icon={CalendarDays} text={`${relDay(pickupDay(booking))} · ${fmtDay(pickupDay(booking))}`} />
-          <Line icon={Clock} text={slot || 'No time slot set'} />
+          {/* Name + phone left; call / directions icons right. */}
+          <View style={[s.row, { alignItems: 'center', marginBottom: rs(6) }]}>
+            <View style={s.avatar}><User size={rs(16)} color="#035C6C" strokeWidth={2.2} /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={s.kvValue} numberOfLines={1}>{booking.customerName || 'Customer'}</Text>
+              {phone ? <Text style={s.small} numberOfLines={1}>{phone}</Text> : null}
+            </View>
+            {phone ? (
+              <TouchableOpacity onPress={() => callCustomer(booking)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Call customer"
+                style={[s.roundBtn, { backgroundColor: '#E4EFDA' }]}>
+                <Phone size={rs(15)} color="#609138" strokeWidth={2.4} />
+              </TouchableOpacity>
+            ) : null}
+            {booking.pickupAddressText ? (
+              <TouchableOpacity onPress={() => openDirections(booking)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Directions"
+                style={[s.roundBtn, { backgroundColor: '#E5F3F5' }]}>
+                <Navigation size={rs(15)} color="#035C6C" strokeWidth={2.4} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          <Line icon={CalendarDays} text={`${relDay(pickupDay(booking))} · ${fmtDay(pickupDay(booking))}${slot ? ` · ${slot}` : ''}`} />
           {booking.pickupAddressText ? <Line icon={MapPin} text={booking.pickupAddressText} /> : null}
           {clash.length ? (
             <View style={s.clash}>
@@ -198,11 +214,6 @@ export default function PickupDetailsScreen({ navigation, route }) {
               <Text style={s.clashText}>Overlaps with {clash.map((o) => `${trackingId(o)} (${slotLabel(o)})`).join(', ')}</Text>
             </View>
           ) : null}
-          <View style={s.quick}>
-            <Quick icon={Phone} label="Call" color="#609138" onPress={() => callCustomer(booking)} disabled={!phone} />
-            <Quick icon={Navigation} label="Directions" color="#035C6C" onPress={() => openDirections(booking)} disabled={!booking.pickupAddressText} />
-            <Quick icon={History} label="History" color="#1C3053" onPress={() => navigation.navigate('PickupHistory', { booking })} />
-          </View>
         </View>
 
         {/* Pickup progress — the backend steps top to bottom: when and by whom
@@ -211,8 +222,14 @@ export default function PickupDetailsScreen({ navigation, route }) {
             on the current one, and a failed / cancelled row where it stopped. */}
         <View style={s.card}>
           <View style={s.rowBetween}>
-            <Text style={s.cardTitle}>Pickup Progress</Text>
-            <Text style={s.stepCount}>{cancel ? 'Stopped' : idx >= 0 ? `Step ${idx + 1} of ${steps.length}` : ''}</Text>
+            <Text style={s.cardTitle}>Pickup Status</Text>
+          </View>
+          {/* Overall progress bar. */}
+          <View style={s.progTrack}>
+            <View style={[s.progFill, {
+              width: `${Math.round(((cancel ? reached + 1 : Math.max(idx + 1, 0)) / Math.max(steps.length, 1)) * 100)}%`,
+              backgroundColor: cancel ? '#F32C26' : '#609138',
+            }]} />
           </View>
           {steps.map((step, i) => {
             const last = i === steps.length - 1;
@@ -230,11 +247,13 @@ export default function PickupDetailsScreen({ navigation, route }) {
                   {!last || cancel ? <View style={[s.line, { backgroundColor: done && (cancel ? i < reached : idx > i) ? '#609138' : '#E5E7EB' }]} /> : null}
                 </View>
                 <View style={s.stepBody}>
-                  <Text style={[s.stepLabel, current && { color: '#035C6C' }, !done && !current && s.stepPending]}>{step.label}</Text>
+                  {/* Step name left, time right; no "by system" actor text. */}
+                  <View style={s.rowBetween}>
+                    <Text style={[s.stepLabel, { flex: 1 }, current && { color: '#035C6C' }, !done && !current && s.stepPending]}>{step.label}</Text>
+                    {ev?.createdAt ? <Text style={[s.small, { marginLeft: rs(8) }]}>{fmtStamp(ev.createdAt)}</Text> : null}
+                  </View>
                   {ev ? (
-                    <Text style={s.small}>
-                      {[fmtStamp(ev.createdAt), `by ${actorLabel(ev.actor)}`, ev.distanceMeters != null ? `${ev.distanceMeters} m away` : null].filter(Boolean).join(' · ')}
-                    </Text>
+                    ev.distanceMeters != null ? <Text style={s.small}>{ev.distanceMeters} m away</Text> : null
                   ) : current && next ? <Text style={[s.small, { color: '#035C6C', fontWeight: '700' }]}>Next: {next.label}</Text> : null}
                   {showMedia ? (
                     <View style={s.photos}>
@@ -307,29 +326,6 @@ export default function PickupDetailsScreen({ navigation, route }) {
           </View>
         ) : null}
 
-        {/* Recent activity — the latest 3 events; the full audit trail is one tap away. */}
-        {events.length ? (
-          <View style={s.card}>
-            <View style={s.rowBetween}>
-              <Text style={s.cardTitle}>Recent Activity</Text>
-              <Text style={s.stepCount}>{events.length} {events.length === 1 ? 'event' : 'events'}</Text>
-            </View>
-            {events.slice(-3).reverse().map((e, i) => (
-              <View key={e.id || i} style={s.event}>
-                <View style={[s.eventDot, { backgroundColor: eventColor(e.status) }]} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={s.eventTitle}>{eventLabel(e.status)}</Text>
-                  {e.note ? <Text style={s.small} numberOfLines={2}>{e.note}</Text> : null}
-                  <Text style={s.small}>{[fmtStamp(e.createdAt), `by ${actorLabel(e.actor)}`].filter(Boolean).join(' · ')}</Text>
-                </View>
-              </View>
-            ))}
-            <TouchableOpacity onPress={() => navigation.navigate('PickupHistory', { booking })} activeOpacity={0.8} accessibilityRole="button" style={s.fullBtn}>
-              <History size={rs(14)} color="#035C6C" strokeWidth={2.4} />
-              <Text style={s.fullText}>View Full History</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
       </ScrollView>
 
       {next || canReportProblem(booking) ? (
@@ -367,7 +363,7 @@ export default function PickupDetailsScreen({ navigation, route }) {
 function Line({ icon: Icon, text, strong }) {
   return (
     <View style={s.line2}>
-      <Icon size={rs(14)} color="#6B7280" />
+      <View style={s.lineIco}><Icon size={rs(15)} color="#035C6C" strokeWidth={2.2} /></View>
       <Text style={[s.lineText, strong && { fontWeight: '800', color: '#111111' }]}>{text}</Text>
     </View>
   );
@@ -392,19 +388,24 @@ const s = StyleSheet.create({
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: rs(10) },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  progTrack: { height: rs(6), borderRadius: rs(3), backgroundColor: '#EEF0F2', overflow: 'hidden', marginBottom: rs(12) },
+  progFill: { height: '100%', borderRadius: rs(3) },
+  avatar: { width: rs(34), height: rs(34), borderRadius: rs(17), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center' },
+  roundBtn: { width: rs(34), height: rs(34), borderRadius: rs(17), alignItems: 'center', justifyContent: 'center' },
   deviceImg: { width: rs(60), height: rs(60), borderRadius: rs(12), backgroundColor: '#F3F4F6' },
   deviceStub: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#E5F3F5' },
   id: { fontSize: rf(12.5), fontWeight: '800', color: '#035C6C' },
-  device: { fontSize: rf(16), fontWeight: '800', color: '#111111', marginTop: 1 },
+  device: { fontSize: rf(12), fontWeight: '800', color: '#111111', marginTop: 1 },
   muted: { fontSize: rf(12.5), color: '#6B7280', marginTop: 1 },
   pill: { paddingHorizontal: rs(9), paddingVertical: rs(3), borderRadius: 999, maxWidth: '38%', alignSelf: 'flex-start' },
   pillText: { fontSize: rf(11), fontWeight: '800' },
   issue: { flexDirection: 'row', gap: rs(6), marginTop: rs(10), backgroundColor: '#F9FAFB', borderRadius: rs(10), padding: rs(9) },
-  issueText: { flex: 1, fontSize: rf(13.5), color: '#1C3053', fontWeight: '600', lineHeight: rf(19) },
+  issueText: { flex: 1, fontSize: rf(12.5), color: '#1C3053', fontWeight: '600', lineHeight: rlh(17.5) },
   cancel: { fontSize: rf(12.5), color: '#F32C26', fontWeight: '700', marginTop: rs(8) },
-  cardTitle: { fontSize: rf(14), fontWeight: '800', color: '#1C3053', marginBottom: rs(8) },
-  line2: { flexDirection: 'row', alignItems: 'flex-start', gap: rs(8), marginBottom: rs(7) },
-  lineText: { flex: 1, fontSize: rf(13.5), color: '#374151', lineHeight: rf(19) },
+  cardTitle: { fontSize: rf(12), fontWeight: '800', color: '#1C3053', marginBottom: rs(8) },
+  line2: { flexDirection: 'row', alignItems: 'center', gap: rs(10), marginBottom: rs(8) },
+  lineIco: { width: rs(34), height: rs(26), alignItems: 'center', justifyContent: 'center' },
+  lineText: { flex: 1, fontSize: rf(12.5), color: '#374151', lineHeight: rlh(17.5) },
   quick: { flexDirection: 'row', gap: rs(6), marginTop: rs(4) },
   clash: {
     flexDirection: 'row', alignItems: 'flex-start', gap: rs(6), marginBottom: rs(8), padding: rs(8), borderRadius: rs(10),
@@ -416,22 +417,22 @@ const s = StyleSheet.create({
   stepCount: { fontSize: rf(11.5), fontWeight: '700', color: '#6B7280', marginBottom: rs(8) },
   step: { flexDirection: 'row' },
   rail: { width: rs(26), alignItems: 'center' },
-  dot: { width: rs(20), height: rs(20), borderRadius: rs(10), borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  dot: { width: rs(22), height: rs(22), borderRadius: rs(11), borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   dotInner: { width: rs(8), height: rs(8), borderRadius: rs(4), backgroundColor: '#FFFFFF' },
   line: { flex: 1, width: 2, marginVertical: 2, minHeight: rs(10) },
-  stepBody: { flex: 1, minWidth: 0, paddingLeft: rs(6), paddingBottom: rs(10) },
-  stepLabel: { fontSize: rf(13.5), fontWeight: '800', color: '#111111' },
+  stepBody: { flex: 1, minWidth: 0, marginLeft: rs(8), marginBottom: rs(8), paddingHorizontal: rs(10), paddingVertical: rs(7), borderRadius: rs(10), backgroundColor: '#F7F9FA' },
+  stepLabel: { fontSize: rf(12.5), fontWeight: '800', color: '#111111' },
   stepPending: { color: '#9CA3AF', fontWeight: '600' },
   small: { fontSize: rf(11.5), color: '#6B7280', marginTop: 1 },
   link: { fontSize: rf(12.5), fontWeight: '800', color: '#035C6C', marginBottom: rs(8) },
   svc: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingVertical: rs(6), borderBottomWidth: 1, borderBottomColor: '#F1F3F5' },
-  kvLabel: { flex: 1, fontSize: rf(13), color: '#374151' },
-  kvValue: { fontSize: rf(13), fontWeight: '800', color: '#111111' },
+  kvLabel: { flex: 1, fontSize: rf(12), color: '#374151' },
+  kvValue: { fontSize: rf(12), fontWeight: '800', color: '#111111' },
   total: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: rs(8),
     paddingVertical: rs(8), paddingHorizontal: rs(10), borderRadius: rs(10), backgroundColor: '#E5F3F5',
   },
-  kvStrong: { fontSize: rf(13.5), fontWeight: '800', color: '#035C6C' },
+  kvStrong: { fontSize: rf(12.5), fontWeight: '800', color: '#035C6C' },
   chips: { gap: rs(6), marginTop: rs(8) },
   chip: { borderRadius: rs(10), borderWidth: 1, paddingVertical: rs(6), paddingHorizontal: rs(10) },
   chipText: { fontSize: rf(12.5), fontWeight: '700' },
@@ -442,15 +443,15 @@ const s = StyleSheet.create({
   photoCap: { marginTop: rs(4), fontSize: rf(11.5), fontWeight: '700', color: '#6B7280' },
   event: { flexDirection: 'row', gap: rs(9), paddingVertical: rs(6), borderBottomWidth: 1, borderBottomColor: '#F1F3F5' },
   eventDot: { width: rs(9), height: rs(9), borderRadius: rs(5), marginTop: rs(5) },
-  eventTitle: { fontSize: rf(13), fontWeight: '800', color: '#111111' },
+  eventTitle: { fontSize: rf(12), fontWeight: '800', color: '#111111' },
   fullBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6), marginTop: rs(10), height: rs(38),
     borderRadius: rs(10), borderWidth: 1, borderColor: '#035C6C', backgroundColor: '#FFFFFF',
   },
-  fullText: { fontSize: rf(13), fontWeight: '800', color: '#035C6C' },
+  fullText: { fontSize: rf(12), fontWeight: '800', color: '#035C6C' },
   error: { fontSize: rf(12), color: '#F32C26', fontWeight: '700' },
   state: { alignItems: 'center', padding: rs(30), gap: rs(10) },
-  stateText: { fontSize: rf(13), color: '#6B7280', textAlign: 'center' },
+  stateText: { fontSize: rf(12), color: '#6B7280', textAlign: 'center' },
   bar: {
     flexDirection: 'row', alignItems: 'stretch', gap: rs(8), paddingHorizontal: rs(12), paddingTop: rs(10),
     backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#EEF0F2',
@@ -459,10 +460,10 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(5), paddingHorizontal: rs(10), minHeight: rs(48),
     borderRadius: rs(13), borderWidth: 1.5, borderColor: '#F32C26', backgroundColor: '#FFFFFF',
   },
-  problemText: { flexShrink: 1, fontSize: rf(13), fontWeight: '800', color: '#F32C26', textAlign: 'center' },
+  problemText: { flexShrink: 1, fontSize: rf(12), fontWeight: '800', color: '#F32C26', textAlign: 'center' },
   nextBtn: {
     flex: 1.4, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6), minHeight: rs(48), paddingHorizontal: rs(10),
     borderRadius: rs(13), backgroundColor: '#035C6C',
   },
-  nextText: { flexShrink: 1, fontSize: rf(13.5), fontWeight: '800', color: '#FFFFFF', textAlign: 'center' },
+  nextText: { flexShrink: 1, fontSize: rf(12.5), fontWeight: '800', color: '#FFFFFF', textAlign: 'center' },
 });

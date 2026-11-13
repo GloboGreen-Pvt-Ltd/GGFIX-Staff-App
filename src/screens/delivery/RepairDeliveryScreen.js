@@ -19,7 +19,9 @@ import { slotText, statusTone } from './RepairDeliveriesScreen';
 
 const ACCESSORIES = ['Charger', 'Cable', 'Box', 'Back Cover', 'SIM Tool', 'Earphones'];
 const DECLINE = ['Not available at this time', 'Too far from my location', 'Vehicle problem', 'Other work assigned'];
-const FAIL = ['Customer not available', 'Customer refused delivery', 'Wrong / incomplete address', 'Customer can\'t pay now', 'Wrong OTP / customer not verified'];
+const FAIL = ['Customer not available', 'Customer refused delivery', 'Wrong / incomplete address', 'Customer can\'t pay now', 'Wrong OTP / customer not verified', 'Payment failed'];
+// Backend answers for a delivery no longer assigned to this employee.
+const isReassigned = (e) => e?.payload?.code === 'NOT_ASSIGNED' || e?.status === 403 || e?.status === 404;
 
 function Line({ label, value, bold }) {
   return (
@@ -61,6 +63,11 @@ export default function RepairDeliveryScreen({ navigation, route }) {
   const [identifier, setIdentifier] = useState('');
   const [acc, setAcc] = useState([]);
   const [photos, setPhotos] = useState([]); // { key, uri, url, status }
+  // Proof at the customer handover, and evidence when returning to the shop.
+  const [proof, setProof] = useState([]);
+  const [returnPhotos, setReturnPhotos] = useState([]);
+  const [returnNote, setReturnNote] = useState('');
+  const [gone, setGone] = useState(false); // reassigned / no longer mine
   // Completion
   const [otp, setOtp] = useState('');
   const [method, setMethod] = useState('CASH');
@@ -72,6 +79,7 @@ export default function RepairDeliveryScreen({ navigation, route }) {
       setD(await getRepairDelivery(id));
       setError(null);
     } catch (e) {
+      if (isReassigned(e)) { setGone(true); return; }
       setError(apiError(e, 'Could not load this delivery.'));
     }
   }, [id]);
@@ -79,7 +87,7 @@ export default function RepairDeliveryScreen({ navigation, route }) {
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   const act = async (action, body, ok) => {
-    if (lock.current) return;
+    if (lock.current || gone) return;
     lock.current = true;
     setBusy(action);
     try {
@@ -90,28 +98,41 @@ export default function RepairDeliveryScreen({ navigation, route }) {
     } catch (e) {
       const code = e?.payload?.code;
       notify(code === 'NOT_ASSIGNED' ? 'Delivery changed' : 'Could not update', apiError(e, 'Please try again.'), { type: code === 'OTP_INVALID' || code === 'IDENTIFIER_MISMATCH' ? 'warning' : 'error' });
-      if (['STALE_STATUS', 'NOT_ASSIGNED'].includes(code)) load();
+      if (code === 'NOT_ASSIGNED' || isReassigned(e)) setGone(true);
+      else if (code === 'STALE_STATUS' || e?.status === 409) load();
     } finally {
       lock.current = false;
       setBusy(null);
     }
   };
 
-  const addPhoto = async () => {
+  const addPhoto = async (setList = setPhotos) => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) { notify('Camera needed', 'Allow camera access to take the device photos.', { type: 'warning' }); return; }
     const r = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 });
     if (r.canceled || !r.assets?.[0]) return;
     const a = r.assets[0];
     const key = `${Date.now()}`;
-    setPhotos((p) => [...p, { key, uri: a.uri, status: 'uploading' }]);
+    setList((p) => [...p, { key, uri: a.uri, status: 'uploading' }]);
     try {
       const res = await uploadMedia({ uri: a.uri, name: a.fileName || 'repair-delivery.jpg', type: a.mimeType || 'image/jpeg', folder: 'repair-delivery', slot: `${id}-${key}` });
-      setPhotos((p) => p.map((x) => (x.key === key ? { ...x, url: res?.url, status: res?.url ? 'done' : 'error' } : x)));
+      setList((p) => p.map((x) => (x.key === key ? { ...x, url: res?.url, status: res?.url ? 'done' : 'error' } : x)));
     } catch (_) {
-      setPhotos((p) => p.map((x) => (x.key === key ? { ...x, status: 'error' } : x)));
+      setList((p) => p.map((x) => (x.key === key ? { ...x, status: 'error' } : x)));
     }
   };
+
+  if (gone) {
+    return (
+      <Page title="Repair Delivery" navigation={navigation}>
+        <Card style={{ margin: rs(14) }}>
+          <Text style={{ fontSize: rf(15), fontWeight: '800', color: SK.ink }}>This delivery has been reassigned</Text>
+          <Text style={{ fontSize: rf(13), color: '#6B7280', marginTop: rs(4) }}>It is no longer assigned to you, so it cannot be updated.</Text>
+          <Button title="Back to My Deliveries" variant="outline" onPress={() => navigation.goBack()} style={{ marginTop: rs(12) }} />
+        </Card>
+      </Page>
+    );
+  }
 
   if (!d) return <Page title="Repair Delivery" navigation={navigation}>{error ? <Text style={{ color: SC.red, margin: rs(16) }}>{error}</Text> : <Loader />}</Page>;
 
@@ -119,6 +140,26 @@ export default function RepairDeliveryScreen({ navigation, route }) {
   const due = Number(d.amountDue) || 0;
   const uploaded = photos.filter((p) => p.status === 'done').map((p) => p.url);
   const uploading = photos.some((p) => p.status === 'uploading');
+  const doneUrls = (list) => list.filter((p) => p.status === 'done').map((p) => p.url);
+  const busyUpload = (list) => list.some((p) => p.status === 'uploading');
+  const photoRow = (list, setList, label) => (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: rs(8), marginTop: rs(6) }}>
+      {list.map((p) => (
+        <View key={p.key}>
+          <Image source={{ uri: p.uri }} style={{ width: rs(68), height: rs(68), borderRadius: rs(10), opacity: p.status === 'done' ? 1 : 0.5 }} />
+          <Pressable onPress={() => setList((x) => x.filter((y) => y.key !== p.key))} accessibilityRole="button" accessibilityLabel="Remove photo" hitSlop={6}
+            style={{ position: 'absolute', top: -6, right: -6, width: rs(20), height: rs(20), borderRadius: rs(10), backgroundColor: SC.red, alignItems: 'center', justifyContent: 'center' }}>
+            <X size={12} color="#FFFFFF" />
+          </Pressable>
+          {p.status === 'error' ? <Text style={{ fontSize: rf(10), color: SC.red }}>Failed</Text> : null}
+        </View>
+      ))}
+      <Pressable onPress={() => addPhoto(setList)} accessibilityRole="button" accessibilityLabel={label}
+        style={{ width: rs(68), height: rs(68), borderRadius: rs(10), borderWidth: 1, borderStyle: 'dashed', borderColor: SK.teal, alignItems: 'center', justifyContent: 'center' }}>
+        <Camera size={22} color={SK.teal} />
+      </Pressable>
+    </View>
+  );
 
   const collect = () => {
     if (!identifier.trim()) { notify('IMEI / serial needed', 'Enter the IMEI / serial number from the device.', { type: 'warning' }); return; }
@@ -126,9 +167,11 @@ export default function RepairDeliveryScreen({ navigation, route }) {
     act('collect', { identifier: identifier.trim(), accessories: acc, photos: uploaded }, 'Device collected');
   };
   const complete = async () => {
+    if (doneUrls(proof).length < 1) { notify('Add proof', 'Take a photo of the device handed to the customer.', { type: 'warning' }); return; }
+    if (due > 0 && method === 'UPI' && !ref.trim()) { notify('UPI reference needed', 'Enter the UPI transaction reference.', { type: 'warning' }); return; }
     if (otp.length !== 4) { notify('OTP needed', 'Ask the customer for the 4-digit OTP on their repair page.', { type: 'warning' }); return; }
     const ok = await confirm({ title: 'Complete delivery?', message: due > 0 ? `You collected ${money(due)} by ${method === 'UPI' ? 'UPI' : 'cash'}.` : 'Hand over the device to the customer.', confirmText: 'Complete' });
-    if (ok) act('complete', { otp, amountCollected: due, paymentMethod: due > 0 ? method : null, paymentRef: method === 'UPI' ? ref.trim() : null, photos: uploaded }, 'Delivered');
+    if (ok) act('complete', { otp, amountCollected: due, paymentMethod: due > 0 ? method : null, paymentRef: due > 0 && method === 'UPI' ? ref.trim() : null, photos: doneUrls(proof) }, 'Delivered');
   };
   const sendReason = () => {
     if (!reason) { notify('Choose a reason', '', { type: 'warning' }); return; }
@@ -213,22 +256,7 @@ export default function RepairDeliveryScreen({ navigation, route }) {
               })}
             </View>
             <Text style={{ fontSize: rf(13), color: '#6B7280', marginTop: rs(12) }}>{`Device photos (min 2) · ${uploaded.length} added`}</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: rs(8), marginTop: rs(6) }}>
-              {photos.map((p) => (
-                <View key={p.key}>
-                  <Image source={{ uri: p.uri }} style={{ width: rs(68), height: rs(68), borderRadius: rs(10), opacity: p.status === 'done' ? 1 : 0.5 }} />
-                  <Pressable onPress={() => setPhotos((x) => x.filter((y) => y.key !== p.key))} accessibilityRole="button" accessibilityLabel="Remove photo" hitSlop={6}
-                    style={{ position: 'absolute', top: -6, right: -6, width: rs(20), height: rs(20), borderRadius: rs(10), backgroundColor: SC.red, alignItems: 'center', justifyContent: 'center' }}>
-                    <X size={12} color="#FFFFFF" />
-                  </Pressable>
-                  {p.status === 'error' ? <Text style={{ fontSize: rf(10), color: SC.red }}>Failed</Text> : null}
-                </View>
-              ))}
-              <Pressable onPress={addPhoto} accessibilityRole="button" accessibilityLabel="Take photo"
-                style={{ width: rs(68), height: rs(68), borderRadius: rs(10), borderWidth: 1, borderStyle: 'dashed', borderColor: SK.teal, alignItems: 'center', justifyContent: 'center' }}>
-                <Camera size={22} color={SK.teal} />
-              </Pressable>
-            </View>
+            {photoRow(photos, setPhotos, 'Take photo')}
             <Button title={uploading ? 'Uploading photos…' : 'Confirm Collection'} Icon={PackageCheck} disabled={uploading} loading={busy === 'collect'} onPress={collect} style={{ marginTop: rs(14) }} />
           </Card>
         ) : null}
@@ -272,19 +300,28 @@ export default function RepairDeliveryScreen({ navigation, route }) {
                 ) : null}
               </>
             ) : <Text style={{ fontSize: rf(13), color: SC.green, fontWeight: '700', marginTop: rs(12) }}>Nothing to collect — fully paid.</Text>}
-            <Button title="Complete Delivery" Icon={CircleCheck} variant="success" loading={busy === 'complete'} onPress={complete} style={{ marginTop: rs(14) }} />
+            <Text style={{ fontSize: rf(13), color: '#6B7280', marginTop: rs(14) }}>{`Handover photo proof * · ${doneUrls(proof).length} added`}</Text>
+            {photoRow(proof, setProof, 'Take handover photo')}
+            <Button title={busyUpload(proof) ? 'Uploading photos…' : 'Complete Delivery'} Icon={CircleCheck} variant="success" disabled={busyUpload(proof)} loading={busy === 'complete'} onPress={complete} style={{ marginTop: rs(14) }} />
             <Button title="Delivery Failed" Icon={CircleX} variant="danger" onPress={() => { setReason(null); setReasonFor('fail'); }} style={{ marginTop: rs(10) }} />
           </Card>
         ) : null}
 
         {st === 'FAILED' ? (
-          <View style={{ marginTop: rs(14) }}>
-            <Button title="Return Device to Shop" Icon={RotateCcw} loading={busy === 'return'} onPress={() => act('return', null, 'Returning to shop')} />
-          </View>
+          <Card title="Return Device to Shop">
+            <Text style={{ fontSize: rf(13), color: '#6B7280' }}>{`Device photo evidence * · ${doneUrls(returnPhotos).length} added`}</Text>
+            {photoRow(returnPhotos, setReturnPhotos, 'Take return photo')}
+            <TextInput value={returnNote} onChangeText={setReturnNote} placeholder="Note (optional)" placeholderTextColor="#9CA3AF" maxLength={200}
+              style={{ height: rs(46), borderRadius: rs(12), borderWidth: 1, borderColor: SK.line, paddingHorizontal: rs(12), fontSize: rf(14), color: SK.ink, marginTop: rs(10) }} />
+            <Button title={busyUpload(returnPhotos) ? 'Uploading photos…' : 'Return Device to Shop'} Icon={RotateCcw} disabled={busyUpload(returnPhotos)} loading={busy === 'return'} style={{ marginTop: rs(12) }}
+              onPress={() => (doneUrls(returnPhotos).length < 1
+                ? notify('Add evidence', 'Take a photo of the device before returning it.', { type: 'warning' })
+                : act('return', { photos: doneUrls(returnPhotos), note: returnNote.trim() || null }, 'Returning to shop'))} />
+          </Card>
         ) : null}
         {st === 'RETURNING' ? (
           <Card style={{ backgroundColor: '#FEF3C7', borderColor: '#F6DDA8' }}>
-            <Text style={{ fontSize: rf(13.5), color: '#92400E' }}>Hand the device to the shop. The shop confirms it in the Partner App.</Text>
+            <Text style={{ fontSize: rf(13.5), color: '#92400E' }}>Hand the device to the shop. The shop confirms receipt in the Partner App, then can retry or reassign the delivery.</Text>
           </Card>
         ) : null}
         {st === 'DELIVERED' ? (

@@ -276,8 +276,8 @@ export default function PickupAssignScreen({ navigation, route }) {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <JobHeader
         navigation={navigation}
-        title={sellOnly ? 'Purchase Pickups' : 'My Pickups'}
-        sub={sellOnly ? 'Marketplace' : 'Repair Pickups'}
+        title={sellOnly ? 'Selling Pickups' : 'My Pickups'}
+        sub={sellOnly ? 'From Customers' : 'Repair Pickups'}
         searchOn={showSearch}
         onSearch={() => { if (showSearch) setQ(''); setShowSearch(!showSearch); }}
         right={sellOnly ? null : (

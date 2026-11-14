@@ -34,15 +34,15 @@ export function Page({ title, subtitle, navigation, children }) {
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Back"
-            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#EEF6F8', borderWidth: 1, borderColor: '#C7E6EA', alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: '#EEF6F8', borderWidth: 1, borderColor: '#C7E6EA', alignItems: 'center', justifyContent: 'center' }}
           >
             <ChevronLeft size={20} color={SK.ink} />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 8 }}>
-            <Text style={{ fontSize: rf(20), fontWeight: '800', color: SK.ink }} numberOfLines={1}>{title}</Text>
-            {subtitle ? <Text style={{ fontSize: rf(13), color: '#3F5B7A', marginTop: 2 }} numberOfLines={1}>{subtitle}</Text> : null}
+            <Text style={{ fontSize: rf(17), fontWeight: '800', color: SK.ink }} numberOfLines={1}>{title}</Text>
+            {subtitle ? <Text style={{ fontSize: rf(12), color: '#3F5B7A', marginTop: 2 }} numberOfLines={1}>{subtitle}</Text> : null}
           </View>
-          <View style={{ width: 40 }} />
+          <View style={{ width: 34 }} />
         </View>
       </View>
       <View style={{ flex: 1 }}>{children}</View>
@@ -52,8 +52,8 @@ export function Page({ title, subtitle, navigation, children }) {
 
 export function Card({ title, children, style }) {
   return (
-    <View style={[{ backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 1, borderColor: SK.line, padding: 12, marginTop: 10, ...cardShadow }, style]}>
-      {title ? <Text style={{ fontSize: rf(16), fontWeight: '800', color: SK.ink, marginBottom: 10 }}>{title}</Text> : null}
+    <View style={[{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: SK.line, padding: 10, marginTop: 8, ...cardShadow }, style]}>
+      {title ? <Text style={{ fontSize: rf(14), fontWeight: '800', color: SK.ink, marginBottom: 6 }}>{title}</Text> : null}
       {children}
     </View>
   );
@@ -71,15 +71,15 @@ export function Button({ title, Icon, onPress, disabled, loading, variant = 'pri
       accessibilityLabel={title}
       accessibilityState={{ disabled: !!off, busy: !!loading }}
       style={[{
-        minHeight: 50, borderRadius: 25, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14,
+        minHeight: 40, borderRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14,
         backgroundColor: filled ? (off ? SK.disabled : tone) : (variant === 'danger' ? SC.redSoft : '#FFFFFF'),
         borderWidth: filled ? 0 : 1.5, borderColor: tone, opacity: !filled && off ? 0.5 : 1,
       }, style]}
     >
       {loading ? <ActivityIndicator color={filled ? '#FFFFFF' : tone} /> : (
         <>
-          {Icon ? <Icon size={18} color={filled ? '#FFFFFF' : tone} strokeWidth={2.4} /> : null}
-          <Text style={{ marginLeft: Icon ? 8 : 0, fontSize: rf(15), fontWeight: '800', color: filled ? '#FFFFFF' : tone }} numberOfLines={2}>{title}</Text>
+          {Icon ? <Icon size={16} color={filled ? '#FFFFFF' : tone} strokeWidth={2.4} /> : null}
+          <Text style={{ marginLeft: Icon ? 6 : 0, fontSize: rf(13), fontWeight: '800', color: filled ? '#FFFFFF' : tone }} numberOfLines={2}>{title}</Text>
         </>
       )}
     </Pressable>

@@ -70,14 +70,8 @@ export default function SellCustomerConfirmScreen({ navigation, route }) {
   }[status] || { bg: SK.tealSoft, fg: SK.teal, title: 'Revised Price', sub: '' };
 
   let footer;
-  if (status === 'SHOP_APPROVED') {
-    footer = (
-      <View style={{ gap: 10 }}>
-        <SellButton title="Customer Agrees" Icon={Check} variant="success" onPress={() => decide('AGREE')} loading={busy === 'AGREE'} disabled={!!busy} />
-        <SellButton title="Customer Declines" Icon={X} variant="danger" onPress={() => decide('DECLINE')} loading={busy === 'DECLINE'} disabled={!!busy} />
-      </View>
-    );
-  } else if (status === 'REJECTED' || status === 'NEGOTIATION') {
+  // SHOP_APPROVED: the customer accepts / declines in their own app — no buttons here, the screen polls.
+  if (status === 'REJECTED' || status === 'NEGOTIATION') {
     footer = (
       <View style={{ gap: 10 }}>
         <SellButton title="Revise Again" Icon={PenLine} onPress={revise} />
@@ -96,7 +90,7 @@ export default function SellCustomerConfirmScreen({ navigation, route }) {
     <SellPage title="Customer Confirmation" navigation={navigation} footer={footer}>
       <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 24 }}>
         <View style={{ backgroundColor: banner.bg, borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center' }}>
-          {status === 'SHOP_PENDING' ? <ActivityIndicator color={SC.amberInk} /> : <Store size={22} color={banner.fg} />}
+          {status === 'SHOP_PENDING' || status === 'SHOP_APPROVED' ? <ActivityIndicator color={SC.amberInk} /> : <Store size={22} color={banner.fg} />}
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={{ fontSize: rf(15), fontWeight: '800', color: banner.fg }}>{banner.title}</Text>
             <Text style={{ fontSize: rf(13), color: SK.ink, marginTop: 2 }}>
@@ -107,7 +101,7 @@ export default function SellCustomerConfirmScreen({ navigation, route }) {
 
         {status === 'SHOP_APPROVED' ? (
           <>
-            <Text style={{ fontSize: rf(13.5), color: SK.navy, fontWeight: '600', textAlign: 'center', marginTop: 18 }}>Get customer approval to proceed</Text>
+            <Text style={{ fontSize: rf(13.5), color: SK.navy, fontWeight: '600', textAlign: 'center', marginTop: 18 }}>Waiting for the customer to accept in their app</Text>
             <SellCard style={{ alignItems: 'center', paddingVertical: 18 }}>
               <Text style={{ fontSize: rf(13), color: SK.muted }}>Final Buy Price</Text>
               <Text style={{ fontSize: rf(30), fontWeight: '800', color: SC.green, marginTop: 4 }}>{money(rev.amount)}</Text>
@@ -120,6 +114,7 @@ export default function SellCustomerConfirmScreen({ navigation, route }) {
           <Text style={{ fontSize: rf(12.5), color: SK.ink }}>Revised price: <Text style={{ fontWeight: '800' }}>{money(rev.amount)}</Text> (quote {money(quote)})</Text>
           {rev.reason ? <Text style={{ fontSize: rf(12.5), color: SK.ink, marginTop: 4 }}>Reason: {rev.reason}</Text> : null}
           {rev.note ? <Text style={{ fontSize: rf(12.5), color: SK.muted, marginTop: 4 }}>Note: {rev.note}</Text> : null}
+          {status === 'SHOP_APPROVED' ? <Text style={{ fontSize: rf(12), color: SK.muted, marginTop: 10 }}>This updates by itself when the customer answers in their app.</Text> : null}
           {status === 'SHOP_PENDING' ? <Text style={{ fontSize: rf(12), color: SK.muted, marginTop: 10 }}>This updates by itself when the shop owner answers in the Partner app.</Text> : null}
         </SellCard>
 

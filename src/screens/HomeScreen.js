@@ -465,6 +465,11 @@ export default function HomeScreen({ navigation }) {
     const count = (bucket) => list.filter((b) => bucketOf(b.status) === bucket).length;
     return { total: list.length, assigned: count('ASSIGNED'), inProgress: count('IN_PROGRESS'), completed: count('COMPLETED') };
   }, [pickups]);
+  const sellSummary = useMemo(() => {
+    const list = (pickups || []).filter((b) => b.kind === 'SELL'); // selling pickups from customers
+    const count = (bucket) => list.filter((b) => bucketOf(b.status) === bucket).length;
+    return { total: list.length, assigned: count('ASSIGNED'), inProgress: count('IN_PROGRESS'), completed: count('COMPLETED') };
+  }, [pickups]);
 
   const taskSummary = useMemo(() => {
     const assignedIds = [];
@@ -924,11 +929,23 @@ export default function HomeScreen({ navigation }) {
           {/* Marketplace pickups: their own screen (Buy deliveries), not mixed into My Pickups. */}
           {isPickupPerson ? (
           <>
+          <SectionTitle title="Selling Pickups" />
+          <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
+            {[
+              { key: 'assigned', label: 'Assigned', icon: ClipboardList, fg: TILE_TONES.blue, tint: C.redTint },
+              { key: 'total', label: 'All Pickups', icon: Briefcase, fg: TILE_TONES.teal, tint: C.greenTint },
+              { key: 'inProgress', label: 'In Progress', icon: Clock, fg: TILE_TONES.orange, tint: C.yellowTint },
+              { key: 'completed', label: 'Completed', icon: CircleCheck, fg: TILE_TONES.green, tint: C.greenTint },
+            ].map((t) => (
+              <TaskCountCard key={t.key} icon={t.icon} fg={t.fg} tint={t.tint} label={t.label}
+                value={sellSummary[t.key]} loading={pickups === null}
+                onPress={() => navigation.push('PickupAssign', { kind: 'SELL', filter: t.key })} />
+            ))}
+          </View>
           <SectionTitle title="Marketplace Pickups" />
           {/* Same tile design as Repair Pickups; each opens Buy Deliveries on that tile. */}
           <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
             {[
-              { key: 'SELL', label: 'Purchase', icon: Briefcase, fg: TILE_TONES.teal, tint: C.greenTint },
               { key: 'PICKUP', label: 'Pickup', icon: ClipboardList, fg: TILE_TONES.blue, tint: C.redTint },
               { key: 'DELIVERY', label: 'Delivery', icon: Clock, fg: TILE_TONES.orange, tint: C.yellowTint },
               { key: 'HISTORY', label: 'Completed', icon: CircleCheck, fg: TILE_TONES.green, tint: C.greenTint },

@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Image, Linking, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
+import { Image, Linking, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Text, TextInput } from '../../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import {

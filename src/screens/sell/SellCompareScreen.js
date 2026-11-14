@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, View } from 'react-native';
 import { CircleCheck, Pencil, Smartphone, TriangleAlert } from 'lucide-react-native';
-import { Text } from '../../components/Typography';
+import { Text, TextInput } from '../../components/Typography';
 import { getSellEvaluation, startSellInspection } from '../../api/pickups';
 import { deviceLabel, trackingId } from '../../utils/pickups';
 import { rf } from '../../utils/responsive';

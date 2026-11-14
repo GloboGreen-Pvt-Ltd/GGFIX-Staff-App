@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { ShieldCheck, Smartphone } from 'lucide-react-native';
-import { Text } from '../../components/Typography';
+import { Text, TextInput } from '../../components/Typography';
 import { notify } from '../../components/confirm';
 import { sendSellOtp, verifySellOtp } from '../../api/pickups';
 import { rf } from '../../utils/responsive';

@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { ShieldCheck, Smartphone } from 'lucide-react-native';
-import { Text } from '../../components/Typography';
+import { Text, TextInput } from '../../components/Typography';
 import { notify } from '../../components/confirm';
 import { sendSellOtp, verifySellOtp } from '../../api/pickups';
 import { rf } from '../../utils/responsive';
 import { SC, SK, SellCta, SellPage, goToSellStage, isGone, sellError, useSellPickup } from './sellKit';
+import PinBoxes from '../../components/PinBoxes';
 
-const RESEND_SECONDS = 30;
+const RESEND_SECONDS = 120;
 
 // Verify Customer: the 4-digit pickup PIN made when the journey started. The
 // customer sees it only on their sell order page in the NearGFix app (no
@@ -66,8 +67,8 @@ export default function SellVerifyOtpScreen({ navigation, route }) {
     notify('New PIN generated', 'Ask the customer to reopen their sell order page in the NearGFix app.', { type: 'success' });
   });
 
-  const mmss = `00:${String(left).padStart(2, '0')}`;
-  const canNew = !sentAt || locked;
+  const mmss = `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
+  const canNew = !sentAt || locked || left === 0;
   return (
     <SellPage
       title="Verify Customer"
@@ -85,37 +86,18 @@ export default function SellVerifyOtpScreen({ navigation, route }) {
         </>
       )}
     >
-      <ScrollView contentContainerStyle={{ padding: 20, alignItems: 'center' }} keyboardShouldPersistTaps="handled">
-        <View style={{ height: 132, width: 132, borderRadius: 66, backgroundColor: SK.tealSoft, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}>
-          <Smartphone size={58} color={SK.teal} strokeWidth={1.6} />
-          <View style={{ position: 'absolute', right: 26, bottom: 30, height: 40, width: 40, borderRadius: 20, backgroundColor: SC.green, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFFFFF' }}>
-            <ShieldCheck size={20} color="#FFFFFF" />
+      <ScrollView contentContainerStyle={{ padding: 14, alignItems: 'center' }} keyboardShouldPersistTaps="handled">
+        <View style={{ height: 76, width: 76, borderRadius: 38, backgroundColor: SK.tealSoft, alignItems: 'center', justifyContent: 'center', marginTop: 12 }}>
+          <Smartphone size={34} color={SK.teal} strokeWidth={1.6} />
+          <View style={{ position: 'absolute', right: -4, bottom: -2, height: 28, width: 28, borderRadius: 14, backgroundColor: SC.green, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#FFFFFF' }}>
+            <ShieldCheck size={14} color="#FFFFFF" />
           </View>
         </View>
-        <Text style={{ fontSize: rf(19), fontWeight: '800', color: SK.ink, marginTop: 22 }}>Enter Pickup PIN</Text>
+        <Text style={{ fontSize: rf(16), fontWeight: '800', color: SK.ink, marginTop: 12 }}>Enter Pickup PIN</Text>
         <Text style={{ fontSize: rf(13.5), color: SK.muted, marginTop: 6, textAlign: 'center' }}>Ask the customer for the{'\n'}4-digit PIN</Text>
 
-        <Pressable onPress={() => input.current?.focus()} accessibilityLabel="Pickup PIN" style={{ flexDirection: 'row', gap: 12, marginTop: 26 }}>
-          {[0, 1, 2, 3].map((i) => {
-            const on = otp.length === i || (i === 3 && otp.length === 4);
-            return (
-              <View key={i} style={{ height: 58, width: 52, borderRadius: 12, borderWidth: on ? 2 : 1.5, borderColor: error ? SC.red : on ? SK.teal : SK.ring, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: rf(24), fontWeight: '800', color: SK.ink }}>{otp[i] || ''}</Text>
-              </View>
-            );
-          })}
-        </Pressable>
-        <TextInput
-          ref={input}
-          value={otp}
-          onChangeText={(t) => { setOtp(t.replace(/\D/g, '').slice(0, 4)); setError(null); }}
-          keyboardType="number-pad"
-          maxLength={4}
-          autoFocus
-          textContentType="oneTimeCode"
-          autoComplete="sms-otp"
-          style={{ position: 'absolute', height: 1, width: 1, opacity: 0 }}
-        />
+        <PinBoxes value={otp} onChange={(t) => { setOtp(t); setError(null); }} autoFocus error={!!error} accessibilityLabel="Pickup PIN" style={{ marginTop: 18 }} />
+        {sentAt ? <Text style={{ fontSize: rf(13), fontWeight: '800', color: left > 0 ? SK.teal : SC.red, marginTop: 14 }}>{left > 0 ? `PIN valid for ${mmss}` : "Didn't get it? Generate a new PIN"}</Text> : null}
         {error ? <Text style={{ fontSize: rf(12.5), color: SC.red, fontWeight: '700', marginTop: 14, textAlign: 'center' }}>{error}</Text> : null}
         {booking?.customerName ? (
           <Text style={{ fontSize: rf(12.5), color: SK.muted, marginTop: 18 }}>Customer: <Text style={{ fontWeight: '800', color: SK.navy }}>{booking.customerName}</Text></Text>

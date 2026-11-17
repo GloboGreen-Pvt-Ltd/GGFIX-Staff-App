@@ -1,4 +1,5 @@
 import { ticketApi } from './client';
+import { requireFreshAuth } from '../auth/freshAuth';
 import { store } from '../store';
 import { selectTechnicianId } from '../store/authSlice';
 import { awaitingAccept } from '../utils/pickups';
@@ -118,6 +119,7 @@ export async function declinePickup(bookingId, { reason, note } = {}) {
 // re-check from the sell inspection pages, saved beside the customer's answers.
 export async function updatePickupStatus(bookingId, nextStatus, opts) {
   const { note, latitude, longitude, inspection } = opts || {};
+  if (nextStatus === 'RECEIVED_AT_SHOP') await requireFreshAuth('Confirm handover to shop');
   return await ticketApi.patch(`${base(bookingId)}/${bookingId}/status`, {
     body: {
       status: nextStatus,
@@ -149,7 +151,10 @@ export const submitSellRevision = (id, { amount, reason, note }) => sellStep(id,
 /** decision AGREE | DECLINE — the customer's answer to the owner-approved price. */
 export const sellCustomerDecision = (id, decision) => sellStep(id, 'revision/customer', { decision });
 /** method UPI | CASH; proofUrl from uploadMedia. */
-export const recordSellPayment = (id, { method, reference, proofUrl }) => sellStep(id, 'payment', { method, reference, proofUrl });
+export const recordSellPayment = async (id, { method, reference, proofUrl }) => {
+  if (String(method).toUpperCase() === 'CASH') await requireFreshAuth('Confirm cash payment');
+  return sellStep(id, 'payment', { method, reference, proofUrl });
+};
 
 export async function getPickupRepairEstimate(bookingId) {
   if (isSell(bookingId)) return null; // a purchase has no repair estimate

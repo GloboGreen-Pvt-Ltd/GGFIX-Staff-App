@@ -89,7 +89,7 @@ function customerLine(b) {
   return parts.join(' - ') || 'Pickup booking';
 }
 
-export default function PickupReportScreen({ navigation }) {
+export default function PickupReportScreen({ navigation, route }) {
   useHideNativeHeader(navigation);
   const { width: winW } = useWindowDimensions();
   const now = new Date();
@@ -106,7 +106,7 @@ export default function PickupReportScreen({ navigation }) {
     try {
       const items = await listMyAssignedPickups();
       const seen = new Set();
-      setList((Array.isArray(items) ? items : []).filter((b) => b?.id && !seen.has(b.id) && seen.add(b.id)));
+      setList((Array.isArray(items) ? items : []).filter((b) => b?.id && (route?.params?.kind === 'SELL' ? b.kind === 'SELL' : b.kind !== 'SELL') && !seen.has(b.id) && seen.add(b.id)));
     } catch {
       // A failed refresh keeps the last list (and its counts); only a failed
       // first load shows empty.

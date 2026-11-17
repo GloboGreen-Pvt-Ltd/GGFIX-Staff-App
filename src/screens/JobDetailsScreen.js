@@ -11,7 +11,7 @@ import {
   Mic, Play, Pause, Trash2, Plus, Image as ImageIcon,
   ShieldCheck, PackageX, Square, IndianRupee, BadgeCheck, Hourglass,
   Package, ChevronRight, ChevronsRight, Lock, CircleCheck,
-  CalendarDays, Clock, UserRound, BriefcaseBusiness, Wrench, Hammer, MapPin,
+  CalendarDays, Clock, UserRound, BriefcaseBusiness, Wrench, Hammer, MapPin, UserCheck,
 } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { StatusBar } from 'expo-status-bar';
@@ -596,6 +596,7 @@ function AssignmentPreview({ ticket, navigation, busy, onAccept, onReject }) {
           ) : null}
 
           <InfoRow icon={CalendarDays} label="Assigned On" value={fmtDateTime(ticket.assignedAt || ticket.createdAt)} />
+          {ticket.bookedByName ? <InfoRow icon={UserCheck} label="Booked By" value={`${ticket.bookedByName}${ticket.bookedByRole === 'OWNER' ? ' (Owner)' : ''}`} /> : null}
           <InfoRow
             icon={Clock}
             label="Due By"
@@ -2131,7 +2132,7 @@ export default function JobDetailsScreen({ route, navigation }) {
   // Accept opens the compact AcceptJobDialog; its toast follows only the API's
   // answer (a failed re-read after a successful accept is not an accept error).
   const acceptJob = () => {
-    if (!acceptBusy) setAcceptAsk(true);
+    if (!acceptBusy) confirmAcceptJob();
   };
   const confirmAcceptJob = async () => {
     if (acceptBusy) return;
@@ -2231,7 +2232,7 @@ export default function JobDetailsScreen({ route, navigation }) {
     return (
       <>
         <AssignmentPreview ticket={ticket} navigation={navigation} busy={acceptBusy} onAccept={acceptJob} onReject={rejectJob} />
-        <AcceptJobDialog visible={acceptAsk} busy={acceptBusy} onCancel={() => setAcceptAsk(false)} onConfirm={confirmAcceptJob} />
+        <AcceptJobDialog visible={false} busy={acceptBusy} onCancel={() => setAcceptAsk(false)} onConfirm={confirmAcceptJob} />
       </>
     );
   }

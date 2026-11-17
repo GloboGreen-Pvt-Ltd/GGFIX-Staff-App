@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
-import { Image, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Image, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Text } from '../../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
 import { CalendarClock, MapPin, Wrench } from 'lucide-react-native';
 import { REPAIR_DELIVERY_TABS, listRepairDeliveries } from '../../api/repairDeliveries';
@@ -58,10 +59,10 @@ export default function RepairDeliveriesScreen({ navigation, route }) {
           </View>
           {error ? <Text style={{ color: SC.red, fontSize: rf(13), marginTop: rs(10) }}>{error}</Text> : null}
           {!shown.length ? (
-            <Card style={{ alignItems: 'center', paddingVertical: rs(24) }}>
-              <Wrench size={28} color={SK.teal} />
+            <Card style={{ alignItems: 'flex-start', paddingVertical: rs(16) }}>
+              <Wrench size={24} color={SK.teal} />
               <Text style={{ fontSize: rf(15), fontWeight: '800', color: SK.ink, marginTop: rs(8) }}>{tab === 'ACTIVE' ? 'No deliveries right now' : 'No past deliveries'}</Text>
-              <Text style={{ fontSize: rf(13), color: '#6B7280', marginTop: rs(4), textAlign: 'center' }}>Repaired devices the shop assigns to you appear here.</Text>
+              <Text style={{ fontSize: rf(13), color: '#6B7280', marginTop: rs(4), textAlign: 'left' }}>Repaired devices the shop assigns to you appear here.</Text>
             </Card>
           ) : shown.map((d) => (
             <Pressable key={d.id} onPress={() => navigation.navigate('RepairDelivery', { id: d.id })} accessibilityRole="button" accessibilityLabel={`Delivery ${d.bookingNumber || ''}`}>

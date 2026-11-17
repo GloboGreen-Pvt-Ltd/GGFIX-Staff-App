@@ -1,8 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Check, CircleCheck, Images } from 'lucide-react-native';
-import { Text } from '../../components/Typography';
+import { Text, TextInput } from '../../components/Typography';
 import { confirm, notify } from '../../components/confirm';
 import { recordSellPayment, updatePickupStatus } from '../../api/pickups';
 import { uploadMedia } from '../../api/media';

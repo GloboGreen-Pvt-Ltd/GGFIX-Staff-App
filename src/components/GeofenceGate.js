@@ -7,12 +7,15 @@ import {
   LockKeyhole, RefreshCw, LogOut, MapPin, ShieldCheck, ShoppingCart, Smartphone, Store, Users, Wrench,
 } from 'lucide-react-native';
 import BrandMark from './BrandMark';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { selectSession } from '../store/authSlice';
+import { resolveRoleKey } from '../config/categories';
 import { getMyTechnicianProfile } from '../api/technician';
 import { mergeTechnicianProfile } from '../store/authSlice';
 import { readCurrentLocation, haversineMeters, GEOFENCE_RADIUS_METERS } from '../utils/geo';
 import { rf, rs } from '../utils/responsive';
 import { notifyNow } from '../utils/checkoutAlarm';
+import { hasActiveJourney } from '../utils/activeJourney';
 
 // Full-screen attendance geofence. Rendered right after login (wraps the whole
 // authenticated app): the employee can only use the app while physically within
@@ -38,6 +41,7 @@ export default function GeofenceGate({ onLogout, children }) {
   // { latitude, longitude } = enforce against these.
   const shopRef = useRef(null);
   const runningRef = useRef(false);
+  const isPickupPerson = resolveRoleKey(useSelector(selectSession)) === 'PICKUP_PERSON';
 
   const runCheck = useCallback(async () => {
     if (runningRef.current) return;
@@ -62,6 +66,14 @@ export default function GeofenceGate({ onLogout, children }) {
         }
       }
       if (shopRef.current === false) {
+        if (mountedRef.current) setStatus('inside');
+        return;
+      }
+
+      // 1b. Pickup person on a started journey (server data, fetched fresh):
+      // no distance limit and no geofence lock until every journey is back at
+      // the shop. Unknown (offline / API error) → normal rules below.
+      if (isPickupPerson && (await hasActiveJourney().catch(() => null)) === true) {
         if (mountedRef.current) setStatus('inside');
         return;
       }
@@ -101,7 +113,7 @@ export default function GeofenceGate({ onLogout, children }) {
     } finally {
       runningRef.current = false;
     }
-  }, [dispatch]);
+  }, [dispatch, isPickupPerson]);
 
   // Initial check right after login.
   useEffect(() => {

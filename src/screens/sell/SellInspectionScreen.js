@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import {
   BatteryFull, BatteryLow, BatteryMedium, Check, Laptop, Tablet, Watch, ChevronDown, ChevronUp, Hand, Images, LayoutGrid, Plus, Smartphone, TriangleAlert, X,
 } from 'lucide-react-native';
-import { Text } from '../../components/Typography';
+import { Text, TextInput } from '../../components/Typography';
 import { notify } from '../../components/confirm';
-import { getConditionGroups, getConditionOptions, getFunctionalIssues } from '../../api/master';
+import { getConditionGroups, getConditionOptions, getFunctionalIssues, listDeviceCategories } from '../../api/master';
 import { saveSellInspection } from '../../api/pickups';
 import { uploadMedia } from '../../api/media';
 import { rf } from '../../utils/responsive';
@@ -138,7 +138,16 @@ export default function SellInspectionScreen({ navigation, route }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const cat = booking?.categoryId || booking?.device?.categoryId || p.device?.categoryId;
+      // The booked device's category id; else match its name / shape (phone, laptop, tablet) to master data.
+      let cat = booking?.categoryId || booking?.deviceCategoryId || booking?.device?.categoryId || p.device?.categoryId;
+      if (!cat) {
+        const cats = await listDeviceCategories().catch(() => []);
+        const want = { phone: /mobile|phone/, laptop: /laptop|notebook/, tablet: /tab/, watch: /watch/ }[shape];
+        const named = String(booking?.categoryName || booking?.device?.categoryName || p.device?.categoryName || '').trim().toLowerCase();
+        const hit = cats.find((c) => named && String(c.name || '').trim().toLowerCase() === named)
+          || cats.find((c) => want && want.test(`${c.name || ''} ${c.code || ''}`.toLowerCase()));
+        cat = hit?.id;
+      }
       const list = await getConditionGroups(cat).catch(() => []);
       const base = list.length ? list : FALLBACK_GROUPS;
       const out = [];
@@ -153,13 +162,17 @@ export default function SellInspectionScreen({ navigation, route }) {
         if (opts.length && !dup) out.push({ id: g.id, code: g.code || g.id, name: g.name, opts });
       }
       if (!out.some(isBattery)) out.push({ ...BATTERY_GROUP, opts: BATTERY_GROUP.options.map((o, i) => ({ id: `${BATTERY_GROUP.id}-${i}`, label: o })) });
-      const fi = await getFunctionalIssues(cat).catch(() => []);
+      const allFi = await getFunctionalIssues(cat).catch(() => []);
+      // Only this category's issues (in case the server ignores the filter), each name once.
+      const seenFi = new Set();
+      const fi = allFi.filter((it) => !cat || !it.deviceCategoryId || String(it.deviceCategoryId) === String(cat))
+        .filter((it) => { const k = String(it.name || '').trim().toLowerCase(); return k && !seenFi.has(k) && seenFi.add(k); });
       if (!alive) return;
       setGroups(out);
       setIssues(fi.length ? fi : FALLBACK_ISSUES.map((n, i) => ({ id: `f${i}`, name: n })));
     })();
     return () => { alive = false; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [booking?.id, booking?.categoryId, shape]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-save: the draft is kept on the device per pickup, restored on reopen, cleared once saved.
   useEffect(() => {
@@ -190,9 +203,10 @@ export default function SellInspectionScreen({ navigation, route }) {
 
   const uploaded = photos.filter((x) => x.url);
   const imeiOk = imei === '' || (/^\d{15}$/.test(imei) && luhn(imei));
-  const inspected = !!groups && groups.every((g) => picks[g.id]);
-  const photosReady = uploaded.length >= MIN_PHOTOS && !photos.some((x) => x.busy) && imeiOk;
+  // A pick counts only if its option still exists (a stale draft / reloaded master data can leave dead ids).
   const chosen = (g) => g.opts.find((o) => o.id === picks[g.id]);
+  const inspected = !!groups && groups.every((g) => chosen(g));
+  const photosReady = uploaded.length >= MIN_PHOTOS && !photos.some((x) => x.busy) && imeiOk;
   const pickedIssues = issues.filter((it) => issueIds.includes(it.id));
 
   const upload = async (item) => {
@@ -235,9 +249,21 @@ export default function SellInspectionScreen({ navigation, route }) {
   };
 
   const save = async () => {
-    if (!inspected || !photosReady || lock.current) return;
+    if (lock.current) return;
+    if (!inspected) {
+      const left = (groups || []).filter((g) => !chosen(g)).map((g) => g.name);
+      notify('Inspection incomplete', `Select: ${left.join(', ') || 'device condition'}`, { type: 'error' });
+      setStep(1);
+      return;
+    }
+    if (!photosReady) {
+      notify('Photos needed', !imeiOk ? 'Enter a valid 15-digit IMEI or leave it empty.' : photos.some((x) => x.busy) ? 'Wait for the photos to finish uploading.' : `Add at least ${MIN_PHOTOS} photos.`, { type: 'error' });
+      setStep(2);
+      return;
+    }
     lock.current = true;
     setSaving(true);
+    try {
     // Same checklist shape as before: ok=false marks a defect for the owner's price review.
     const checks = [
       ...groups.map((g) => {
@@ -248,7 +274,6 @@ export default function SellInspectionScreen({ navigation, route }) {
       ...pickedIssues.map((it) => ({ key: it.code || it.id, label: it.name, result: 'FAIL', ok: false, note: it.name })),
     ];
     if (imei) checks.push({ key: 'imei', label: 'IMEI', result: 'PASS', ok: true, note: '', value: imei });
-    try {
       const b = await saveSellInspection(id, {
         compare: p.compare || [],
         condition: p.condition || null,
@@ -277,7 +302,7 @@ export default function SellInspectionScreen({ navigation, route }) {
 
   const footer = step === 1 ? <SellCta title="Save & Next" onPress={() => setStep(2)} disabled={!inspected} />
     : step === 2 ? <SellCta title="Save & Next" onPress={() => setStep(3)} disabled={!photosReady} />
-      : <SellCta title="Submit Inspection" onPress={save} disabled={!inspected || !photosReady} loading={saving} />;
+      : <SellCta title="Submit Inspection" onPress={save} loading={saving} />;
 
   return (
     <SellPage title="Device Inspection" subtitle="Verify customer's device condition" navigation={navigation} footer={footer}>

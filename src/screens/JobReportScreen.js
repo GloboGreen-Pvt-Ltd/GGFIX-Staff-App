@@ -498,10 +498,10 @@ export default function JobReportScreen({ navigation, route }) {
   // Accept (POST /tickets/{id}/accept) → straight into Job Details; the list
   // re-reads so the job moves to Working. The toast follows the API's answer.
   const askAccept = (t) => {
-    if (!actingRef.current) setAcceptFor(t.id);
+    if (!actingRef.current) { setAcceptFor(t.id); confirmAccept(t.id); }
   };
-  const confirmAccept = async () => {
-    const ticketId = acceptFor;
+  const confirmAccept = async (id) => {
+    const ticketId = (id && typeof id !== 'object') ? id : acceptFor;
     if (!ticketId || actingRef.current) return;
     actingRef.current = true;
     setActingOn(ticketId);
@@ -649,7 +649,7 @@ export default function JobReportScreen({ navigation, route }) {
           )}
         </ScrollView>
       </View>
-      <AcceptJobDialog visible={!!acceptFor} busy={!!actingOn} onCancel={() => setAcceptFor(null)} onConfirm={confirmAccept} />
+      <AcceptJobDialog visible={false} busy={!!actingOn} onCancel={() => setAcceptFor(null)} onConfirm={confirmAccept} />
     </SafeAreaView>
   );
 }

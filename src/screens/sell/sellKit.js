@@ -48,7 +48,7 @@ export function SellPage({ title, subtitle, navigation, children, footer }) {
             <ChevronLeft size={20} color={SK.ink} />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 8 }}>
-            <Text style={{ fontSize: rf(20), fontWeight: '800', color: SK.ink }} numberOfLines={1}>{title}</Text>
+            <Text style={{ fontSize: rf(17), fontWeight: '800', color: SK.ink }} numberOfLines={1}>{title}</Text>
             {subtitle ? <Text style={{ fontSize: rf(13), color: '#3F5B7A', marginTop: 2 }} numberOfLines={1}>{subtitle}</Text> : null}
           </View>
           <View style={{ width: 40 }} />
@@ -66,7 +66,7 @@ export function SellPage({ title, subtitle, navigation, children, footer }) {
 
 export function SellCard({ title, Icon, children, style }) {
   return (
-    <View style={[{ backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: 1, borderColor: SK.line, padding: 12, marginTop: 10, ...cardShadow }, style]}>
+    <View style={[{ backgroundColor: '#FFFFFF', borderRadius: 14, borderWidth: 1, borderColor: SK.line, padding: 10, marginTop: 8, ...cardShadow }, style]}>
       {title ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
           {Icon ? (
@@ -74,7 +74,7 @@ export function SellCard({ title, Icon, children, style }) {
               <Icon size={17} color={SK.teal} />
             </View>
           ) : null}
-          <Text style={{ flex: 1, fontSize: rf(16), fontWeight: '800', color: SK.ink }}>{title}</Text>
+          <Text style={{ flex: 1, fontSize: rf(14), fontWeight: '800', color: SK.ink }}>{title}</Text>
         </View>
       ) : null}
       {children}
@@ -90,11 +90,11 @@ export function SellCta({ title = 'Continue', onPress, disabled, loading }) {
       disabled={off}
       accessibilityRole="button"
       accessibilityState={{ disabled: !!off, busy: !!loading }}
-      style={{ height: 54, borderRadius: 27, backgroundColor: off ? SK.disabled : SK.teal, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
+      style={{ height: 44, borderRadius: 22, backgroundColor: off ? SK.disabled : SK.teal, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}
     >
       {loading ? <ActivityIndicator color="#FFFFFF" /> : (
         <>
-          <Text style={{ color: '#FFFFFF', fontSize: rf(16), fontWeight: '800', marginRight: 6 }}>{title}</Text>
+          <Text style={{ color: '#FFFFFF', fontSize: rf(14), fontWeight: '800', marginRight: 6 }}>{title}</Text>
           <ChevronRight size={20} color="#FFFFFF" />
         </>
       )}
@@ -184,7 +184,7 @@ export function SellButton({ title, Icon, onPress, disabled, loading, variant = 
       accessibilityLabel={title}
       accessibilityState={{ disabled: !!off, busy: !!loading }}
       style={[{
-        minHeight: 54, borderRadius: 27, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14,
+        minHeight: 40, borderRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14,
         backgroundColor: filled ? (off ? SK.disabled : tone) : (variant === 'danger' ? SC.redSoft : '#FFFFFF'),
         borderWidth: filled ? 0 : 1.5, borderColor: tone, opacity: !filled && off ? 0.5 : 1,
       }, style]}
@@ -192,7 +192,7 @@ export function SellButton({ title, Icon, onPress, disabled, loading, variant = 
       {loading ? <ActivityIndicator color={filled ? '#FFFFFF' : tone} /> : (
         <>
           {Icon ? <Icon size={18} color={filled ? '#FFFFFF' : tone} strokeWidth={2.4} /> : null}
-          <Text style={{ marginLeft: Icon ? 8 : 0, fontSize: rf(15), fontWeight: '800', color: filled ? '#FFFFFF' : tone, textAlign: 'center' }} numberOfLines={2}>{title}</Text>
+          <Text style={{ marginLeft: Icon ? 6 : 0, fontSize: rf(13), fontWeight: '800', color: filled ? '#FFFFFF' : tone, textAlign: 'center' }} numberOfLines={2}>{title}</Text>
         </>
       )}
     </Pressable>

@@ -136,6 +136,7 @@ export default function AccountTabScreen({ navigation }) {
       title: 'Account',
       items: [
         { key: 'profile',  label: 'Profile',         icon: UserIcon, tint: '#DCFCE7', fg: '#609138', onPress: openProfile },
+        { key: 'security', label: 'Security & Biometrics', icon: ShieldCheck, tint: '#E5F3F5', fg: '#035C6C', onPress: () => navigation.navigate('Security') },
       ],
     },
     {
@@ -267,10 +268,10 @@ export default function AccountTabScreen({ navigation }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[C.green]} tintColor={C.green} />}
       >
         <View style={{ width: contentW }}>
-          {/* Two cards: account items (first 3) and support items (last 3) */}
+          {/* Two cards: account items (first 4) and support items (the rest) */}
           {[
-            { meta: { title: 'Account', subtitle: 'Profile, work and documents' }, items: allItems.slice(0, 3), showCount: true },
-            { meta: { title: 'Support', subtitle: 'Help, legal and other information' }, items: allItems.slice(3) },
+            { meta: { title: 'Account', subtitle: 'Profile, work and documents' }, items: allItems.slice(0, 4), showCount: true },
+            { meta: { title: 'Support', subtitle: 'Help, legal and other information' }, items: allItems.slice(4) },
           ].map((group) => (
             <SectionBlock key={group.meta.title} meta={group.meta} count={group.showCount ? group.items.length : null}>
               {group.items.map((it, idx) => <MenuRow key={it.key} item={it} last={idx === group.items.length - 1} />)}

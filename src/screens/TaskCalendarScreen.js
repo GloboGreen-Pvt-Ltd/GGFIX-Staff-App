@@ -3,9 +3,10 @@ import { View, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet } fro
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { Calendar, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, CircleX, Clock, ClipboardList, MapPin } from 'lucide-react-native';
 import { Text } from '../components/Typography';
-import MintScreenHeader from '../components/MintScreenHeader';
+import { useHideNativeHeader } from '../components/MintScreenHeader';
+import { JobHeader } from '../components/JobCardKit';
 import { selectTechnicianId } from '../store/authSlice';
 import { listMyStaffTasks } from '../api/staffTasks';
 import { categoryMeta, dayKey, hhmm, isNotAvailable, statusMeta, isAssignedTo } from '../utils/staffTasks';
@@ -58,6 +59,7 @@ function layout(tasks, day) {
 // 24-hour task calendar (00:00–23:59), day or week, from the real assigned
 // tasks. Blocks use the category colour; tap one to open the task.
 export default function TaskCalendarScreen({ navigation }) {
+  useHideNativeHeader(navigation);
   const technicianId = useSelector(selectTechnicianId);
   const [mode, setMode] = useState('day'); // 'day' | 'week'
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
@@ -94,28 +96,49 @@ export default function TaskCalendarScreen({ navigation }) {
   const title = mode === 'day'
     ? anchor.toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
     : `${days[0].toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} – ${days[6].toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+  const viewTasks = tasks.filter((t) => days.some((d) => dayKey(t.startAt) === dayKey(d)));
   const colW = gridW > 0 ? (gridW - GUTTER) / days.length : 0;
   const now = new Date();
   const nowTop = ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_H;
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      <MintScreenHeader title="Task Calendar" navigation={navigation} />
+      <JobHeader navigation={navigation} title="Task Calendar" sub="Manage and view task schedule" />
       <View style={s.toolbar}>
         <View style={s.seg}>
-          {['day', 'week'].map((m) => (
+          {[['day', Calendar], ['week', CalendarDays]].map(([m, Icon]) => (
             <TouchableOpacity key={m} onPress={() => setMode(m)} style={[s.segBtn, mode === m && s.segOn]} accessibilityRole="tab" accessibilityState={{ selected: mode === m }}>
+              <Icon size={rs(15)} color={mode === m ? '#FFFFFF' : '#1C3053'} strokeWidth={2.2} />
               <Text style={[s.segText, mode === m && { color: '#FFFFFF' }]}>{m === 'day' ? 'Day' : 'Week'}</Text>
             </TouchableOpacity>
           ))}
         </View>
-        <View style={s.nav}>
-          <TouchableOpacity onPress={() => step(-1)} style={s.navBtn} accessibilityLabel="Previous"><ChevronLeft size={rs(15)} color="#FFFFFF" strokeWidth={2.6} /></TouchableOpacity>
-          <TouchableOpacity onPress={() => setAnchor(startOfDay(new Date()))} accessibilityLabel="Go to today">
-            <Text style={s.navTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{title}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => step(1)} style={s.navBtn} accessibilityLabel="Next"><ChevronRight size={rs(15)} color="#FFFFFF" strokeWidth={2.6} /></TouchableOpacity>
+      </View>
+      <View style={s.nav}>
+        <View style={s.navPill}>
+          <TouchableOpacity onPress={() => step(-1)} style={s.navBtn} hitSlop={8} accessibilityLabel="Previous"><ChevronLeft size={rs(16)} color={TEAL} strokeWidth={2.6} /></TouchableOpacity>
+          <Calendar size={rs(15)} color={TEAL} strokeWidth={2.2} />
+          <Text style={s.navTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{title}</Text>
+          <TouchableOpacity onPress={() => step(1)} style={s.navBtn} hitSlop={8} accessibilityLabel="Next"><ChevronRight size={rs(16)} color={TEAL} strokeWidth={2.6} /></TouchableOpacity>
         </View>
+        <TouchableOpacity onPress={() => setAnchor(startOfDay(new Date()))} style={s.todayBtn} accessibilityLabel="Go to today">
+          <Text style={s.todayText}>Today</Text>
+        </TouchableOpacity>
+      </View>
+      {/* Counts for the day / week on screen. */}
+      <View style={s.stats}>
+        {[
+          { k: 'total', label: 'Total Tasks', Icon: ClipboardList, color: TEAL, n: viewTasks.length },
+          { k: 'up', label: 'Upcoming', Icon: Clock, color: '#2563EB', n: viewTasks.filter((t) => bucket(t.status) === 'UP').length },
+          { k: 'done', label: 'Completed', Icon: CheckCircle2, color: '#16A34A', n: viewTasks.filter((t) => bucket(t.status) === 'DONE').length },
+          { k: 'cx', label: 'Cancelled', Icon: CircleX, color: '#DC2626', n: viewTasks.filter((t) => bucket(t.status) === 'CX').length },
+        ].map((t) => (
+          <View key={t.k} style={[s.stat, t.k === 'total' && s.statOn]}>
+            <t.Icon size={rs(16)} color={t.color} strokeWidth={2.2} />
+            <Text style={s.statNum}>{t.n}</Text>
+            <Text style={s.statLabel} numberOfLines={1}>{t.label}</Text>
+          </View>
+        ))}
       </View>
 
       {mode === 'week' ? (
@@ -136,6 +159,11 @@ export default function TaskCalendarScreen({ navigation }) {
 
       {error ? (
         <View style={s.state}><Text style={s.stateText}>{error === 'unavailable' ? 'Staff Tasks is not enabled on your shop server yet.' : error}</Text></View>
+      ) : mode === 'day' ? (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: rs(16) }}>
+          {loading && !tasks.length ? <ActivityIndicator color={TEAL} style={{ marginTop: rs(10) }} /> : null}
+          <DayTimeline day={anchor} tasks={viewTasks} onOpen={(t) => navigation.navigate('TaskDetails', { taskId: t.id })} />
+        </ScrollView>
       ) : (
         <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false}>
           <View style={{ height: HOUR_H * 24 }} onLayout={(e) => setGridW(e.nativeEvent.layout.width)}>
@@ -189,20 +217,136 @@ export default function TaskCalendarScreen({ navigation }) {
           {loading ? <ActivityIndicator color="#035C6C" style={{ position: 'absolute', top: rs(10), alignSelf: 'center' }} /> : null}
         </ScrollView>
       )}
+      <View style={s.legend}>
+        {LEGEND.map((l) => (
+          <View key={l.label} style={s.legendItem}><View style={[s.legendDot, { backgroundColor: l.color }]} /><Text style={s.legendText}>{l.label}</Text></View>
+        ))}
+      </View>
     </SafeAreaView>
+  );
+}
+
+const TEAL = '#035C6C';
+// Task status → legend group (same groups as the stat cards).
+const bucket = (st) => {
+  const k = String(st || '').toUpperCase();
+  if (k === 'COMPLETED') return 'DONE';
+  if (k === 'CANCELLED' || k === 'REJECTED') return 'CX';
+  if (k === 'IN_PROGRESS' || k === 'UNABLE_TO_COMPLETE') return 'PROG';
+  return 'UP';
+};
+const BUCKET_COLOR = { DONE: '#16A34A', UP: '#2563EB', PROG: '#F97316', CX: '#DC2626' };
+const LEGEND = [
+  { label: 'Completed', color: '#16A34A' },
+  { label: 'Upcoming', color: '#2563EB' },
+  { label: 'In Progress', color: '#F97316' },
+  { label: 'Cancelled', color: '#DC2626' },
+];
+const h12 = (mins) => { const h = Math.floor(mins / 60) % 24; return `${String(h % 12 || 12).padStart(2, '0')}:${String(Math.round(mins % 60)).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+
+// Day view: hour rail on the left; each task as a card at its start hour.
+function DayTimeline({ day, tasks, onOpen }) {
+  const items = tasks.map((t) => ({ t, ...span(t, day) })).sort((a, b) => a.s - b.s);
+  const firstH = Math.min(10, ...items.map((it) => Math.floor(it.s / 60)));
+  const lastH = Math.max(18, ...items.map((it) => Math.floor(it.s / 60)));
+  const hours = Array.from({ length: lastH - firstH + 1 }, (_, i) => firstH + i);
+  return (
+    <View style={{ paddingHorizontal: rs(12), paddingTop: rs(6) }}>
+      {hours.map((h) => {
+        const here = items.filter((it) => Math.floor(it.s / 60) === h);
+        if (!here.length) {
+          return (
+            <View key={h} style={s.railRow}>
+              <Text style={s.railText}>{h12(h * 60)}</Text>
+              <View style={s.railDot} />
+              <View style={s.railRule} />
+            </View>
+          );
+        }
+        return here.map((it) => {
+          const t = it.t;
+          const st = statusMeta(t.status);
+          const cat = categoryMeta(t.category);
+          const color = BUCKET_COLOR[bucket(t.status)];
+          const CatIcon = cat.icon || ClipboardList;
+          return (
+            <View key={t.id} style={s.pickRow}>
+              <View style={{ width: rs(78) }}>
+                <Text style={s.pickStart}>{h12(it.s)}</Text>
+                <Text style={s.pickEnd}>{h12(it.e)}</Text>
+              </View>
+              <View style={[s.railDot, { backgroundColor: color, marginTop: rs(6) }]} />
+              <TouchableOpacity onPress={() => onOpen(t)} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={`${t.title}, ${st.label}`}
+                style={[s.pickCard, { borderLeftColor: color, backgroundColor: `${color}0F` }]}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={s.pickTop}>
+                    <View style={s.pickIcon}><CatIcon size={rs(13)} color={TEAL} strokeWidth={2.2} /></View>
+                    <Text style={s.pickName} numberOfLines={1}>{t.title}</Text>
+                    <View style={[s.pill, { backgroundColor: `${color}1A` }]}>
+                      <CheckCircle2 size={rs(10)} color={color} strokeWidth={2.6} />
+                      <Text style={[s.pillText, { color }]} numberOfLines={1}>{st.label}</Text>
+                    </View>
+                  </View>
+                  <View style={s.pickLine}><ClipboardList size={rs(12)} color={TEAL} /><Text style={s.pickText} numberOfLines={1}>{cat.label}</Text></View>
+                  {t.location || t.address ? <View style={s.pickLine}><MapPin size={rs(12)} color={TEAL} /><Text style={s.pickText} numberOfLines={1}>{t.location || t.address}</Text></View> : null}
+                </View>
+                <ChevronRight size={rs(16)} color="#111111" />
+              </TouchableOpacity>
+            </View>
+          );
+        });
+      })}
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  toolbar: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(12), paddingVertical: rs(8), borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-  seg: { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 999, padding: rs(2) },
-  segBtn: { paddingHorizontal: rs(12), paddingVertical: rs(5), borderRadius: 999 },
+  toolbar: { paddingHorizontal: rs(12), paddingTop: rs(8), paddingBottom: rs(8) },
+  seg: { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 999, padding: rs(3) },
+  segBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6), paddingVertical: rs(8), borderRadius: 999 },
   segOn: { backgroundColor: '#035C6C' },
-  segText: { fontSize: rf(12), fontWeight: '800', color: '#1C3053' },
-  nav: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: rs(6) },
-  navBtn: { width: rs(26), height: rs(26), borderRadius: rs(13), backgroundColor: '#035C6C', alignItems: 'center', justifyContent: 'center' },
-  navTitle: { fontSize: rf(12.5), fontWeight: '800', color: '#1C3053', maxWidth: rs(170), textAlign: 'center' },
+  segText: { fontSize: rf(13), fontWeight: '800', color: '#1C3053' },
+  nav: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(12), paddingBottom: rs(8) },
+  navPill: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(6), paddingVertical: rs(5),
+    borderRadius: rs(14), borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF',
+  },
+  navBtn: { width: rs(30), height: rs(30), borderRadius: rs(15), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center' },
+  navTitle: { flex: 1, fontSize: rf(14), fontWeight: '800', color: '#1C3053', textAlign: 'center' },
+  todayBtn: { paddingHorizontal: rs(14), paddingVertical: rs(7), borderRadius: 999, borderWidth: 1.5, borderColor: '#035C6C' },
+  todayText: { fontSize: rf(12.5), fontWeight: '800', color: '#035C6C' },
+  stats: { flexDirection: 'row', gap: rs(6), paddingHorizontal: rs(12), paddingBottom: rs(8), borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
+  stat: { flex: 1, alignItems: 'center', paddingVertical: rs(8), borderRadius: rs(12), borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#FFFFFF' },
+  statOn: { borderColor: '#035C6C', borderWidth: 1.5, backgroundColor: '#EEF8F9' },
+  statNum: { fontSize: rf(16), fontWeight: '800', color: '#111111', marginTop: rs(2) },
+  statLabel: { fontSize: rf(10.5), color: '#374151' },
+  railRow: { flexDirection: 'row', alignItems: 'center', height: rs(34) },
+  railText: { width: rs(78), fontSize: rf(11.5), color: '#6B7280' },
+  railDot: { width: rs(8), height: rs(8), borderRadius: rs(4), backgroundColor: '#D1D5DB', marginRight: rs(10) },
+  railRule: { flex: 1, height: 1, backgroundColor: '#EEF0F2' },
+  pickRow: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: rs(5) },
+  pickStart: { fontSize: rf(12), fontWeight: '800', color: '#111111' },
+  pickEnd: { fontSize: rf(11.5), color: '#374151', marginTop: rs(2) },
+  pickCard: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(6), borderRadius: rs(12), borderWidth: 1, borderColor: '#E5E7EB',
+    borderLeftWidth: rs(4), paddingVertical: rs(8), paddingHorizontal: rs(9),
+    shadowColor: '#111111', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  },
+  pickTop: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
+  pickIcon: { width: rs(22), height: rs(22), borderRadius: rs(11), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center' },
+  pickName: { flex: 1, fontSize: rf(13.5), fontWeight: '800', color: '#111111' },
+  pickLine: { flexDirection: 'row', alignItems: 'center', gap: rs(6), marginTop: rs(4), paddingLeft: rs(4) },
+  pickText: { flex: 1, fontSize: rf(12), color: '#374151' },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: rs(3), paddingHorizontal: rs(8), paddingVertical: rs(2), borderRadius: 999, maxWidth: '50%' },
+  pillText: { fontSize: rf(10), fontWeight: '800' },
+  legend: {
+    flexDirection: 'row', justifyContent: 'space-around', marginHorizontal: rs(12), marginVertical: rs(8), paddingVertical: rs(7),
+    borderRadius: rs(12), borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: rs(5) },
+  legendDot: { width: rs(8), height: rs(8), borderRadius: rs(4) },
+  legendText: { fontSize: rf(11), color: '#374151' },
   weekHead: { flexDirection: 'row', paddingVertical: rs(6), borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
   weekDow: { fontSize: rf(10.5), color: '#6B7280', fontWeight: '700' },
   weekNum: { width: rs(24), height: rs(24), borderRadius: rs(12), alignItems: 'center', justifyContent: 'center', marginTop: 2 },

@@ -1,12 +1,14 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { Image, Linking, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native';
+import { Image, Linking, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Text, TextInput } from '../../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import {
-  Camera, CircleCheck, CircleX, KeyRound, MapPin, Navigation, PackageCheck, Phone, RotateCcw, Store, Truck, X,
+  Camera, CircleCheck, ClipboardList, Handshake, RefreshCw, Route, CircleX, KeyRound, MapPin, Navigation, PackageCheck, Phone, RotateCcw, Store, Truck, X,
 } from 'lucide-react-native';
 import { getRepairDelivery, repairDeliveryAction } from '../../api/repairDeliveries';
 import { uploadMedia } from '../../api/media';
+import PinBoxes from '../../components/PinBoxes';
 import { confirm, notify } from '../../components/confirm';
 import { rf, rs } from '../../utils/responsive';
 import { Button, Card, Loader, Page, SC, SK, apiError, money } from './deliveryKit';
@@ -23,11 +25,21 @@ const FAIL = ['Customer not available', 'Customer refused delivery', 'Wrong / in
 // Backend answers for a delivery no longer assigned to this employee.
 const isReassigned = (e) => e?.payload?.code === 'NOT_ASSIGNED' || e?.status === 403 || e?.status === 404;
 
-function Line({ label, value, bold }) {
+function Line({ label, value, bold, last }) {
   return (
-    <View style={{ flexDirection: 'row', paddingVertical: rs(5) }}>
-      <Text style={{ width: rs(130), fontSize: rf(13), color: '#6B7280' }}>{label}</Text>
-      <Text style={{ flex: 1, fontSize: rf(13.5), fontWeight: bold ? '800' : '600', color: SK.ink }}>{value}</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: rs(7), marginLeft: rs(8), borderBottomWidth: last ? 0 : 1, borderBottomColor: '#EEF0F2' }}>
+      <Text style={{ width: rs(130), fontSize: rf(13), color: '#6B7280', borderRightWidth: 1, borderRightColor: '#E5E7EB', marginRight: rs(14) }}>{label}</Text>
+      <Text style={{ flex: 1, fontSize: rf(13.5), fontWeight: bold ? '800' : '700', color: SK.ink }}>{value}</Text>
+    </View>
+  );
+}
+
+// Card heading with a teal icon.
+function Head({ Icon, title }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: rs(8) }}>
+      <Icon size={20} color={SK.teal} strokeWidth={2.2} />
+      <Text style={{ marginLeft: rs(8), fontSize: rf(15), fontWeight: '800', color: SK.ink }}>{title}</Text>
     </View>
   );
 }
@@ -70,6 +82,7 @@ export default function RepairDeliveryScreen({ navigation, route }) {
   const [gone, setGone] = useState(false); // reassigned / no longer mine
   // Completion
   const [otp, setOtp] = useState('');
+  const otpRef = useRef(null);
   const [method, setMethod] = useState('CASH');
   const [ref, setRef] = useState('');
   const lock = useRef(false);
@@ -155,8 +168,9 @@ export default function RepairDeliveryScreen({ navigation, route }) {
         </View>
       ))}
       <Pressable onPress={() => addPhoto(setList)} accessibilityRole="button" accessibilityLabel={label}
-        style={{ width: rs(68), height: rs(68), borderRadius: rs(10), borderWidth: 1, borderStyle: 'dashed', borderColor: SK.teal, alignItems: 'center', justifyContent: 'center' }}>
+        style={{ width: rs(76), height: rs(76), borderRadius: rs(10), borderWidth: 1.2, borderStyle: 'dashed', borderColor: SK.teal, alignItems: 'center', justifyContent: 'center' }}>
         <Camera size={22} color={SK.teal} />
+        <Text style={{ fontSize: rf(10.5), fontWeight: '700', color: SK.teal, marginTop: rs(3) }}>Add Photo</Text>
       </Pressable>
     </View>
   );
@@ -169,7 +183,7 @@ export default function RepairDeliveryScreen({ navigation, route }) {
   const complete = async () => {
     if (doneUrls(proof).length < 1) { notify('Add proof', 'Take a photo of the device handed to the customer.', { type: 'warning' }); return; }
     if (due > 0 && method === 'UPI' && !ref.trim()) { notify('UPI reference needed', 'Enter the UPI transaction reference.', { type: 'warning' }); return; }
-    if (otp.length !== 4) { notify('OTP needed', 'Ask the customer for the 4-digit OTP on their repair page.', { type: 'warning' }); return; }
+    if (otp.length !== 4) { notify('PIN needed', 'Ask the customer for the 4-digit PIN on their repair page.', { type: 'warning' }); return; }
     const ok = await confirm({ title: 'Complete delivery?', message: due > 0 ? `You collected ${money(due)} by ${method === 'UPI' ? 'UPI' : 'cash'}.` : 'Hand over the device to the customer.', confirmText: 'Complete' });
     if (ok) act('complete', { otp, amountCollected: due, paymentMethod: due > 0 ? method : null, paymentRef: due > 0 && method === 'UPI' ? ref.trim() : null, photos: doneUrls(proof) }, 'Delivered');
   };
@@ -185,27 +199,42 @@ export default function RepairDeliveryScreen({ navigation, route }) {
       <ScrollView contentContainerStyle={{ padding: rs(14), paddingBottom: rs(40) }} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[SK.teal]} />}>
         <Card>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {d.deviceImageUrl ? <Image source={{ uri: d.deviceImageUrl }} style={{ width: rs(54), height: rs(54), borderRadius: rs(12), backgroundColor: SK.page }} /> : null}
-            <View style={{ flex: 1, marginLeft: d.deviceImageUrl ? rs(10) : 0 }}>
+            {d.deviceImageUrl ? (
+              <View style={{ paddingRight: rs(10), marginRight: rs(10), borderRightWidth: 1, borderRightColor: '#E5E7EB' }}>
+                <Image source={{ uri: d.deviceImageUrl }} resizeMode="contain" style={{ width: rs(54), height: rs(64) }} />
+              </View>
+            ) : null}
+            <View style={{ flex: 1 }}>
               <Text style={{ fontSize: rf(16), fontWeight: '800', color: SK.ink }}>{d.device}</Text>
               <Text style={{ fontSize: rf(13), color: '#6B7280' }}>{`Attempt ${d.attempt} · ${slotText(d)}`}</Text>
             </View>
-            <View style={{ borderRadius: rs(12), paddingHorizontal: rs(10), paddingVertical: rs(4), backgroundColor: `${statusTone(st)}1A` }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', borderRadius: rs(14), paddingHorizontal: rs(10), paddingVertical: rs(5), backgroundColor: `${statusTone(st)}1A` }}>
+              {st === 'OUT_FOR_DELIVERY' ? <Truck size={14} color={statusTone(st)} style={{ marginRight: rs(5) }} /> : null}
               <Text style={{ fontSize: rf(12), fontWeight: '800', color: statusTone(st) }}>{d.statusLabel}</Text>
             </View>
           </View>
         </Card>
 
-        <Card title="Route">
-          <View style={{ flexDirection: 'row' }}>
-            <Store size={18} color={SK.teal} />
-            <Text style={{ flex: 1, marginLeft: rs(8), fontSize: rf(13.5), color: SK.ink }}>{d.shopAddress || 'Shop'}</Text>
-          </View>
-          <View style={{ flexDirection: 'row', marginTop: rs(10) }}>
-            <MapPin size={18} color={SC.red} />
+        <Card>
+          <Head Icon={Route} title="Route" />
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginLeft: rs(18) }}>
+            <View style={{ alignItems: 'center', width: rs(22) }}>
+              <Store size={18} color={SK.teal} />
+              <View style={{ width: 0, height: rs(22), borderLeftWidth: 1, borderStyle: 'dashed', borderColor: SK.teal, marginVertical: rs(3) }} />
+              <MapPin size={18} color={SC.red} />
+            </View>
             <View style={{ flex: 1, marginLeft: rs(8) }}>
-              <Text style={{ fontSize: rf(13.5), fontWeight: '700', color: SK.ink }}>{d.customerName || 'Customer'}</Text>
-              <Text style={{ fontSize: rf(13), color: '#6B7280' }}>{d.customerAddress || 'Shown after you accept'}</Text>
+              <View style={{ flexDirection: 'row' }}>
+                <Text style={{ width: rs(118), fontSize: rf(12.5), color: '#6B7280' }}>Shop (Origin)</Text>
+                <Text style={{ flex: 1, fontSize: rf(13), fontWeight: '700', color: SK.ink }}>{d.shopAddress || 'Shop'}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', marginTop: rs(12) }}>
+                <Text style={{ width: rs(118), fontSize: rf(12.5), color: '#6B7280' }}>Customer (Destination)</Text>
+                <Text style={{ flex: 1, fontSize: rf(13), color: SK.ink }}>
+                  {d.customerName ? <Text style={{ fontWeight: '800' }}>{d.customerName}{d.customerAddress ? ', ' : ''}</Text> : null}
+                  {d.customerAddress || (d.customerName ? '' : 'Shown after you accept')}
+                </Text>
+              </View>
             </View>
           </View>
           {d.customerPhone || d.customerAddress ? (
@@ -216,9 +245,10 @@ export default function RepairDeliveryScreen({ navigation, route }) {
           ) : null}
         </Card>
 
-        <Card title="Details">
+        <Card>
+          <Head Icon={ClipboardList} title="Details" />
           <Line label="Device IMEI / Serial" value={d.deviceIdentifierHint || 'Not recorded'} />
-          <Line label="Amount to collect" value={due > 0 ? money(due) : 'Nothing due'} bold />
+          <Line label="Amount to collect" value={due > 0 ? money(due) : 'Nothing due'} bold last={!(d.accessories || []).length && !d.failReason} />
           {(d.accessories || []).length ? <Line label="Accessories" value={d.accessories.join(', ')} /> : null}
           {d.failReason ? <Line label="Last attempt" value={`Failed — ${d.failReason}`} /> : null}
         </Card>
@@ -275,13 +305,14 @@ export default function RepairDeliveryScreen({ navigation, route }) {
         ) : null}
 
         {st === 'OUT_FOR_DELIVERY' || st === 'ARRIVED' ? (
-          <Card title="Handover">
-            <Text style={{ fontSize: rf(13), color: '#6B7280' }}>Customer OTP (on their repair page)</Text>
-            <TextInput value={otp} onChangeText={(t) => setOtp(t.replace(/\D/g, '').slice(0, 4))} placeholder="4-digit OTP" placeholderTextColor="#9CA3AF" keyboardType="number-pad" maxLength={4}
-              style={{ height: rs(52), borderRadius: rs(12), borderWidth: 1, borderColor: SK.line, paddingHorizontal: rs(12), fontSize: rf(22), letterSpacing: 8, textAlign: 'center', color: SK.ink, marginTop: rs(6) }} />
-            <Pressable onPress={() => act('otp/resend', null, 'New OTP sent to the customer')} accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginTop: rs(8) }}>
-              <KeyRound size={14} color={SK.teal} />
-              <Text style={{ fontSize: rf(13), fontWeight: '800', color: SK.teal, marginLeft: rs(6) }}>Generate new OTP</Text>
+          <Card>
+            <Head Icon={Handshake} title="Handover" />
+            <Text style={{ fontSize: rf(14.5), fontWeight: '800', color: SK.ink, marginLeft: rs(18) }}>Customer PIN</Text>
+            <Text style={{ fontSize: rf(12.5), color: '#6B7280', marginLeft: rs(18), marginTop: rs(2) }}>Ask customer for the 4-digit PIN shown in their repair page.</Text>
+            <PinBoxes value={otp} onChange={setOtp} accessibilityLabel="Customer PIN" style={{ marginTop: rs(12) }} />
+            <Pressable onPress={() => (otp.length === 4 ? notify('PIN entered', 'The server checks it when you tap Complete Delivery.', { type: 'success' }) : (notify('Enter the PIN', 'Ask the customer for the 4-digit PIN. Long-press to send them a new PIN.', { type: 'warning' })))} onLongPress={() => act('otp/resend', null, 'New PIN sent to the customer')} accessibilityLabel="Verify PIN" accessibilityRole="button" style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginTop: rs(10), marginLeft: rs(6) }}>
+              <RefreshCw size={16} color={SK.teal} />
+              <Text style={{ fontSize: rf(13), fontWeight: '800', color: SK.teal, marginLeft: rs(6) }}>Verify PIN</Text>
             </Pressable>
             {due > 0 ? (
               <>
@@ -299,11 +330,16 @@ export default function RepairDeliveryScreen({ navigation, route }) {
                     style={{ height: rs(46), borderRadius: rs(12), borderWidth: 1, borderColor: SK.line, paddingHorizontal: rs(12), fontSize: rf(14), color: SK.ink, marginTop: rs(8) }} />
                 ) : null}
               </>
-            ) : <Text style={{ fontSize: rf(13), color: SC.green, fontWeight: '700', marginTop: rs(12) }}>Nothing to collect — fully paid.</Text>}
-            <Text style={{ fontSize: rf(13), color: '#6B7280', marginTop: rs(14) }}>{`Handover photo proof * · ${doneUrls(proof).length} added`}</Text>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: rs(12), marginLeft: rs(6) }}>
+                <CircleCheck size={16} color={SC.green} />
+                <Text style={{ fontSize: rf(13), color: SC.green, fontWeight: '700', marginLeft: rs(6) }}>Nothing to collect — fully paid.</Text>
+              </View>
+            )}
+            <Text style={{ fontSize: rf(13), color: '#6B7280', marginTop: rs(14), marginLeft: rs(6) }}>{`Handover photo proof *${doneUrls(proof).length ? ` · ${doneUrls(proof).length} added` : ''}`}</Text>
             {photoRow(proof, setProof, 'Take handover photo')}
             <Button title={busyUpload(proof) ? 'Uploading photos…' : 'Complete Delivery'} Icon={CircleCheck} variant="success" disabled={busyUpload(proof)} loading={busy === 'complete'} onPress={complete} style={{ marginTop: rs(14) }} />
-            <Button title="Delivery Failed" Icon={CircleX} variant="danger" onPress={() => { setReason(null); setReasonFor('fail'); }} style={{ marginTop: rs(10) }} />
+            <Button title="Delivery Failed" Icon={CircleX} variant="danger" onPress={() => { setReason(null); setReasonFor('fail'); }} style={{ marginTop: rs(10), backgroundColor: '#FFFFFF' }} />
           </Card>
         ) : null}
 
@@ -326,17 +362,28 @@ export default function RepairDeliveryScreen({ navigation, route }) {
         ) : null}
         {st === 'DELIVERED' ? (
           <Card style={{ backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }}>
-            <Text style={{ fontSize: rf(15), fontWeight: '800', color: SC.green }}>Delivered</Text>
-            <Text style={{ fontSize: rf(13), color: SK.ink, marginTop: rs(4) }}>{Number(d.amountCollected) > 0 ? `Collected ${money(d.amountCollected)} (${d.paymentMethod}).` : 'Nothing was due.'}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: rs(4) }}>
+              <View style={{ paddingHorizontal: rs(8), marginRight: rs(12), borderRightWidth: 1, borderRightColor: '#86C99B' }}>
+                <CircleCheck size={26} color={SC.green} strokeWidth={2.2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: rf(15), fontWeight: '800', color: SC.green }}>Delivered</Text>
+                <Text style={{ fontSize: rf(13), color: SK.ink, marginTop: rs(2) }}>{Number(d.amountCollected) > 0 ? `Collected ${money(d.amountCollected)} (${d.paymentMethod}).` : 'Nothing was due.'}</Text>
+              </View>
+            </View>
           </Card>
         ) : null}
 
         {(d.events || []).length ? (
-          <Card title="History">
-            {d.events.slice().reverse().map((e, i) => (
-              <View key={`${e.at}-${i}`} style={{ flexDirection: 'row', marginBottom: rs(8) }}>
-                <View style={{ width: rs(8), height: rs(8), borderRadius: rs(4), backgroundColor: i === 0 ? SK.teal : '#C9CED6', marginTop: rs(6) }} />
-                <View style={{ flex: 1, marginLeft: rs(8) }}>
+          <Card>
+            <Head Icon={ClipboardList} title="History" />
+            {d.events.slice().reverse().map((e, i, all) => (
+              <View key={`${e.at}-${i}`} style={{ flexDirection: 'row', marginLeft: rs(6) }}>
+                <View style={{ alignItems: 'center', width: rs(12) }}>
+                  <View style={{ width: rs(10), height: rs(10), borderRadius: rs(5), backgroundColor: i === 0 ? SK.teal : '#C9CED6', marginTop: rs(5) }} />
+                  {i < all.length - 1 ? <View style={{ flex: 1, width: 1.5, backgroundColor: '#D1D5DB', marginTop: rs(2) }} /> : null}
+                </View>
+                <View style={{ flex: 1, marginLeft: rs(12), paddingBottom: i < all.length - 1 ? rs(12) : 0 }}>
                   <Text style={{ fontSize: rf(13.5), fontWeight: '700', color: SK.ink }}>{e.label}</Text>
                   <Text style={{ fontSize: rf(12), color: '#6B7280' }}>{[e.note, e.at ? new Date(e.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : null].filter(Boolean).join(' · ')}</Text>
                 </View>

@@ -340,10 +340,10 @@ export default function TaskAssignScreen({ navigation }) {
   // toast follows only the API's answer to the accept call itself.
   const handleAccept = (ticketId) => {
     if (actingOn) return;
-    setAcceptFor(ticketId);
+    setAcceptFor(ticketId); confirmAccept(ticketId);
   };
-  const confirmAccept = async () => {
-    const ticketId = acceptFor;
+  const confirmAccept = async (id) => {
+    const ticketId = (id && typeof id !== 'object') ? id : acceptFor;
     if (!ticketId || actingOn) return;
     setActingOn(ticketId);
     try {
@@ -496,9 +496,9 @@ export default function TaskAssignScreen({ navigation }) {
         onReject={() => reviewTicket && handleReject(reviewTicket.id)}
       >
         {/* Inside the sheet's Modal: iOS can't stack a sibling Modal on it. */}
-        <AcceptJobDialog inline visible={!!acceptFor && !!reviewTicket} busy={!!actingOn} onCancel={() => setAcceptFor(null)} onConfirm={confirmAccept} />
+        <AcceptJobDialog inline visible={false} busy={!!actingOn} onCancel={() => setAcceptFor(null)} onConfirm={confirmAccept} />
       </ReviewSheet>
-      <AcceptJobDialog visible={!!acceptFor && !reviewTicket} busy={!!actingOn} onCancel={() => setAcceptFor(null)} onConfirm={confirmAccept} />
+      <AcceptJobDialog visible={false} busy={!!actingOn} onCancel={() => setAcceptFor(null)} onConfirm={confirmAccept} />
 
       <Modal visible={!!info} transparent animationType="fade" onRequestClose={() => setInfo(null)}>
         <Pressable style={styles.backdropCenter} onPress={() => setInfo(null)}>

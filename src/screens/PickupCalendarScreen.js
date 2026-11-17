@@ -2,12 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { AlertTriangle, CalendarX, ChevronLeft, ChevronRight, Clock, MapPin, RefreshCw, Smartphone, WifiOff } from 'lucide-react-native';
+import { AlertTriangle, Calendar, CalendarDays, CalendarRange, CalendarX, CheckCircle2, ChevronLeft, ChevronRight, CircleX, Clock, MapPin, Package, RefreshCw, Smartphone, Truck, WifiOff } from 'lucide-react-native';
 import { Text } from '../components/Typography';
 import { useHideNativeHeader } from '../components/MintScreenHeader';
 import { JobHeader, KIT } from '../components/JobCardKit';
 import { listMyAssignedPickups } from '../api/pickups';
-import { dayKey, deviceLabel, minutesOf, overlapsFor, pickupDay, slotLabel, statusMeta, trackingId } from '../utils/pickups';
+import { bucketOf, dayKey, deviceLabel, minutesOf, overlapsFor, pickupDay, slotLabel, statusMeta, trackingId } from '../utils/pickups';
 import { rf, rs } from '../utils/responsive';
 import { userMessage } from '../utils/userMessages';
 
@@ -136,9 +136,10 @@ export default function PickupCalendarScreen({ navigation }) {
   }, [anchor]);
 
   // Pickups in view, for the header line and the empty state.
-  const inView = mode === 'month'
-    ? list.filter((b) => pickupDay(b).startsWith(anchorK.slice(0, 7))).length
-    : days.reduce((n, d) => n + (byDay.get(dayKey(d)) || []).length, 0);
+  const viewRows = mode === 'month'
+    ? list.filter((b) => pickupDay(b).startsWith(anchorK.slice(0, 7)))
+    : days.flatMap((d) => byDay.get(dayKey(d)) || []);
+  const inView = viewRows.length;
   const sub = loading && !list.length ? 'Loading…'
     : `${inView} ${inView === 1 ? 'pickup' : 'pickups'} ${mode === 'day' ? 'on this day' : mode === 'week' ? 'this week' : 'this month'}`;
   const refresh = <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[KIT.teal]} tintColor={KIT.teal} />;
@@ -164,25 +165,44 @@ export default function PickupCalendarScreen({ navigation }) {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      <JobHeader navigation={navigation} title="Pickup Calendar" sub={sub} />
+      <JobHeader navigation={navigation} title="Pickup Calendar" sub={loading && !list.length ? sub : 'Manage and view pickup schedule'} />
 
       {/* Row 1: view switch + Today. Row 2: date navigation (kept apart so neither crowds). */}
       <View style={s.toolbar}>
         <View style={s.seg}>
-          {['day', 'week', 'month'].map((m) => (
+          {[['day', Calendar], ['week', CalendarDays], ['month', CalendarRange]].map(([m, Icon]) => (
             <TouchableOpacity key={m} onPress={() => setMode(m)} style={[s.segBtn, mode === m && s.segOn]} accessibilityRole="tab" accessibilityState={{ selected: mode === m }}>
+              <Icon size={rs(15)} color={mode === m ? '#FFFFFF' : '#1C3053'} strokeWidth={2.2} />
               <Text style={[s.segText, mode === m && { color: '#FFFFFF' }]}>{m[0].toUpperCase() + m.slice(1)}</Text>
             </TouchableOpacity>
           ))}
+        </View>
+      </View>
+      <View style={s.nav}>
+        <View style={s.navPill}>
+          <TouchableOpacity onPress={() => step(-1)} style={s.navBtn} hitSlop={8} accessibilityLabel="Previous"><ChevronLeft size={rs(16)} color={KIT.teal} strokeWidth={2.6} /></TouchableOpacity>
+          <Calendar size={rs(15)} color={KIT.teal} strokeWidth={2.2} />
+          <Text style={s.navTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{title}</Text>
+          <TouchableOpacity onPress={() => step(1)} style={s.navBtn} hitSlop={8} accessibilityLabel="Next"><ChevronRight size={rs(16)} color={KIT.teal} strokeWidth={2.6} /></TouchableOpacity>
         </View>
         <TouchableOpacity onPress={() => setAnchor(startOfDay(new Date()))} style={s.todayBtn} accessibilityLabel="Go to today">
           <Text style={s.todayText}>Today</Text>
         </TouchableOpacity>
       </View>
-      <View style={s.nav}>
-        <TouchableOpacity onPress={() => step(-1)} style={s.navBtn} hitSlop={8} accessibilityLabel="Previous"><ChevronLeft size={rs(16)} color="#FFFFFF" strokeWidth={2.6} /></TouchableOpacity>
-        <Text style={s.navTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{title}</Text>
-        <TouchableOpacity onPress={() => step(1)} style={s.navBtn} hitSlop={8} accessibilityLabel="Next"><ChevronRight size={rs(16)} color="#FFFFFF" strokeWidth={2.6} /></TouchableOpacity>
+      {/* Counts for the day / week / month on screen. */}
+      <View style={s.stats}>
+        {[
+          { k: 'total', label: 'Total Pickups', Icon: Truck, color: KIT.teal, n: viewRows.length },
+          { k: 'up', label: 'Upcoming', Icon: Clock, color: '#2563EB', n: viewRows.filter((b) => bucketOf(b.status) === 'ASSIGNED').length },
+          { k: 'done', label: 'Completed', Icon: CheckCircle2, color: '#16A34A', n: viewRows.filter((b) => bucketOf(b.status) === 'COMPLETED').length },
+          { k: 'cx', label: 'Cancelled', Icon: CircleX, color: '#DC2626', n: viewRows.filter((b) => bucketOf(b.status) === 'CANCELLED').length },
+        ].map((t) => (
+          <View key={t.k} style={[s.stat, t.k === 'total' && s.statOn]}>
+            <t.Icon size={rs(16)} color={t.color} strokeWidth={2.2} />
+            <Text style={s.statNum}>{t.n}</Text>
+            <Text style={s.statLabel} numberOfLines={1}>{t.label}</Text>
+          </View>
+        ))}
       </View>
 
       {error ? (
@@ -271,6 +291,10 @@ export default function PickupCalendarScreen({ navigation }) {
                 />
               )}
             </ScrollView>
+          ) : mode === 'day' ? (
+            <ScrollView showsVerticalScrollIndicator={false} refreshControl={refresh} contentContainerStyle={{ paddingBottom: rs(16) }}>
+              <DayTimeline rows={byDay.get(anchorK) || []} onOpen={open} />
+            </ScrollView>
           ) : (
           <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} refreshControl={refresh}>
             <View style={{ height: HOUR_H * 24, flexDirection: 'row' }}>
@@ -296,7 +320,79 @@ export default function PickupCalendarScreen({ navigation }) {
           )}
         </>
       )}
+      {mode !== 'month' ? (
+        <View style={s.legend}>
+          {LEGEND.map((l) => (
+            <View key={l.label} style={s.legendItem}><View style={[s.legendDot, { backgroundColor: l.color }]} /><Text style={s.legendText}>{l.label}</Text></View>
+          ))}
+        </View>
+      ) : null}
     </SafeAreaView>
+  );
+}
+
+// Legend colours = pickup bucket (same buckets as the stat cards).
+const LEGEND = [
+  { label: 'Completed', color: '#16A34A' },
+  { label: 'Upcoming', color: '#2563EB' },
+  { label: 'In Progress', color: '#F97316' },
+  { label: 'Cancelled', color: '#DC2626' },
+];
+const BUCKET_COLOR = { COMPLETED: '#16A34A', ASSIGNED: '#2563EB', IN_PROGRESS: '#F97316', CANCELLED: '#DC2626' };
+const h12 = (mins) => { const h = Math.floor(mins / 60); return `${String(h % 12 || 12).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+
+// Day view: hour rail on the left; each pickup as a card at its start hour.
+function DayTimeline({ rows, onOpen }) {
+  const items = rows.map((b) => ({ b, ...span(b) }));
+  const firstH = Math.min(10, ...items.map((it) => Math.floor(it.s / 60)));
+  const lastH = Math.max(18, ...items.map((it) => Math.floor(it.s / 60)));
+  const hours = Array.from({ length: lastH - firstH + 1 }, (_, i) => firstH + i);
+  return (
+    <View style={{ paddingHorizontal: rs(12), paddingTop: rs(6) }}>
+      {hours.map((h) => {
+        const here = items.filter((it) => Math.floor(it.s / 60) === h);
+        if (!here.length) {
+          return (
+            <View key={h} style={s.hourRow}>
+              <Text style={s.hourText}>{h12(h * 60)}</Text>
+              <View style={s.railDot} />
+              <View style={s.hourRule} />
+            </View>
+          );
+        }
+        return here.map((it) => {
+          const b = it.b;
+          const st = statusMeta(b.status);
+          const color = BUCKET_COLOR[bucketOf(b.status)] || st.color;
+          return (
+            <View key={b.id} style={s.pickRow}>
+              <View style={{ width: rs(78) }}>
+                <Text style={s.pickStart}>{h12(it.s)}</Text>
+                <Text style={s.pickEnd}>{h12(it.e)}</Text>
+              </View>
+              <View style={[s.railDot, { backgroundColor: color, marginTop: rs(6) }]} />
+              <TouchableOpacity onPress={() => onOpen(b)} activeOpacity={0.85} accessibilityRole="button"
+                accessibilityLabel={`${b.customerName || 'Pickup'}, ${deviceLabel(b)}, ${st.label}`}
+                style={[s.pickCard, { borderLeftColor: color, backgroundColor: `${color}0F` }, isCancelled(b) && { opacity: 0.6 }]}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={s.pickTop}>
+                    <View style={s.pickIcon}><Package size={rs(13)} color={KIT.teal} strokeWidth={2.2} /></View>
+                    <Text style={s.pickName} numberOfLines={1}>{b.customerName || trackingId(b)}</Text>
+                    <View style={[s.pill, { backgroundColor: `${color}1A`, flexDirection: 'row', alignItems: 'center', gap: rs(3) }]}>
+                      <CheckCircle2 size={rs(10)} color={color} strokeWidth={2.6} />
+                      <Text style={[s.pillText, { color }]} numberOfLines={1}>{st.label}</Text>
+                    </View>
+                  </View>
+                  <View style={s.pickLine}><Smartphone size={rs(12)} color={KIT.teal} /><Text style={s.agendaText} numberOfLines={1}>{deviceLabel(b)}</Text></View>
+                  {b.pickupAddressText ? <View style={s.pickLine}><MapPin size={rs(12)} color={KIT.teal} /><Text style={s.agendaText} numberOfLines={1}>{b.pickupAddressText}</Text></View> : null}
+                </View>
+                <ChevronRight size={rs(16)} color="#111111" />
+              </TouchableOpacity>
+            </View>
+          );
+        });
+      })}
+    </View>
   );
 }
 
@@ -393,19 +489,47 @@ function EmptyNote({ text }) {
 const shadow = { shadowColor: '#111111', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 };
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: rs(8), paddingHorizontal: rs(12), paddingTop: rs(8), paddingBottom: rs(6) },
-  seg: { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 999, padding: rs(2) },
-  segBtn: { paddingHorizontal: rs(14), paddingVertical: rs(6), borderRadius: 999 },
+  toolbar: { paddingHorizontal: rs(12), paddingTop: rs(8), paddingBottom: rs(8) },
+  seg: { flexDirection: 'row', backgroundColor: '#F3F4F6', borderRadius: 999, padding: rs(3) },
+  segBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(6), paddingVertical: rs(8), borderRadius: 999 },
   segOn: { backgroundColor: KIT.teal },
-  segText: { fontSize: rf(12), fontWeight: '800', color: '#1C3053' },
-  nav: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(10), paddingHorizontal: rs(12), paddingBottom: rs(8),
-    borderBottomWidth: 1, borderBottomColor: KIT.line,
+  segText: { fontSize: rf(13), fontWeight: '800', color: '#1C3053' },
+  nav: { flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(12), paddingBottom: rs(8) },
+  navPill: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(8), paddingHorizontal: rs(6), paddingVertical: rs(5),
+    borderRadius: rs(14), borderWidth: 1, borderColor: KIT.line, backgroundColor: '#FFFFFF',
   },
-  navBtn: { width: rs(28), height: rs(28), borderRadius: rs(14), backgroundColor: KIT.teal, alignItems: 'center', justifyContent: 'center' },
-  navTitle: { flex: 1, fontSize: rf(13.5), fontWeight: '800', color: '#1C3053', textAlign: 'center' },
-  todayBtn: { paddingHorizontal: rs(12), paddingVertical: rs(5), borderRadius: 999, borderWidth: 1, borderColor: KIT.teal },
-  todayText: { fontSize: rf(11), fontWeight: '800', color: KIT.teal },
+  navBtn: { width: rs(30), height: rs(30), borderRadius: rs(15), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center' },
+  navTitle: { flex: 1, fontSize: rf(14), fontWeight: '800', color: '#1C3053', textAlign: 'center' },
+  todayBtn: { paddingHorizontal: rs(14), paddingVertical: rs(7), borderRadius: 999, borderWidth: 1.5, borderColor: KIT.teal },
+  todayText: { fontSize: rf(12.5), fontWeight: '800', color: KIT.teal },
+  stats: { flexDirection: 'row', gap: rs(6), paddingHorizontal: rs(12), paddingBottom: rs(8), borderBottomWidth: 1, borderBottomColor: KIT.line },
+  stat: { flex: 1, alignItems: 'center', paddingVertical: rs(8), borderRadius: rs(12), borderWidth: 1, borderColor: KIT.line, backgroundColor: '#FFFFFF' },
+  statOn: { borderColor: KIT.teal, borderWidth: 1.5, backgroundColor: '#EEF8F9' },
+  statNum: { fontSize: rf(16), fontWeight: '800', color: '#111111', marginTop: rs(2) },
+  statLabel: { fontSize: rf(10.5), color: '#374151' },
+  hourRow: { flexDirection: 'row', alignItems: 'center', height: rs(34) },
+  hourText: { width: rs(78), fontSize: rf(11.5), color: '#6B7280' },
+  railDot: { width: rs(8), height: rs(8), borderRadius: rs(4), backgroundColor: '#D1D5DB', marginRight: rs(10) },
+  hourRule: { flex: 1, height: 1, backgroundColor: '#EEF0F2' },
+  pickRow: { flexDirection: 'row', alignItems: 'flex-start', marginVertical: rs(5) },
+  pickStart: { fontSize: rf(12), fontWeight: '800', color: '#111111' },
+  pickEnd: { fontSize: rf(11.5), color: '#374151', marginTop: rs(2) },
+  pickCard: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: rs(6), borderRadius: rs(12), borderWidth: 1, borderColor: '#E5E7EB',
+    borderLeftWidth: rs(4), paddingVertical: rs(8), paddingHorizontal: rs(9), ...shadow,
+  },
+  pickTop: { flexDirection: 'row', alignItems: 'center', gap: rs(6) },
+  pickIcon: { width: rs(22), height: rs(22), borderRadius: rs(11), backgroundColor: '#E5F3F5', alignItems: 'center', justifyContent: 'center' },
+  pickName: { flex: 1, fontSize: rf(13.5), fontWeight: '800', color: '#111111' },
+  pickLine: { flexDirection: 'row', alignItems: 'center', gap: rs(6), marginTop: rs(4), paddingLeft: rs(4) },
+  legend: {
+    flexDirection: 'row', justifyContent: 'space-around', marginHorizontal: rs(12), marginVertical: rs(8), paddingVertical: rs(7),
+    borderRadius: rs(12), borderWidth: 1, borderColor: KIT.line,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: rs(5) },
+  legendDot: { width: rs(8), height: rs(8), borderRadius: rs(4) },
+  legendText: { fontSize: rf(11), color: '#374151' },
   errorCard: {
     flexDirection: 'row', alignItems: 'center', gap: rs(8), marginHorizontal: rs(12), marginTop: rs(8), padding: rs(9), borderRadius: rs(12),
     backgroundColor: '#FEECEC', borderWidth: 1, borderColor: '#FBD5D4',

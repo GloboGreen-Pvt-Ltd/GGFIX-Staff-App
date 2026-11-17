@@ -9,6 +9,7 @@ import LoginScreen from '../screens/LoginScreen';
 import TechnicianNavigator from './TechnicianNavigator';
 import GeofenceGate from '../components/GeofenceGate';
 import AppLockGate from '../components/AppLockGate';
+import { clearLockPrefs } from '../auth/appLock';
 import BootSplash from '../components/BootSplash';
 import { notify } from '../components/confirm';
 
@@ -83,6 +84,7 @@ export default function RootNavigator() {
   const handleLogout = async (opts) => {
     try { await logout(); } catch (_) {}
     await clearSession();
+    await clearLockPrefs(); // unlock permissions belong to this employee only
     setSessionState(null);
     dispatch(clearAuth());
     if (!opts?.quiet) notify('Logged out successfully', '', { type: 'success' });

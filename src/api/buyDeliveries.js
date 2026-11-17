@@ -1,4 +1,5 @@
 import { marketplaceApi } from './client';
+import { requireFreshAuth } from '../auth/freshAuth';
 
 // Fixed-price Buy orders assigned to the logged-in employee
 // (marketplace-service /staff/buy-orders). The server only returns and accepts
@@ -32,5 +33,7 @@ export const getDelivery = (id) => marketplaceApi.get(`/staff/buy-orders/${id}`)
 //  pickup  { productVerified: true, photos: [url…] (≥1) }
 //  deliver { amountCollected, otp, paymentRef?, photos: [url…] (≥1) }
 //  fail    { reason }
-export const deliveryAction = (id, action, body = {}) =>
-  marketplaceApi.post(`/staff/buy-orders/${id}/${action}`, { body });
+export const deliveryAction = async (id, action, body = {}) => {
+  if (action === 'deliver') await requireFreshAuth('Confirm delivery completion');
+  return marketplaceApi.post(`/staff/buy-orders/${id}/${action}`, { body });
+};

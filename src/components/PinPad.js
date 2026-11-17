@@ -59,14 +59,23 @@ export function PinPadBody({ title, subtitle, mode = 'verify', onDone, onCancel,
           : error ? <Text style={{ fontSize: rf(12), color: '#F32C26', fontWeight: '700', textAlign: 'center' }}>{error}</Text> : null}
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', width: 252, justifyContent: 'center' }}>
-        {KEYS.map((k) => (
-          <Pressable key={k} onPress={() => press(k)} accessibilityLabel={k === 'del' ? 'Delete' : k === 'bio' ? 'Use biometrics' : k}
-            style={({ pressed }) => ({ width: 72, height: 54, margin: 6, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: k === 'bio' || k === 'del' ? 'transparent' : pressed ? '#D6ECEF' : '#F3F4F6', opacity: k === 'bio' && !biometric ? 0 : 1 })}>
-            {k === 'del' ? <Delete size={22} color="#111111" />
-              : k === 'bio' ? <Fingerprint size={24} color={TEAL} />
-                : <Text style={{ fontSize: rf(20), fontWeight: '700', color: '#111111' }}>{k}</Text>}
-          </Pressable>
-        ))}
+        {/* Layout lives on a plain View: the app's styled Pressable drops
+            function styles, which collapsed the keys into one line. */}
+        {KEYS.map((k) => {
+          const plain = k === 'bio' || k === 'del';
+          const hidden = k === 'bio' && !biometric;
+          return (
+            <View key={k} style={{ width: 72, height: 54, margin: 6, borderRadius: 14, overflow: 'hidden', backgroundColor: plain ? 'transparent' : '#F3F4F6', opacity: hidden ? 0 : 1 }}>
+              <Pressable onPress={() => press(k)} disabled={hidden} accessibilityLabel={k === 'del' ? 'Delete' : k === 'bio' ? 'Use biometrics' : k}
+                android_ripple={plain ? undefined : { color: '#D6ECEF' }}
+                style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                {k === 'del' ? <Delete size={22} color="#111111" />
+                  : k === 'bio' ? <Fingerprint size={24} color={TEAL} />
+                    : <Text style={{ fontSize: rf(20), fontWeight: '700', color: '#111111' }}>{k}</Text>}
+              </Pressable>
+            </View>
+          );
+        })}
       </View>
       {footer}
       {onCancel ? (

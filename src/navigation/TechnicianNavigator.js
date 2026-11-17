@@ -200,6 +200,7 @@ import SolutionPackDetailsScreen from '../screens/SolutionPackDetailsScreen';
 import SolutionPackRecordsScreen from '../screens/SolutionPackRecordsScreen';
 import WorkExperienceScreen from '../screens/WorkExperienceScreen';
 import HelpSupportScreen from '../screens/HelpSupportScreen';
+import SecurityScreen from '../screens/SecurityScreen';
 import TechnicianKycIntroScreen from '../screens/TechnicianKycIntroScreen';
 import TechnicianKycUploadScreen from '../screens/TechnicianKycUploadScreen';
 import TechnicianKycViewScreen from '../screens/TechnicianKycViewScreen';
@@ -325,6 +326,7 @@ export default function TechnicianNavigator({ session, onLogout }) {
         <Stack.Screen name="SolutionPackRecords" component={SolutionPackRecordsScreen} options={{ title: 'My Repair Records' }} />
         <Stack.Screen name="WorkExperience" component={WorkExperienceScreen} options={{ title: 'Work Experience' }} />
         <Stack.Screen name="HelpSupport" component={HelpSupportScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="Security" component={SecurityScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TechnicianKycIntro" component={TechnicianKycIntroScreen} options={{ title: 'KYC Details' }} />
         <Stack.Screen name="TechnicianKycUpload" component={TechnicianKycUploadScreen} options={{ title: 'Upload Documents' }} />
         <Stack.Screen name="TechnicianKycView" component={TechnicianKycViewScreen} options={{ title: 'KYC Documents' }} />

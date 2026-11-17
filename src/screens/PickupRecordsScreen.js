@@ -63,7 +63,7 @@ export default function PickupRecordsScreen({ navigation, route }) {
     try {
       const rows = await listMyAssignedPickups();
       const seen = new Set();
-      setList((Array.isArray(rows) ? rows : []).filter((b) => b?.id && !seen.has(b.id) && seen.add(b.id)));
+      setList((Array.isArray(rows) ? rows : []).filter((b) => b?.id && (route?.params?.kind === 'SELL' ? b.kind === 'SELL' : b.kind !== 'SELL') && !seen.has(b.id) && seen.add(b.id)));
       setError(null);
     } catch (e) {
       setError(userMessage(e, 'Could not load pickup history.'));

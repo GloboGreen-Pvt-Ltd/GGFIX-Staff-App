@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Image, Platform, Pressable, View } from 'react-native';
 import { Text } from './Typography';
 import { Lock } from 'lucide-react-native';
-import { isAppLockEnabledStrict, authenticate, isDeviceSecureStrict } from '../auth/appLock';
+import { isAppLockEnabledStrict, authenticate, getLockPrefs, hasBiometrics, onLockPrefsChange } from '../auth/appLock';
+import { getPinStatus } from '../api/pin';
+import { PinPadBody, PinPromptHost } from './PinPad';
 
 // A lock check that hangs counts as a failed check (locked + Retry), never as "off".
 const LOCK_CHECK_TIMEOUT_MS = 8000;
@@ -33,6 +35,7 @@ export default function AppLockGate({ children, onLogout }) {
   // an opaque cover hides the current screen so customer PII / ticket data isn't
   // captured into the OS recents thumbnail. Works regardless of App Lock.
   const [obscured, setObscured] = useState(false);
+  const [pinMode, setPinMode] = useState(null); // { bio } while the PIN pad is shown
   const appState = useRef(AppState.currentState);
   const runningRef = useRef(false);
 
@@ -44,6 +47,11 @@ export default function AppLockGate({ children, onLogout }) {
     runningRef.current = true;
     setChecking(true);
     try {
+      // Employee PIN set → own PIN pad (biometric first if enabled); else the phone lock.
+      let st = null;
+      // Server unreachable: stay locked with Retry — never fall back to the phone lock.
+      try { st = await withTimeout(getPinStatus()); } catch (_) { setCheckFailed(true); return; }
+      if (st?.pinSet) { const p = await getLockPrefs(); setPinMode({ bio: p.biometric && (await hasBiometrics()) }); return; }
       const ok = await authenticate();
       if (ok) setLocked(false);
     } finally {
@@ -76,10 +84,6 @@ export default function AppLockGate({ children, onLogout }) {
     setChecking(false);
     setCheckFailed(false);
     if (!on) { setEnabled(false); setLocked(false); return; }
-    let secure = null; // null = the device check errored → still require unlock
-    try { secure = await withTimeout(isDeviceSecureStrict()); } catch (_) { secure = null; }
-    if (cancelledRef.current) return;
-    if (secure === false) { setEnabled(false); setLocked(false); return; }
     setEnabled(true);
     setLocked(true);
     runUnlock();
@@ -90,6 +94,9 @@ export default function AppLockGate({ children, onLogout }) {
     runCheck();
     return () => { cancelledRef.current = true; };
   }, [runCheck]);
+
+  // Security settings changed (or logout cleared them): follow without locking now.
+  useEffect(() => onLockPrefsChange((p) => { setEnabled(!!p.lock); setCheckFailed(false); setLocked(false); }), []);
 
   // Re-lock when the app comes back to the foreground.
   useEffect(() => {
@@ -112,7 +119,23 @@ export default function AppLockGate({ children, onLogout }) {
     return (
       <View style={{ flex: 1 }}>
         {children}
+        <PinPromptHost />
         {obscured ? <PrivacyCover /> : null}
+      </View>
+    );
+  }
+
+  if (pinMode && !checkFailed) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center' }}>
+        <PinPadBody
+          title="App Locked"
+          subtitle="Enter your 6-digit employee PIN"
+          biometric={pinMode.bio}
+          onDone={() => { setPinMode(null); setLocked(false); }}
+          onCancel={onLogout}
+          cancelLabel="Log out instead"
+        />
       </View>
     );
   }

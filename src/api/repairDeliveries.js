@@ -1,4 +1,5 @@
 import { ticketApi } from './client';
+import { requireFreshAuth } from '../auth/freshAuth';
 
 // Repair return deliveries assigned to the logged-in employee
 // (ticket-service /technicians/me/repair-deliveries). The server only returns and
@@ -14,5 +15,7 @@ export const getRepairDelivery = (id) => ticketApi.get(`/technicians/me/repair-d
 
 // action: accept | decline {reason} | collect {identifier, accessories[], photos[]} | start | arrive
 //   | otp/resend | complete {otp, amountCollected, paymentMethod, paymentRef, photos[]} | fail {reason} | return
-export const repairDeliveryAction = (id, action, body) =>
-  ticketApi.post(`/technicians/me/repair-deliveries/${id}/${action}`, body ? { body } : undefined);
+export const repairDeliveryAction = async (id, action, body) => {
+  if (action === 'complete') await requireFreshAuth('Confirm delivery completion');
+  return ticketApi.post(`/technicians/me/repair-deliveries/${id}/${action}`, body ? { body } : undefined);
+};

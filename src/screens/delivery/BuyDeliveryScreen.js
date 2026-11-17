@@ -4,6 +4,7 @@ import { Text, TextInput } from '../../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, CheckCircle2, CheckSquare, MapPin, Navigation, Phone, Square, Store, X } from 'lucide-react-native';
+import PinBoxes from '../../components/PinBoxes';
 import { confirm, notify } from '../../components/confirm';
 import { uploadMedia } from '../../api/media';
 import { deviceShapeOf } from '../sell/conditionArt';
@@ -303,15 +304,7 @@ ${o.shopAddress}` : ''}</Text>
             {/* 2 · Customer OTP in four boxes */}
             <Text style={{ fontSize: 13, fontWeight: '800', color: SK.ink, marginTop: 14 }}>Customer OTP</Text>
             <Text style={{ fontSize: 11.5, color: MUTED }}>Ask the customer for the 4-digit code in their app.</Text>
-            <Pressable onPress={() => otpRef.current?.focus()} style={{ flexDirection: 'row', gap: 10, marginTop: 8 }} accessibilityLabel="Customer OTP">
-              {[0, 1, 2, 3].map((k) => (
-                <View key={k} style={{ width: 52, height: 52, borderRadius: 14, borderWidth: k === otp.length ? 2 : 1, borderColor: k === otp.length ? SK.teal : SK.line, backgroundColor: '#F6F7F9', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 22, fontWeight: '800', color: SK.ink }}>{otp[k] || ''}</Text>
-                </View>
-              ))}
-              <TextInput ref={otpRef} value={otp} onChangeText={(t) => setOtp(t.replace(/\D/g, '').slice(0, 4))} keyboardType="number-pad" maxLength={4}
-                textContentType="oneTimeCode" style={{ position: 'absolute', opacity: 0, width: 1, height: 1 }} />
-            </Pressable>
+            <PinBoxes value={otp} onChange={setOtp} accessibilityLabel="Customer OTP" style={{ marginTop: 8, justifyContent: 'flex-start' }} />
 
             {/* 3 · Proof photos */}
             {photoBlock(`Delivery proof photos (min ${MIN_PHOTOS})`)}

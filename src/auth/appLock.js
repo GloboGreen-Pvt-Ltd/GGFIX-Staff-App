@@ -1,67 +1,104 @@
-// App Lock — gate the app behind the device's own biometric / pattern / PIN
-// (PhonePe / Google Pay style). Opt-in: disabled by default; the user can turn
-// it on in Settings when their device has a secure lock. Uses the OS credential,
-// so we never store a PIN ourselves.
+// App Lock + biometric unlock, per signed-in employee.
+// Prefs live in device secure storage under the employee's user id; any other
+// id (account switch) reads as "off", and logout wipes them (clearLockPrefs).
+// Unlock = biometric (if this employee turned it on) with the employee's own
+// server-checked PIN as the fallback. No PIN or biometric data is ever stored
+// here or sent anywhere — the OS keeps the biometric, the server the PIN hash.
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { store } from '../store';
 
-const KEY = 'appLock.enabled';
+const KEY = 'lock.prefs';
+let SecureStore = null;
+try {
+  // eslint-disable-next-line global-require
+  if (Platform.OS !== 'web') SecureStore = require('expo-secure-store');
+} catch (_) { SecureStore = null; }
+const read = () => (SecureStore?.getItemAsync ? SecureStore.getItemAsync(KEY) : AsyncStorage.getItem(KEY));
+const write = (v) => (SecureStore?.setItemAsync ? SecureStore.setItemAsync(KEY, v) : AsyncStorage.setItem(KEY, v));
 
-// True when the phone can authenticate the user — biometric enrolled OR a
-// device passcode/pattern/PIN is set (getEnrolledLevelAsync > NONE).
+const me = () => store.getState()?.auth?.userId || null;
+
+/** { lock, biometric } for the signed-in employee. Throws on a storage error. */
+export async function getLockPrefsStrict() {
+  const uid = me();
+  const raw = await read();
+  const p = raw ? JSON.parse(raw) : null;
+  if (!uid || !p || p.userId !== uid) return { lock: false, biometric: false };
+  return { lock: !!p.lock, biometric: !!p.biometric };
+}
+export async function getLockPrefs() {
+  try { return await getLockPrefsStrict(); } catch { return { lock: false, biometric: false }; }
+}
+export async function setLockPrefs(patch) {
+  const uid = me();
+  if (!uid) return;
+  const cur = await getLockPrefs();
+  const next = { ...cur, ...patch };
+  await write(JSON.stringify({ ...next, userId: uid }));
+  emitLockPrefsChange(next);
+}
+/** Logout / account switch: drop every unlock permission. */
+export async function clearLockPrefs() {
+  try { await (SecureStore?.deleteItemAsync ? SecureStore.deleteItemAsync(KEY) : AsyncStorage.removeItem(KEY)); } catch (_) {}
+  emitLockPrefsChange({ lock: false, biometric: false });
+}
+
+// Back-compat for AppLockGate's strict check.
+export async function isAppLockEnabledStrict() {
+  return (await getLockPrefsStrict()).lock;
+}
+
+/** Phone has any lock (biometric or passcode / pattern / PIN). */
 export async function isDeviceSecure() {
   try {
     const level = await LocalAuthentication.getEnrolledLevelAsync();
-    if (level && level !== LocalAuthentication.SecurityLevel.NONE) return true;
-    const hw = await LocalAuthentication.hasHardwareAsync();
-    const enrolled = await LocalAuthentication.isEnrolledAsync();
-    return !!(hw && enrolled);
-  } catch {
-    return false;
-  }
+    return !!level && level !== LocalAuthentication.SecurityLevel.NONE;
+  } catch { return false; }
 }
 
-// Disabled by default until the user explicitly turns it on in Settings.
-export async function isAppLockEnabled() {
+/** null when usable, else why biometrics can't be used here (shown to the employee). */
+export async function biometricUnavailableReason() {
   try {
-    const v = await AsyncStorage.getItem(KEY);
-    if (v === null) return false;
-    return v === '1';
+    if (!(await LocalAuthentication.hasHardwareAsync())) return 'This phone has no fingerprint / face sensor.';
+    if (!(await LocalAuthentication.isEnrolledAsync())) return 'No fingerprint / face saved. Add one in phone Settings → Security, then come back.';
+    return null;
   } catch {
-    return false;
+    return 'Biometrics are not available in this app build.';
   }
 }
 
-// Gate-only variants: they THROW on a read/native error instead of answering
-// "off" / "not secure", so AppLockGate can tell "lock is off" apart from
-// "couldn't check" and never bypass an enabled lock because of an error.
-export async function isAppLockEnabledStrict() {
-  return (await AsyncStorage.getItem(KEY)) === '1';
+/** Fingerprint / face enrolled on this phone. */
+export async function hasBiometrics() {
+  try {
+    return !!((await LocalAuthentication.hasHardwareAsync()) && (await LocalAuthentication.isEnrolledAsync()));
+  } catch { return false; }
 }
 
-export async function isDeviceSecureStrict() {
-  const level = await LocalAuthentication.getEnrolledLevelAsync();
-  if (level && level !== LocalAuthentication.SecurityLevel.NONE) return true;
-  const hw = await LocalAuthentication.hasHardwareAsync();
-  const enrolled = await LocalAuthentication.isEnrolledAsync();
-  return !!(hw && enrolled);
-}
-
-export async function setAppLockEnabled(on) {
-  try { await AsyncStorage.setItem(KEY, on ? '1' : '0'); } catch (_) {}
-}
-
-// Trigger the OS unlock prompt. disableDeviceFallback:false lets the user use
-// their pattern / PIN / password when biometric fails or isn't set up.
-export async function authenticate() {
+/** Biometric only (PIN fallback is ours, not the phone's passcode). */
+export async function authenticateBiometric(promptMessage = 'Unlock NearGFix') {
   try {
     const res = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Unlock NearGFix',
-      cancelLabel: 'Cancel',
-      disableDeviceFallback: false,
+      promptMessage, cancelLabel: 'Use PIN', disableDeviceFallback: true,
     });
     return !!res?.success;
   } catch {
     return false;
   }
 }
+
+// Old name: device-credential prompt (kept for callers without an employee PIN).
+export async function authenticate() {
+  try {
+    const res = await LocalAuthentication.authenticateAsync({ promptMessage: 'Unlock NearGFix', cancelLabel: 'Cancel', disableDeviceFallback: false });
+    return !!res?.success;
+  } catch {
+    return false;
+  }
+}
+
+// AppLockGate follows a change made in Security settings without a restart.
+const listeners = new Set();
+export const onLockPrefsChange = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
+export const emitLockPrefsChange = (p) => listeners.forEach((fn) => { try { fn(p); } catch (_) {} });

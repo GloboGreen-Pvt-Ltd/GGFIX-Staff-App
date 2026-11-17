@@ -879,22 +879,22 @@ export default function HomeScreen({ navigation }) {
                 <TaskCountCard
                   icon={ClipboardList} fg={TILE_TONES.blue} tint={C.redTint}
                   label="Assigned" value={pickupSummary.assigned} loading={pickups === null}
-                  onPress={() => navigation.navigate('PickupAssign', { filter: 'assigned' })}
+                  onPress={() => navigation.push('PickupAssign', { kind: 'REPAIR', filter: 'assigned' })}
                 />
                 <TaskCountCard
                   icon={Briefcase} fg={TILE_TONES.teal} tint={C.greenTint}
                   label="All Pickups" value={pickupSummary.total} loading={pickups === null}
-                  onPress={() => navigation.navigate('PickupAssign', { filter: 'total' })}
+                  onPress={() => navigation.push('PickupAssign', { kind: 'REPAIR', filter: 'total' })}
                 />
                 <TaskCountCard
                   icon={Clock} fg={TILE_TONES.orange} tint={C.yellowTint}
                   label="In Progress" value={pickupSummary.inProgress} loading={pickups === null}
-                  onPress={() => navigation.navigate('PickupAssign', { filter: 'inProgress' })}
+                  onPress={() => navigation.push('PickupAssign', { kind: 'REPAIR', filter: 'inProgress' })}
                 />
                 <TaskCountCard
                   icon={CircleCheck} fg={TILE_TONES.green} tint={C.greenTint}
                   label="Completed" value={pickupSummary.completed} loading={pickups === null}
-                  onPress={() => navigation.navigate('PickupAssign', { filter: 'completed' })}
+                  onPress={() => navigation.push('PickupAssign', { kind: 'REPAIR', filter: 'completed' })}
                 />
               </>
             ) : (

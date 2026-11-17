@@ -106,7 +106,7 @@ export default function usePickupAdvance({ navigation, onDone }) {
       }
     }
     const ref = booking.bookingNumber || booking.id;
-    const ok = await confirm(next.action === 'accept' ? {
+    const ok = (next.action === 'accept' || next.combined) ? true : await confirm(next.action === 'accept' ? {
       title: 'Accept this pickup?',
       message: `Booking ${ref} becomes yours. You can start the journey after accepting.`,
       confirmText: 'Accept',

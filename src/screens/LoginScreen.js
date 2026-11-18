@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   ArrowLeft, ArrowRight, CalendarCheck, Phone, Settings, ShieldCheck, Smartphone, Truck, Wrench,
 } from 'lucide-react-native';
-import { login, requestOtp } from '../api/auth';
+import { mpinLogin } from '../api/auth';
 import { AUTH_BASE } from '../api/config';
 import { rf, rlh, rs } from '../utils/responsive';
 import { normalizeIndianMobile } from '../utils/mobile';
@@ -16,26 +16,31 @@ import { notify } from '../components/confirm';
 import { userMessage } from '../utils/userMessages';
 
 /**
- * Employee sign-in: mobile number → OTP. Two steps live in this one screen
- * (rather than two navigator routes) because RootNavigator mounts a single
- * "Login" screen while logged out — keeping the step in local state avoids
- * touching the navigator and keeps the entered number in scope for the resend.
+ * Employee sign-in: registered mobile number → 6-digit Login MPIN set by the
+ * shop owner in the Partner App. No OTP, password or self-registration.
+ * Two steps live in this one screen because RootNavigator mounts a single
+ * "Login" screen while logged out.
  *
- * Wire-level flow, both endpoints already exist in auth-service:
- *   1. POST /auth/otp/send  { email: <mobile> }  — 400s with "No account found…"
- *      when the mobile isn't on a users row, so it doubles as the existence
- *      check before we show the code step.
- *   2. POST /auth/login     { email: <mobile>, otp }
- *
- * OTP is SIX digits, not the four drawn in the design: auth-service compares
- * against users.otp_code, whose default is 123456 (see AuthService.login and
- * registerTechnician). There's no SMS gateway yet — a mobile identifier always
- * resolves to that static code.
+ *   POST /auth/employee/mpin-login { mobile, mpin } — server enforces
+ *   account/shop status and a 5-try / 15-minute lockout.
  */
 
-const OTP_LENGTH = 6;
-const RESEND_SECONDS = 30;
+const OTP_LENGTH = 6; // MPIN length
 const MOBILE_DIGITS = 10;
+
+// Server reason codes → clear, non-revealing messages.
+function mpinErrorText(e) {
+  if (e?.code === 'DEVICE_APPROVAL_REQUIRED') return e.message;
+  const m = String(e?.serverMessage || e?.message || '');
+  if (/disabled|inactive/i.test(m)) return m;
+  const left = m.match(/WRONG_PIN:(\d+)/);
+  if (left) return `Incorrect MPIN. ${left[1]} attempt${left[1] === '1' ? '' : 's'} left.`;
+  if (/PIN_LOCKED/.test(m)) return 'Too many wrong attempts. Try again after 15 minutes.';
+  if (/MPIN_NOT_SET/.test(m)) return 'MPIN not set. Ask your shop owner to set your Login MPIN.';
+  if (/inactive/i.test(m)) return m;
+  if (e?.status === 400 || e?.status === 401) return 'Invalid mobile number or MPIN.';
+  return null;
+}
 
 // Brand palette: green, red, yellow, ink + light neutrals (same as Home).
 const GREEN = '#035C6C';
@@ -54,24 +59,16 @@ const MAX_WIDTH = 480;
 
 export default function LoginScreen({ onLogin }) {
   const insets = useSafeAreaInsets();
-  const [step, setStep] = useState('MOBILE'); // MOBILE | OTP
+  const [step, setStep] = useState('MOBILE'); // MOBILE | OTP (= MPIN step)
   const [mobile, setMobile] = useState('');
-  const [otp, setOtp] = useState('');
-  const [seconds, setSeconds] = useState(0);
-  const [note, setNote] = useState(null);
+  const [otp, setOtp] = useState(''); // MPIN digits
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const shownError = error;
   const otpRef = useRef(null);
   // Guards the auto-submit that fires when the 6th digit lands, so a slow
   // request can't be double-sent by another keystroke (or by paste + tap).
   const verifyingRef = useRef(false);
-
-  // Resend countdown.
-  useEffect(() => {
-    if (seconds <= 0) return undefined;
-    const t = setTimeout(() => setSeconds((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [seconds]);
 
   /**
    * Only surface internal host/URL topology (AUTH_BASE, tried URL) in dev
@@ -86,47 +83,30 @@ export default function LoginScreen({ onLogin }) {
     }
     return userMessage(e, fallback);
   };
-  // "No account found…" from /auth/otp/send (and similar) → "Account not found".
-  const isNoAccount = (e) => /no account|account not found|not registered|user not found/i.test(String(e?.serverMessage || ''));
-
-  const sendOtp = async ({ resend = false } = {}) => {
+  // Mobile step: validate locally only (no OTP, no account-existence probe).
+  const sendOtp = () => {
     setError(null);
-    setNote(null);
     const normalized = normalizeIndianMobile(mobile);
     if (!normalized) {
       setError(`Enter your ${MOBILE_DIGITS}-digit mobile number`);
       return;
     }
     if (normalized !== mobile) setMobile(normalized);
-    try {
-      setLoading(true);
-      await requestOtp(normalized);
-      setSeconds(RESEND_SECONDS);
-      if (resend) setNote('A new code has been sent.');
-      else setStep('OTP');
-      notify(resend ? 'New verification code sent' : 'Verification code sent', '', { type: 'success' });
-    } catch (e) {
-      const text = isNoAccount(e) ? 'Account not found' : describeError(e, 'Could not send the code.');
-      setError(text);
-      notify(text, '', { type: 'error' });
-    } finally {
-      setLoading(false);
-    }
+    setStep('OTP');
   };
 
   const verify = async (code) => {
     const entered = (code ?? otp).trim();
     setError(null);
-    setNote(null);
     if (entered.length !== OTP_LENGTH) {
-      setError(`Enter the ${OTP_LENGTH}-digit code`);
+      setError(`Enter your ${OTP_LENGTH}-digit MPIN`);
       return;
     }
     if (verifyingRef.current) return;
     verifyingRef.current = true;
     try {
       setLoading(true);
-      const data = await login(mobile, { otp: entered });
+      const data = await mpinLogin(mobile, entered);
       logProfileDebug('login ok', {
         enteredMobile: mobile,
         loginResponse: {
@@ -140,18 +120,15 @@ export default function LoginScreen({ onLogin }) {
           keys: data ? Object.keys(data) : [],
         },
       });
-      // The code is the login here, so one toast covers "OTP verified" + "Logged in".
       notify('Logged in successfully', '', { type: 'success' });
       onLogin(data);
     } catch (e) {
-      const wrongCode = e?.status === 400 || e?.status === 401;
-      const text = isNoAccount(e) ? 'Account not found' : wrongCode ? 'Invalid OTP. Please try again.' : describeError(e, 'Authentication failed');
+      const text = mpinErrorText(e) || describeError(e, 'Authentication failed');
       setError(text);
       notify(text, '', { type: 'error' });
-      // Wrong code → wipe the boxes and re-focus so the retry is one action.
-      // A network/server failure keeps the digits: they were probably right and
-      // re-typing six of them to retry a dropped request is pure friction.
-      if (e?.status === 401) {
+      // Wrong MPIN → wipe the boxes and re-focus so the retry is one action.
+      // A network/server failure keeps the digits.
+      if (e?.status === 401 || e?.status === 403) {
         setOtp('');
         otpRef.current?.focus();
       }
@@ -171,7 +148,6 @@ export default function LoginScreen({ onLogin }) {
     setStep('MOBILE');
     setOtp('');
     setError(null);
-    setNote(null);
   };
 
   const { width: winW } = useWindowDimensions();
@@ -201,7 +177,7 @@ export default function LoginScreen({ onLogin }) {
               mobile={mobile}
               setMobile={setMobile}
               loading={loading}
-              error={error}
+              error={shownError}
               onSubmit={sendOtp}
               wide={contentW >= 340}
             />
@@ -213,11 +189,8 @@ export default function LoginScreen({ onLogin }) {
               onOtpChange={onOtpChange}
               onSubmit={() => verify()}
               onBack={backToMobile}
-              onResend={() => sendOtp({ resend: true })}
-              seconds={seconds}
               loading={loading}
-              error={error}
-              note={note}
+              error={shownError}
             />
           )}
         </View>
@@ -362,10 +335,9 @@ function Feature({ icon: Icon, bg, fg, label }) {
 /* ------------------------------------------------------------------ step 2 */
 
 function OtpStep({
-  mobile, otp, otpRef, onOtpChange, onSubmit, onBack, onResend, seconds, loading, error, note,
+  mobile, otp, otpRef, onOtpChange, onSubmit, onBack, loading, error,
 }) {
   const boxes = Array.from({ length: OTP_LENGTH });
-  const canResend = seconds <= 0 && !loading;
 
   return (
     <View>
@@ -375,9 +347,9 @@ function OtpStep({
 
       <BrandMark size={80} />
       <Text style={[styles.h1Center, { marginTop: rs(16) }]}>
-        Verify <Text style={{ color: GREEN }}>Phone</Text>
+        Enter <Text style={{ color: GREEN }}>MPIN</Text>
       </Text>
-      <Text style={styles.subCenter}>We have sent a {OTP_LENGTH}-digit code to</Text>
+      <Text style={styles.subCenter}>Enter the {OTP_LENGTH}-digit MPIN set by your shop owner for</Text>
       <View style={styles.phonePill}>
         <Phone size={rs(16)} color={MUTED} strokeWidth={2.2} />
         <Text style={styles.phonePillText}>{mobile}</Text>
@@ -397,7 +369,7 @@ function OtpStep({
             const active = otp.length === i;
             return (
               <View key={i} style={[styles.otpBox, active && styles.otpBoxActive]}>
-                <Text style={char ? styles.otpChar : styles.otpCharEmpty}>{char || '0'}</Text>
+                <Text style={char ? styles.otpChar : styles.otpCharEmpty}>{char ? '•' : ''}</Text>
               </View>
             );
           })}
@@ -414,24 +386,19 @@ function OtpStep({
             caretHidden
             contextMenuHidden
             scrollEnabled={false}
-            textContentType="oneTimeCode"
-            autoComplete="sms-otp"
+            textContentType="none"
+            autoComplete="off"
+            secureTextEntry
             style={styles.otpHiddenInput}
           />
         </Pressable>
 
-        {note ? <Text style={styles.note}>{note}</Text> : null}
         <ErrorBox msg={error} />
 
-        <PrimaryButton label="VERIFY" loading={loading} onPress={onSubmit} />
+        <PrimaryButton label="LOGIN" loading={loading} onPress={onSubmit} />
 
         <View style={styles.resendRow}>
-          <Text style={styles.resendMuted}>Didn’t receive the code? </Text>
-          <TouchableOpacity onPress={onResend} disabled={!canResend} hitSlop={8} activeOpacity={0.7}>
-            <Text style={[styles.resendLink, !canResend && seconds <= 0 && styles.resendLinkOff]}>
-              {seconds > 0 ? `Resend in ${seconds}s` : 'Resend now'}
-            </Text>
-          </TouchableOpacity>
+          <Text style={styles.resendMuted}>Forgot MPIN? Ask your shop owner to reset it.</Text>
         </View>
       </View>
 
@@ -440,8 +407,8 @@ function OtpStep({
           <ShieldCheck size={rs(20)} color={GREEN} strokeWidth={2.2} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.safeTitle}>Your number is safe with us</Text>
-          <Text style={styles.safeSub}>We use secure and encrypted verification</Text>
+          <Text style={styles.safeTitle}>Your MPIN is never shown or shared</Text>
+          <Text style={styles.safeSub}>Stored securely and verified only by the server</Text>
         </View>
       </View>
     </View>

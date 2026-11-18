@@ -15,6 +15,8 @@ import { authenticateBiometric, biometricUnavailableReason, getLockPrefs, setLoc
 import { requireFreshAuth } from '../auth/freshAuth';
 import { userMessage } from '../utils/userMessages';
 import { rf } from '../utils/responsive';
+import { NewPinFlow, ResetPinFlow } from '../security/SecurityFlows';
+import { sessionStatus } from '../security/securityApi';
 
 const TEAL = '#035C6C';
 const card = { backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', marginHorizontal: 16, marginTop: 12, overflow: 'hidden' };
@@ -29,6 +31,8 @@ export default function SecurityScreen({ navigation }) {
   const [bioWhy, setBioWhy] = useState('Checking…'); // null = biometrics usable
   const bioOk = bioWhy == null;
   const [flow, setFlow] = useState(null); // PIN flow state (see Flow)
+  const [tpinReset, setTpinReset] = useState(false);
+  const [tpinSet, setTpinSet] = useState(null); // null = unknown (keeps Reset)
 
   const load = useCallback(async () => {
     setLoadErr(null);
@@ -36,6 +40,7 @@ export default function SecurityScreen({ navigation }) {
     try { setStatus(await getPinStatus()); } catch (e) { setLoadErr(userMessage(e, 'Could not load security status.')); }
     setPrefs(await getLockPrefs());
     setBioWhy(await biometricUnavailableReason());
+    sessionStatus().then((st) => setTpinSet(!!st?.tpinSet), () => setTpinSet(null));
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -119,15 +124,17 @@ export default function SecurityScreen({ navigation }) {
             : loadErr ? <Pressable onPress={load} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, backgroundColor: TEAL }}><Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: rf(12) }}>Retry</Text></Pressable> : null}
         </View>
         <View style={card}>
-          <Row icon={KeyRound} label={pinSet ? 'Change Employee PIN' : 'Create Employee PIN'} sub="6 digits, only for your account"
-            onPress={status == null ? undefined : () => setFlow({ step: pinSet ? 'current' : 'new' })} />
-          <Row icon={RotateCcw} label="Forgot PIN / Reset PIN" sub="Verify with the login OTP" onPress={status == null ? undefined : startReset} last />
+          {/* Login MPIN is owner-managed (Partner App → Employee Profile); no self create/change/reset. */}
+          <Row icon={KeyRound} label="Login MPIN" sub="Set and reset only by your shop owner. Forgot it? Ask your shop owner." last />
         </View>
         <View style={card}>
           <Row icon={Lock} label="App Lock" sub="Ask for PIN / biometrics when reopening the app"
             right={<Switch value={prefs.lock} onValueChange={toggleLock} trackColor={{ true: TEAL }} />} />
           <Row icon={Fingerprint} label="Fingerprint / Face Unlock" sub={bioOk ? 'Uses this phone’s biometrics; PIN as fallback' : bioWhy} last
             right={<Switch value={prefs.biometric} onValueChange={toggleBio} trackColor={{ true: TEAL }} />} />
+        </View>
+        <View style={card}>
+          <Row icon={ShieldCheck} label={tpinSet === false ? 'Create Transaction PIN (TPIN)' : 'Reset Transaction PIN (TPIN)'} sub="Used for check-in, check-out and protected actions" onPress={() => setTpinReset(true)} last />
         </View>
       </ScrollView>
 
@@ -154,6 +161,26 @@ export default function SecurityScreen({ navigation }) {
                 subtitle={flow.busy ? 'Saving…' : flow.error || (flow.step === 'new' ? 'Avoid easy PINs like 123456 or 000000' : null)}
                 onDone={flow.busy ? () => {} : onEntry}
                 onCancel={flow.busy ? undefined : () => setFlow(null)}
+              />
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={tpinReset} transparent animationType="slide" onRequestClose={() => setTpinReset(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(17,17,17,0.45)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20, alignItems: 'center' }}>
+            {tpinReset && tpinSet === false ? (
+              <>
+                <NewPinFlow type="TPIN" subtitle="Used for check-in, check-out and protected actions" onDone={() => { setTpinReset(false); setTpinSet(true); notify('TPIN created', '', { type: 'success' }); }} />
+                <Pressable onPress={() => setTpinReset(false)} style={{ padding: 10 }}><Text style={{ color: '#6B7280', fontWeight: '700' }}>Cancel</Text></Pressable>
+              </>
+            ) : tpinReset ? (
+              <ResetPinFlow
+                type="TPIN"
+                session={session}
+                onCancel={() => setTpinReset(false)}
+                onDone={() => { setTpinReset(false); notify('TPIN reset successfully', '', { type: 'success' }); }}
               />
             ) : null}
           </View>

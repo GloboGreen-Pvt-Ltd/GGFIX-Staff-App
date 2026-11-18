@@ -30,7 +30,7 @@ export const listMyDeliveries = () => marketplaceApi.get('/staff/buy-orders');
 export const getDelivery = (id) => marketplaceApi.get(`/staff/buy-orders/${id}`);
 
 // action: accept | decline | pickup | start-delivery | deliver | fail
-//  pickup  { productVerified: true, photos: [url…] (≥1) }
+//  pickup  { productVerified: true, pin }  (Shop Pickup PIN; older builds sent photos)
 //  deliver { amountCollected, otp, paymentRef?, photos: [url…] (≥1) }
 //  fail    { reason }
 export const deliveryAction = async (id, action, body = {}) => {

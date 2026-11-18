@@ -8,6 +8,7 @@ import { PinPadBody, PinPromptHost } from './PinPad';
 
 // A lock check that hangs counts as a failed check (locked + Retry), never as "off".
 const LOCK_CHECK_TIMEOUT_MS = 8000;
+const BACKGROUND_LOCK_MS = 2 * 60 * 1000; // employee app: lock after 2 min in background
 const withTimeout = (p) => Promise.race([
   p, new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), LOCK_CHECK_TIMEOUT_MS)),
 ]);
@@ -98,14 +99,19 @@ export default function AppLockGate({ children, onLogout }) {
   // Security settings changed (or logout cleared them): follow without locking now.
   useEffect(() => onLockPrefsChange((p) => { setEnabled(!!p.lock); setCheckFailed(false); setLocked(false); }), []);
 
-  // Re-lock when the app comes back to the foreground.
+  // Re-lock when the app returns to the foreground after >= 2 minutes in background.
+  const bgSinceRef = useRef(null);
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       const prev = appState.current;
       appState.current = next;
       // Cover the UI the instant we leave "active" (fires before the OS snapshot).
       setObscured(USE_PRIVACY_COVER && next !== 'active');
-      if (enabled && /inactive|background/.test(prev) && next === 'active') {
+      if (next === 'background' && bgSinceRef.current == null) bgSinceRef.current = Date.now();
+      if (next !== 'active') return;
+      const away = bgSinceRef.current == null ? 0 : Date.now() - bgSinceRef.current;
+      bgSinceRef.current = null;
+      if (enabled && /inactive|background/.test(prev) && (away >= BACKGROUND_LOCK_MS || checkFailed)) {
         setLocked(true);
         if (checkFailed) runCheck(); else runUnlock();
       }
@@ -130,7 +136,7 @@ export default function AppLockGate({ children, onLogout }) {
       <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center' }}>
         <PinPadBody
           title="App Locked"
-          subtitle="Enter your 6-digit employee PIN"
+          subtitle="Enter your 6-digit MPIN"
           biometric={pinMode.bio}
           onDone={() => { setPinMode(null); setLocked(false); }}
           onCancel={onLogout}

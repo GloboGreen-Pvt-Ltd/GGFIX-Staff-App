@@ -457,6 +457,8 @@ export default function HomeScreen({ navigation }) {
       await Promise.allSettled([
         reloadTickets(), reloadAttendance(),
         isPickupPerson ? listMyAssignedPickups().then((rows) => setPickups(Array.isArray(rows) ? rows : [])) : null,
+        isPickupPerson ? listMyDeliveries().then((rows) => setBuyOrders(Array.isArray(rows) ? rows : [])) : null,
+        listRepairDeliveries().then((r) => setRepairDeliveries(Array.isArray(r) ? r : (Array.isArray(r?.content) ? r.content : []))),
       ]);
     } finally { setPullRefreshing(false); }
   }, [reloadTickets, reloadAttendance, isPickupPerson]);
@@ -1049,7 +1051,14 @@ export default function HomeScreen({ navigation }) {
         accentSoft={C.greenTint}
       />
       <CheckoutReminder onDuty={hasCheckedIn && !hasCheckedOut} />
-      {isPickupPerson ? <PickupSoonPopup pickups={pickups} navigation={navigation} /> : null}
+      {isPickupPerson || (repairDeliveries || []).length ? (
+        <PickupSoonPopup
+          pickups={pickups == null && repairDeliveries == null ? null
+            : [...(pickups || []), ...(repairDeliveries || []).map((d) => ({ ...d, _rd: true })), ...(buyOrders || []).map((o) => ({ ...o, _buy: true }))]}
+          navigation={navigation}
+          onChanged={onPullRefresh}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

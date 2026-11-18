@@ -76,6 +76,8 @@ export default function LoginScreen({ onLogin }) {
    * adds nothing for them. Production shows a generic, non-revealing message.
    */
   const describeError = (e, fallback) => {
+    // err.message is already a safe sentence (api/client); the localhost
+    // hint is for developers only.
     if (__DEV__ && /localhost|127\.0\.0\.1/.test(String(e?.diagnostic || ''))) {
       return `Can't reach server (trying localhost). Current AUTH_BASE: ${AUTH_BASE}. Restart Expo with EXPO_PUBLIC_API_HOST=YOUR_PC_IP.`;
     }
@@ -137,8 +139,15 @@ export default function LoginScreen({ onLogin }) {
     }
   };
 
+  const onOtpChange = (v) => {
+    const digits = v.replace(/[^0-9]/g, '').slice(0, OTP_LENGTH);
+    setOtp(digits);
+    if (digits.length === OTP_LENGTH) verify(digits);
+  };
+
   const backToMobile = () => {
     setStep('MOBILE');
+    setOtp('');
     setError(null);
   };
 
@@ -154,6 +163,9 @@ export default function LoginScreen({ onLogin }) {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
+          // OTP step is pinned to the top so the keyboard opening/resizing the
+          // window doesn't re-centre (and jolt) the frame while typing.
+          step === 'OTP' && styles.scrollTop,
           { paddingTop: insets.top + rs(16), paddingBottom: insets.bottom + rs(20) },
         ]}
         keyboardShouldPersistTaps="handled"
@@ -170,23 +182,6 @@ export default function LoginScreen({ onLogin }) {
               onSubmit={sendOtp}
               wide={contentW >= 340}
             />
-          ) : step === 'MPIN' ? (
-            <View style={{ backgroundColor: '#FFFFFF', borderRadius: rs(18), paddingVertical: rs(20), paddingHorizontal: rs(8) }}>
-              <PinPad
-                key={pinKey}
-                title="Enter Login MPIN"
-                subtitle={`+91 ${mobile} · set by your shop owner`}
-                error={error}
-                busy={loading}
-                onComplete={submitMpin}
-                footer={(
-                  <View style={{ alignItems: 'center', marginTop: rs(10) }}>
-                    <Pressable onPress={backToMobile} hitSlop={8}><Text style={{ color: PIN_C.primary, fontWeight: '700', fontSize: rf(13) }}>Change number</Text></Pressable>
-                    <Text style={{ color: PIN_C.muted, fontSize: rf(12), marginTop: rs(8), textAlign: 'center' }}>Forgot MPIN? Ask your shop owner to reset it.</Text>
-                  </View>
-                )}
-              />
-            </View>
           ) : (
             <OtpStep
               mobile={mobile}

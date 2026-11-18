@@ -7,6 +7,7 @@ import {
   ArrowLeft, ArrowRight, CalendarCheck, Phone, Settings, ShieldCheck, Smartphone, Truck, Wrench,
 } from 'lucide-react-native';
 import { login, requestOtp } from '../api/auth';
+import { formatMmSs, otpCooldownLeft } from '../api/otpCooldown';
 import { AUTH_BASE } from '../api/config';
 import { rf, rlh, rs } from '../utils/responsive';
 import { normalizeIndianMobile } from '../utils/mobile';
@@ -61,6 +62,20 @@ export default function LoginScreen({ onLogin }) {
   const [note, setNote] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // HTTP 429 cooldown (server Retry-After), live MM:SS; restored from storage
+  // so it survives navigation and app restarts.
+  const [otpWait, setOtpWait] = useState(0);
+  useEffect(() => {
+    if (otpWait <= 0) return undefined;
+    const t = setTimeout(() => setOtpWait((w) => Math.max(0, w - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [otpWait]);
+  useEffect(() => {
+    let alive = true;
+    if (String(mobile).replace(/\D/g, '').length >= 10) otpCooldownLeft(mobile).then((l) => { if (alive) setOtpWait(l); });
+    return () => { alive = false; };
+  }, [mobile]);
+  const shownError = otpWait > 0 ? `Too many OTP requests. Try again in ${formatMmSs(otpWait)}.` : error;
   const otpRef = useRef(null);
   // Guards the auto-submit that fires when the 6th digit lands, so a slow
   // request can't be double-sent by another keystroke (or by paste + tap).
@@ -90,6 +105,7 @@ export default function LoginScreen({ onLogin }) {
   const isNoAccount = (e) => /no account|account not found|not registered|user not found/i.test(String(e?.serverMessage || ''));
 
   const sendOtp = async ({ resend = false } = {}) => {
+    if (otpWait > 0) return;
     setError(null);
     setNote(null);
     const normalized = normalizeIndianMobile(mobile);
@@ -106,6 +122,7 @@ export default function LoginScreen({ onLogin }) {
       else setStep('OTP');
       notify(resend ? 'New verification code sent' : 'Verification code sent', '', { type: 'success' });
     } catch (e) {
+      if (e?.retryAfterSeconds) { setOtpWait(e.retryAfterSeconds); setSeconds(e.retryAfterSeconds); }
       const text = isNoAccount(e) ? 'Account not found' : describeError(e, 'Could not send the code.');
       setError(text);
       notify(text, '', { type: 'error' });
@@ -201,7 +218,7 @@ export default function LoginScreen({ onLogin }) {
               mobile={mobile}
               setMobile={setMobile}
               loading={loading}
-              error={error}
+              error={shownError}
               onSubmit={sendOtp}
               wide={contentW >= 340}
             />
@@ -216,7 +233,7 @@ export default function LoginScreen({ onLogin }) {
               onResend={() => sendOtp({ resend: true })}
               seconds={seconds}
               loading={loading}
-              error={error}
+              error={shownError}
               note={note}
             />
           )}

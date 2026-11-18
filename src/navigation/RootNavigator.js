@@ -9,6 +9,7 @@ import LoginScreen from '../screens/LoginScreen';
 import TechnicianNavigator from './TechnicianNavigator';
 import GeofenceGate from '../components/GeofenceGate';
 import AppLockGate from '../components/AppLockGate';
+import DeviceSessionGate from '../security/DeviceSessionGate';
 import { clearLockPrefs } from '../auth/appLock';
 import BootSplash from '../components/BootSplash';
 import { notify } from '../components/confirm';
@@ -111,9 +112,11 @@ export default function RootNavigator() {
   // screen instead of the technician stack.
   return (
     <AppLockGate onLogout={handleLogout}>
-      <GeofenceGate onLogout={handleLogout}>
-        <TechnicianNavigator session={session} onLogout={handleLogout} />
-      </GeofenceGate>
+      <DeviceSessionGate onLogout={handleLogout}>
+        <GeofenceGate onLogout={handleLogout}>
+          <TechnicianNavigator session={session} onLogout={handleLogout} />
+        </GeofenceGate>
+      </DeviceSessionGate>
     </AppLockGate>
   );
 }

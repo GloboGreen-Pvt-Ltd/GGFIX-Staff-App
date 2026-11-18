@@ -46,6 +46,36 @@ export async function startDeviceSession({ replaceExisting = false } = {}) {
   return res;
 }
 
+/**
+ * Employee login: registered mobile + owner-set Login MPIN (no OTP). ACTIVE → stores the
+ * device-bound session; DEVICE_APPROVAL_REQUIRED → returned as-is (owner must approve).
+ */
+let freshLogin = false;
+/** True once right after an MPIN login (the gate skips the lock and offers biometrics). */
+export const consumeFreshLogin = () => { const v = freshLogin; freshLogin = false; return v; };
+
+export async function employeeMpinLogin({ mobile, mpin }) {
+  const c = Platform.constants || {};
+  const res = await authApi.post('/auth/security/employee/login', {
+    skipAuthExpiry: true,
+    body: {
+      mobile,
+      mpin,
+      deviceId: await getDeviceId(),
+      deviceName: [c.Manufacturer || c.Brand, c.Model].filter(Boolean).join(' ') || Platform.OS,
+      platform: Platform.OS,
+    },
+  });
+  if (res?.status !== 'ACTIVE') return res;
+  await setDeviceRefreshToken(res.refreshToken);
+  const { refreshToken: _r, ...profile } = res;
+  const session = { ...profile, accessToken: res.accessToken, deviceSessionId: res.sessionId, otpExpiresAt: res.otpExpiresAt };
+  await saveSession(session);
+  freshLogin = true;
+  return session;
+}
+
+export const verifyMpin = (pin) => authApi.post('/auth/security/mpin/verify', { body: { pin } });
 export const sessionStatus = () => authApi.get('/auth/security/session');
 export const logoutDeviceSession = () => authApi.post('/auth/security/session/logout', { skipAuthExpiry: true });
 export const createPin = (type, pin) => authApi.post(`/auth/security/pin/${type}`, { body: { pin } });
@@ -69,6 +99,8 @@ export function pinErrorMessage(e) {
   const left = m.match(/WRONG_PIN:(\d+)/);
   if (left) return `Incorrect PIN. ${left[1]} attempt(s) left.`;
   if (/PIN_LOCKED/.test(m)) return 'Too many wrong attempts. Try again in 15 minutes.';
+  if (/MPIN_NOT_SET/.test(m)) return 'Your Login MPIN is not set yet. Ask your shop owner to set it.';
+  if (/Invalid mobile number or MPIN/i.test(m)) return 'Invalid mobile number or MPIN.';
   if (/check in first/i.test(m)) return 'Please check in first to use your TPIN.';
   if (/Already checked in/i.test(m)) return 'You are already checked in.';
   if (/too simple/i.test(m)) return 'PIN is too simple. Avoid repeated or sequential digits.';

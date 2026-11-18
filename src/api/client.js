@@ -7,8 +7,10 @@ import {
   ORDER_BASE,
   MARKETPLACE_BASE,
 } from './config';
-import { getToken, clearSession, notifyAuthExpired } from '../auth/session';
+import { getToken, getSession, clearSession, notifyAuthExpired } from '../auth/session';
 import { friendlyApiMessage, transportMessage, logDiagnostic } from '../utils/userMessages';
+import { matchTpinRoute, requestTpin, tpinActive, TPIN_HEADER } from '../security/tpinBridge';
+import { refreshDeviceSession, jwtExpiresSoon } from '../security/deviceTokens';
 
 // Decode a JWT's `exp` claim locally (base64url, no library) to distinguish a
 // GENUINE expiry from a signature/verification failure (e.g. JWT_SECRET drift or
@@ -28,7 +30,29 @@ export function isJwtExpired(token) {
   }
 }
 
-async function request(baseUrlOrNull, method, path, { query, body, headers, skipAuthExpiry } = {}) {
+// Wraps rawRequest: one-time TPIN for protected actions and device-session
+// token refresh (15-min access JWT, migration 116). Legacy tokens pass through.
+async function request(baseUrlOrNull, method, path, opts = {}) {
+  let o = opts;
+  const action = tpinActive() && !(o.headers && o.headers[TPIN_HEADER]) ? matchTpinRoute(method, path) : null;
+  if (action) {
+    const auth = await requestTpin(action, method, path);
+    if (auth) o = { ...o, headers: { ...(o.headers || {}), [TPIN_HEADER]: auth } };
+  }
+  if (!o.skipAuthExpiry && jwtExpiresSoon(await getToken())) await refreshDeviceSession();
+  try {
+    return await rawRequest(baseUrlOrNull, method, path, { ...o, _deviceRetry: !o.skipAuthExpiry });
+  } catch (e) {
+    if (e?.deviceRefresh && !o.skipAuthExpiry) {
+      const r = await refreshDeviceSession();
+      if (r.token) return rawRequest(baseUrlOrNull, method, path, o);
+      if (r.dead) { await clearSession(); notifyAuthExpired(); }
+    }
+    throw e;
+  }
+}
+
+async function rawRequest(baseUrlOrNull, method, path, { query, body, headers, skipAuthExpiry, _deviceRetry } = {}) {
   let base = baseUrlOrNull && typeof baseUrlOrNull === 'string' ? baseUrlOrNull.trim() : '';
   if (!base || !base.startsWith('http')) base = AUTH_BASE;
   else if (!base.endsWith('/')) base = base + '/';
@@ -96,6 +120,10 @@ async function request(baseUrlOrNull, method, path, { query, body, headers, skip
       (res.status === 401 && (isAuthService || isJwtExpired(token)))
       || (res.status === 403 && isJwtExpired(token))
     );
+    // Device-bound session: try a token refresh before treating it as expired.
+    if (sessionExpired && _deviceRetry && (await getSession())?.deviceSessionId) {
+      throw Object.assign(new Error(friendlyApiMessage({ status: res.status, serverMessage: '', method, hadToken: true, sessionExpired: true })), { status: res.status, deviceRefresh: true, payload: json });
+    }
     if (sessionExpired && !skipAuthExpiry) {
       await clearSession();
       notifyAuthExpired();

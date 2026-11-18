@@ -24,8 +24,18 @@ export function weakReason(pin) {
 }
 const checkWeak = (pin) => { const w = weakReason(pin); if (w) throw Object.assign(new Error(w), { status: 400, userFacing: true, payload: { message: w } }); };
 
-export const getPinStatus = () => wrap(authApi.get('/auth/me/pin', { skipAuthExpiry: true }));
-export const verifyPin = (pin) => wrap(authApi.post('/auth/me/pin/verify', { body: { pin }, skipAuthExpiry: true }));
+// App unlock / PIN prompts use the SAME owner-set Login MPIN (auth-service
+// /auth/security, lockout shared with login). Legacy /auth/me/pin is no longer used.
+export const getPinStatus = () => wrap(authApi.get('/auth/security/pin', { skipAuthExpiry: true }))
+  .then((s) => ({ ...s, pinSet: !!s?.mpinSet }));
+export const verifyPin = (pin) => wrap(authApi.post('/auth/security/mpin/verify', { body: { pin }, skipAuthExpiry: true }))
+  .catch((e) => {
+    const m = String(e?.serverMessage || '');
+    const left = m.match(/WRONG_PIN:(\d+)/);
+    const msg = left ? `Incorrect MPIN. ${left[1]} attempt(s) left.` : /PIN_LOCKED/.test(m) ? 'Too many wrong attempts. Try again in 15 minutes.' : null;
+    if (msg) throw Object.assign(new Error(msg), { status: e.status, userFacing: true, payload: { message: msg }, cause: e });
+    throw e;
+  });
 export const savePin = async (pin, currentPin) => { checkWeak(pin); return wrap(authApi.put('/auth/me/pin', { body: { pin, currentPin } })); };
 /** Forgot PIN: OTP from /auth/otp/send for the employee's own mobile / email. */
 export const resetPin = async (identifier, otp, pin) => { checkWeak(pin); return wrap(authApi.post('/auth/me/pin/reset', { body: { identifier, otp, pin } })); };

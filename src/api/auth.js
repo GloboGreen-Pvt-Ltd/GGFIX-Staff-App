@@ -13,6 +13,35 @@ export async function login(email, { password, otp, shopSlug } = {}) {
 }
 
 /**
+ * Employee login: registered mobile + owner-set 6-digit MPIN (no OTP).
+ * auth-service /auth/security/employee/login (PR #73) returns the device
+ * session directly; a new phone while another is active needs owner approval.
+ */
+export async function mpinLogin(mobile, mpin) {
+  const { getDeviceId } = require('../security/securityApi');
+  const { setDeviceRefreshToken } = require('../security/deviceTokens');
+  const { Platform } = require('react-native');
+  const c = Platform.constants || {};
+  const data = await authApi.post('/auth/security/employee/login', {
+    skipAuthExpiry: true,
+    body: {
+      mobile,
+      mpin,
+      deviceId: await getDeviceId(),
+      deviceName: [c.Manufacturer || c.Brand, c.Model].filter(Boolean).join(' ') || Platform.OS,
+      platform: Platform.OS,
+    },
+  });
+  if (data?.status === 'DEVICE_APPROVAL_REQUIRED') {
+    const msg = `New phone detected. Ask your shop owner to approve this device${data.deviceName ? ` (currently signed in on ${data.deviceName})` : ''}, then log in again.`;
+    throw Object.assign(new Error(msg), { status: 202, code: 'DEVICE_APPROVAL_REQUIRED', userFacing: true, payload: { message: msg } });
+  }
+  await setDeviceRefreshToken(data.refreshToken);
+  await saveSession({ ...data, refreshToken: undefined });
+  return data;
+}
+
+/**
  * Request a login OTP for a mobile number (or email). The server refuses with
  * "No account found…" when nothing matches, so the login screen uses this as
  * the existence check BEFORE moving the user to the code step.

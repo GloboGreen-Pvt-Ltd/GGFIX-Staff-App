@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Linking, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Image, Linking, Platform, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { Text, TextInput } from '../../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
@@ -10,6 +10,40 @@ import { uploadMedia } from '../../api/media';
 import { deviceShapeOf } from '../sell/conditionArt';
 import { DELIVERY_STATUS, DELIVERY_TABS, deliveryAction, getDelivery, listMyDeliveries } from '../../api/buyDeliveries';
 import { Button, Card, Loader, Page, SC, SK, apiError, money } from './deliveryKit';
+import DeliveryRouteMap from './DeliveryRouteMap';
+
+// Delivery Completed celebration: pop, check, particle burst (no payment claim).
+const BURST = Array.from({ length: 14 }, (_, i) => {
+  const a = (i / 14) * Math.PI * 2;
+  return { dx: Math.cos(a) * (64 + (i % 3) * 16), dy: Math.sin(a) * (54 + (i % 3) * 14), c: ['#035C6C', '#2BB389', '#F3BF23', '#F38B4A'][i % 4] };
+});
+function Celebrate() {
+  const pop = useRef(new Animated.Value(0)).current;
+  const burst = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(pop, { toValue: 1, friction: 4, tension: 120, useNativeDriver: true }),
+      Animated.timing(burst, { toValue: 1, duration: 900, delay: 100, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }, [pop, burst]);
+  return (
+    <View style={{ height: 150, alignItems: 'center', justifyContent: 'center' }}>
+      {BURST.map((b, i) => (
+        <Animated.View key={i} pointerEvents="none" style={{
+          position: 'absolute', width: i % 2 ? 9 : 7, height: i % 2 ? 4 : 7, borderRadius: 4, backgroundColor: b.c,
+          opacity: burst.interpolate({ inputRange: [0, 0.15, 0.75, 1], outputRange: [0, 1, 1, 0] }),
+          transform: [
+            { translateX: burst.interpolate({ inputRange: [0, 1], outputRange: [0, b.dx] }) },
+            { translateY: burst.interpolate({ inputRange: [0, 1], outputRange: [0, b.dy] }) },
+          ],
+        }} />
+      ))}
+      <Animated.View style={{ transform: [{ scale: pop }], height: 84, width: 84, borderRadius: 42, backgroundColor: SC.green, alignItems: 'center', justifyContent: 'center' }}>
+        <CheckCircle2 size={50} color="#FFFFFF" />
+      </Animated.View>
+    </View>
+  );
+}
 
 const FAILABLE = ['ACCEPTED', 'PICKED_UP', 'OUT_FOR_DELIVERY'];
 const when = (t) => (t ? new Date(t).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '');
@@ -32,7 +66,7 @@ export default function BuyDeliveryScreen({ navigation, route }) {
   const [otp, setOtp] = useState('');
   const [payRef, setPayRef] = useState('');
   const [reason, setReason] = useState('');
-  const [imei, setImei] = useState('');
+  const [pickupPin, setPickupPin] = useState(''); // server-verified Shop Pickup PIN
   const otpRef = useRef(null);
   const [failOpen, setFailOpen] = useState(false);
   const [journey, setJourney] = useState(false);
@@ -60,13 +94,14 @@ export default function BuyDeliveryScreen({ navigation, route }) {
     setBusy(action);
     try {
       await deliveryAction(id, action, body);
-      setPhotos([]); setOtp(''); setAmount(''); setPayRef(''); setFailOpen(false);
+      setPhotos([]); setOtp(''); setAmount(''); setPayRef(''); setFailOpen(false); setPickupPin('');
       notify(ok, '', { type: 'success' });
       if (action === 'decline') { navigation.goBack(); return; }
       if (action === 'deliver') { setDone({ orderNumber: o?.orderNumber, productTitle: o?.productTitle }); }
       await load();
     } catch (e) {
-      if (action === 'pickup' || action === 'deliver') setPhotos([]);
+      if (action === 'deliver') setPhotos([]);
+      if (action === 'pickup') setPickupPin('');
       notify('Not saved', apiError(e, 'Please try again.'), { type: 'error' });
     } finally { lock.current = false; setBusy(''); }
   };
@@ -114,8 +149,8 @@ export default function BuyDeliveryScreen({ navigation, route }) {
         <View style={{ padding: 14 }}>
           <Card>
             <View style={{ alignItems: 'center', paddingVertical: 18 }}>
-              <CheckCircle2 size={48} color={SC.green} />
-              <Text style={{ marginTop: 10, fontSize: 18, fontWeight: '800', color: SK.ink }}>Task Completed</Text>
+              <Celebrate />
+              <Text style={{ marginTop: 4, fontSize: 20, fontWeight: '800', color: SK.ink }}>Delivery Completed!</Text>
               <Text style={{ marginTop: 6, fontSize: 13, color: MUTED }}>{done.orderNumber}</Text>
               <Text style={{ marginTop: 2, fontSize: 14, fontWeight: '700', color: SK.ink, textAlign: 'center' }}>{done.productTitle || 'Product'}</Text>
             </View>
@@ -154,8 +189,7 @@ export default function BuyDeliveryScreen({ navigation, route }) {
   ].filter(Boolean);
   const CHECKS = [
     ['model', 'Product & model match the order'],
-    ['imei', isPhone ? 'IMEI checked on the device' : 'Serial number checked on the device'],
-    ['qty', `Quantity is ${o.quantity || 1}`],
+    ['qty', 'Quantity verified'],
     ['cond', 'Condition matches the listing'],
   ];
   const verified = CHECKS.every(([k]) => checks[k]);
@@ -209,21 +243,10 @@ export default function BuyDeliveryScreen({ navigation, route }) {
         </Card>
 
         {['ASSIGNED', 'ACCEPTED'].includes(s) ? (
-          <Card title="Pickup from shop">
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
-              <Store size={16} color={SK.teal} />
-              <Text style={{ flex: 1, fontSize: 13, color: SK.ink }}>{o.shopName || 'Your shop'}{o.shopAddress ? `
-${o.shopAddress}` : ''}</Text>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-              {o.shopAddress ? <Button title="Navigate" Icon={MapPin} variant="outline" style={{ flex: 1 }}
-                onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.shopAddress)}`).catch(() => {})} /> : null}
-              {o.shopPhone ? <Button title="Call Shop" Icon={Phone} variant="outline" style={{ flex: 1 }}
-                onPress={() => Linking.openURL(`tel:${o.shopPhone}`).catch(() => {})} /> : null}
-            </View>
-          </Card>
+          <DeliveryRouteMap o={o} journeyStarted={journey} onStartJourney={s === 'ACCEPTED' ? () => setJourney(true) : null} />
         ) : null}
 
+        {!['ASSIGNED', 'ACCEPTED'].includes(s) ? (
         <Card title={o.customerName ? `Customer · ${o.customerName}` : 'Customer'}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}>
             <MapPin size={16} color={SK.teal} />
@@ -236,17 +259,16 @@ ${o.shopAddress}` : ''}</Text>
               onPress={() => Linking.openURL(`tel:${o.customerPhone}`).catch(() => {})} /> : null}
           </View>
         </Card>
+        ) : null}
 
         {s === 'ASSIGNED' ? (
           <Card title="New assignment">
-            <Text style={{ fontSize: 13, color: MUTED }}>Collect this product from your shop and deliver it to the customer.</Text>
-            <Button title="Accept" variant="success" loading={busy === 'accept'} disabled={!!busy} style={{ marginTop: 10 }} onPress={() => run('accept', {}, 'Delivery accepted')} />
-            <Button title="Decline" variant="danger" disabled={!!busy} loading={busy === 'decline'} style={{ marginTop: 8 }}
-              onPress={async () => { if (await confirm({ title: 'Decline delivery?', message: 'The shop will reassign it.', confirmText: 'Decline', destructive: true })) run('decline', {}, 'Declined'); }} />
+            <Text style={{ fontSize: 13, color: MUTED }}>Accept or reject this delivery from the My Deliveries list.</Text>
+            <Button title="Back to My Deliveries" variant="outline" style={{ marginTop: 10 }} onPress={() => navigation.goBack()} />
           </Card>
         ) : null}
 
-        {s === 'ACCEPTED' && !journey ? (
+        {false ? (
           <Card title="Start journey to shop">
             <Text style={{ fontSize: 13, color: MUTED }}>{o.shopName || 'Your shop'}{o.shopAddress ? ` · ${o.shopAddress}` : ''}</Text>
             {o.shopAddress ? <Button title="Navigate" Icon={MapPin} variant="outline" style={{ marginTop: 10 }}
@@ -264,18 +286,11 @@ ${o.shopAddress}` : ''}</Text>
                 <Text style={{ fontSize: 13, color: SK.ink }}>{label}</Text>
               </Pressable>
             ))}
-            {input({
-              placeholder: isPhone ? `15-digit IMEI${o.productImeiRequired ? ' (required)' : ' (optional)'}` : `Serial number${o.productImeiRequired ? ' (required)' : ' (optional)'}`,
-              value: imei,
-              keyboardType: isPhone ? 'number-pad' : 'default',
-              maxLength: isPhone ? 15 : 30,
-              autoCapitalize: 'characters',
-              onChangeText: (t) => setImei(isPhone ? t.replace(/\D/g, '') : t.replace(/[^A-Za-z0-9-]/g, '').toUpperCase()),
-            })}
-            {imei && isPhone && imei.length !== 15 ? <Text style={{ fontSize: 11, color: SC.red, marginTop: 4 }}>IMEI must be 15 digits</Text> : null}
-            {photoBlock(`Pickup photos (min ${MIN_PHOTOS})`)}
-            <Button title="Confirm Pickup" loading={busy === 'pickup'} disabled={!!busy || !verified || urls.length < MIN_PHOTOS || uploading || (o.productImeiRequired && !imei) || (isPhone && !!imei && imei.length !== 15)} style={{ marginTop: 12 }}
-              onPress={() => run('pickup', { productVerified: true, imei: imei || undefined, photos: urls }, 'Pickup confirmed')} />
+            <Text style={{ fontSize: 13, fontWeight: '800', color: SK.ink, marginTop: 12 }}>Shop Pickup PIN</Text>
+            <Text style={{ fontSize: 11.5, color: MUTED }}>Enter the pickup PIN shown in the Partner App for this order.</Text>
+            <PinBoxes value={pickupPin} onChange={setPickupPin} accessibilityLabel="Shop pickup PIN" style={{ marginTop: 8, justifyContent: 'flex-start' }} />
+            <Button title="Confirm Pickup" loading={busy === 'pickup'} disabled={!!busy || !verified || pickupPin.length !== 4} style={{ marginTop: 12 }}
+              onPress={() => run('pickup', { productVerified: true, pin: pickupPin }, 'Pickup confirmed')} />
           </Card>
         ) : null}
 

@@ -5,7 +5,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ChartColumn, History, IndianRupee, MapPin, RefreshCw, Store, Truck, WifiOff } from 'lucide-react-native';
 import { Text } from '../../components/Typography';
 import { JobHeader, JobPictureCard, JobRail, KIT } from '../../components/JobCardKit';
-import { DELIVERY_STATUS, DELIVERY_TABS, listMyDeliveries } from '../../api/buyDeliveries';
+import { DELIVERY_STATUS, DELIVERY_TABS, deliveryAction, listMyDeliveries } from '../../api/buyDeliveries';
+import { confirm, notify } from '../../components/confirm';
 import { fmtShortStamp } from '../../utils/pickups';
 import { rf, rs } from '../../utils/responsive';
 import { Section } from '../PickupAssignScreen';
@@ -39,6 +40,24 @@ export default function BuyDeliveriesScreen({ navigation, route }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Accept / Reject right on a new assignment card; counts refresh from the server.
+  const [actingId, setActingId] = useState(null);
+  const act = async (o, action) => {
+    if (actingId) return; // one submission at a time
+    if (action === 'decline' && !(await confirm({ title: 'Reject delivery?', message: 'The shop will reassign it.', confirmText: 'Reject', destructive: true }))) return;
+    setActingId(o.id);
+    try {
+      await deliveryAction(o.id, action);
+      notify(action === 'accept' ? 'Delivery accepted' : 'Delivery rejected', o.orderNumber || '', { type: 'success' });
+    } catch (e) {
+      // Reassigned / already moved on: the reload below shows the real state.
+      notify('Not updated', apiError(e, 'This delivery changed. Refreshing…'), { type: 'error' });
+    } finally {
+      await load();
+      setActingId(null);
+    }
+  };
+
   const list = rows || [];
   const byTile = useMemo(() => Object.fromEntries(TILES.map((t) => [t.key, t.statuses ? list.filter((o) => t.statuses.includes(o.status)) : list])), [list]);
   const counts = useMemo(() => Object.fromEntries(TILES.map((t) => [t.key, byTile[t.key].length])), [byTile]);
@@ -64,6 +83,16 @@ export default function BuyDeliveriesScreen({ navigation, route }) {
         date={fmtShortStamp(o.updatedAt || o.createdAt) || null}
         time={null}
         onPress={() => navigation.navigate('BuyDelivery', { id: o.id })}
+        footer={o.status === 'ASSIGNED' ? (
+          <View style={styles.actRow}>
+            <TouchableOpacity onPress={() => act(o, 'decline')} disabled={!!actingId} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Reject delivery" style={[styles.actBtn, styles.rejectBtn]}>
+              <Text style={styles.rejectText}>{actingId === o.id ? '…' : 'Reject'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => act(o, 'accept')} disabled={!!actingId} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Accept delivery" style={[styles.actBtn, styles.acceptBtn]}>
+              {actingId === o.id ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.acceptText}>Accept</Text>}
+            </TouchableOpacity>
+          </View>
+        ) : null}
       />
     );
   });
@@ -120,6 +149,12 @@ const styles = StyleSheet.create({
   errorText: { flex: 1, fontSize: rf(12), fontWeight: '700', color: '#B42318' },
   retry: { flexDirection: 'row', alignItems: 'center', gap: rs(4), backgroundColor: '#F32C26', borderRadius: 999, paddingHorizontal: rs(10), paddingVertical: rs(5) },
   retryText: { fontSize: rf(11), fontWeight: '800', color: '#FFFFFF' },
+  actRow: { flexDirection: 'row', gap: rs(8), marginTop: rs(8) },
+  actBtn: { flex: 1, height: rs(34), borderRadius: rs(10), alignItems: 'center', justifyContent: 'center' },
+  rejectBtn: { borderWidth: 1.5, borderColor: '#F32C26', backgroundColor: '#FFFFFF' },
+  acceptBtn: { backgroundColor: '#035C6C' },
+  rejectText: { fontSize: rf(12.5), fontWeight: '800', color: '#F32C26' },
+  acceptText: { fontSize: rf(12.5), fontWeight: '800', color: '#FFFFFF' },
   emptyLine: {
     fontSize: rf(12), color: '#6B7280', backgroundColor: '#FFFFFF', borderRadius: rs(12), borderWidth: 1, borderColor: '#EEF0F2',
     paddingVertical: rs(10), paddingHorizontal: rs(12),

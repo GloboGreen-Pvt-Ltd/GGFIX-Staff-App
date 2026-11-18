@@ -124,9 +124,8 @@ export default function SecurityScreen({ navigation }) {
             : loadErr ? <Pressable onPress={load} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, backgroundColor: TEAL }}><Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: rf(12) }}>Retry</Text></Pressable> : null}
         </View>
         <View style={card}>
-          <Row icon={KeyRound} label={pinSet ? 'Change Employee PIN' : 'Create Employee PIN'} sub="6 digits, only for your account"
-            onPress={status == null ? undefined : () => setFlow({ step: pinSet ? 'current' : 'new' })} />
-          <Row icon={RotateCcw} label="Forgot PIN / Reset PIN" sub="Verify with the login OTP" onPress={status == null ? undefined : startReset} last />
+          {/* Login MPIN is owner-managed (Partner App → Employee Profile); no self create/change/reset. */}
+          <Row icon={KeyRound} label="Login MPIN" sub="Set and reset only by your shop owner. Forgot it? Ask your shop owner." last />
         </View>
         <View style={card}>
           <Row icon={Lock} label="App Lock" sub="Ask for PIN / biometrics when reopening the app"

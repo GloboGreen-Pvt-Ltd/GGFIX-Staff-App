@@ -62,14 +62,20 @@ export default function TpinSheet({ session, tpinSet, onTpinCreated }) {
   return (
     <Modal visible={!!req} transparent animationType="slide" onRequestClose={cancel}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(17,24,39,0.45)' }}>
-        <View style={{ backgroundColor: C.bg, borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16 + insets.bottom, alignItems: 'center' }}>
-          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, marginBottom: 10 }} />
-          <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', marginBottom: 12 }}>
-            <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: C.tint, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="shield-checkmark" size={18} color={C.primary} />
+        <View style={{ backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 + insets.bottom, alignItems: 'center' }}>
+          <View style={{ width: 44, height: 5, borderRadius: 3, backgroundColor: '#D1D5DB', marginBottom: 14 }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch', paddingBottom: 14, marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#EEF2F3' }}>
+            <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="shield-checkmark" size={22} color="#FFFFFF" />
             </View>
-            <Text style={{ flex: 1, marginLeft: 10, fontSize: 14, fontWeight: '800', color: C.text }}>{ACTION_LABEL[req?.action] || 'Authorize transaction'}</Text>
-            <Pressable onPress={cancel} hitSlop={10}><Ionicons name="close" size={22} color={C.muted} /></Pressable>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: C.text }}>{ACTION_LABEL[req?.action] || 'Authorize transaction'}</Text>
+              <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>Secured with your Transaction PIN</Text>
+            </View>
+            <Pressable onPress={cancel} hitSlop={10} accessibilityLabel="Close"
+              style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="close" size={20} color={C.text} />
+            </Pressable>
           </View>
           {verified ? (
             <View style={{ alignItems: 'center', paddingVertical: 24 }}>

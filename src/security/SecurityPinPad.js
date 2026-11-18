@@ -17,55 +17,79 @@ export default function PinPad({ title, subtitle, error, busy, onComplete, onBio
   };
   const back = () => { if (!busy) setPin((p) => p.slice(0, -1)); };
 
-  const Key = ({ children, onPress, label }) => (
-    <Pressable
-      onPress={onPress}
-      accessibilityLabel={label}
-      style={({ pressed }) => ({
-        width: 72, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-        backgroundColor: pressed ? C.tint : 'transparent',
-      })}
-    >
-      {children}
-    </Pressable>
+  // Static styles only (NativeWind's Pressable wrapper drops function styles,
+  // which collapsed every key onto one line). Rows are explicit — no flexWrap.
+  const Key = ({ children, onPress, label, plain }) => {
+    const [down, setDown] = useState(false);
+    return (
+      <Pressable
+        onPress={onPress}
+        onPressIn={() => setDown(true)}
+        onPressOut={() => setDown(false)}
+        disabled={!onPress || busy}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        hitSlop={4}
+        style={{
+          width: 68, height: 68, borderRadius: 34, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: down ? '#CFE6EA' : plain ? 'transparent' : '#F3F7F8',
+          borderWidth: plain ? 0 : 1, borderColor: down ? C.primary : '#E3ECEE',
+        }}
+      >
+        {children}
+      </Pressable>
+    );
+  };
+  const Digit = ({ d }) => (
+    <Key onPress={() => press(d)} label={d}>
+      <Text style={{ fontSize: 26, fontWeight: '700', color: C.text }}>{d}</Text>
+    </Key>
   );
+  const Row = ({ children }) => (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: 252, marginTop: 14 }}>{children}</View>
+  );
+  const dotColor = error ? C.error : C.primary;
 
   return (
-    <View style={{ alignItems: 'center', width: '100%' }}>
-      {title ? <Text style={{ fontSize: 17, fontWeight: '800', color: C.text }}>{title}</Text> : null}
-      {subtitle ? <Text style={{ fontSize: 12.5, color: C.muted, marginTop: 4, textAlign: 'center' }}>{subtitle}</Text> : null}
-      <View style={{ flexDirection: 'row', marginTop: 18, marginBottom: 6 }}>
-        {[0, 1, 2, 3, 4, 5].map((i) => (
-          <View
-            key={i}
-            style={{
-              width: 14, height: 14, borderRadius: 7, marginHorizontal: 7,
-              borderWidth: 1.5, borderColor: error ? C.error : C.primary,
-              backgroundColor: i < pin.length ? (error ? C.error : C.primary) : 'transparent',
-            }}
-          />
-        ))}
+    <View style={{ alignItems: 'center', width: '100%', paddingBottom: 8 }}>
+      {title ? <Text style={{ fontSize: 19, fontWeight: '800', color: C.text, textAlign: 'center' }}>{title}</Text> : null}
+      {subtitle ? <Text style={{ fontSize: 13, color: C.muted, marginTop: 6, textAlign: 'center', paddingHorizontal: 24 }}>{subtitle}</Text> : null}
+
+      {/* PIN dots */}
+      <View style={{ flexDirection: 'row', marginTop: 22, paddingVertical: 12, paddingHorizontal: 18, borderRadius: 16, backgroundColor: error ? '#FEF2F2' : C.tint }}>
+        {[0, 1, 2, 3, 4, 5].map((i) => {
+          const filled = i < pin.length;
+          return (
+            <View
+              key={i}
+              style={{
+                width: 16, height: 16, borderRadius: 8, marginHorizontal: 8,
+                borderWidth: 2, borderColor: filled ? dotColor : '#9CB9BF',
+                backgroundColor: filled ? dotColor : '#FFFFFF',
+              }}
+            />
+          );
+        })}
       </View>
-      <View style={{ height: 20, justifyContent: 'center' }}>
+
+      <View style={{ minHeight: 24, marginTop: 8, justifyContent: 'center', paddingHorizontal: 16 }}>
         {busy ? <ActivityIndicator size="small" color={C.primary} />
-          : error ? <Text style={{ color: C.error, fontSize: 12, fontWeight: '600' }}>{error}</Text> : null}
+          : error ? <Text style={{ color: C.error, fontSize: 12.5, fontWeight: '600', textAlign: 'center' }}>{error}</Text> : null}
       </View>
-      <View style={{ width: 240, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginTop: 4 }}>
-        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
-          <Key key={d} onPress={() => press(d)} label={d}>
-            <Text style={{ fontSize: 22, fontWeight: '600', color: C.text }}>{d}</Text>
-          </Key>
-        ))}
-        <Key onPress={onBiometric} label="Biometric">
-          {onBiometric ? <Ionicons name="finger-print" size={26} color={C.primary} /> : null}
+
+      {/* 3 × 4 keypad */}
+      <Row><Digit d="1" /><Digit d="2" /><Digit d="3" /></Row>
+      <Row><Digit d="4" /><Digit d="5" /><Digit d="6" /></Row>
+      <Row><Digit d="7" /><Digit d="8" /><Digit d="9" /></Row>
+      <Row>
+        <Key plain onPress={onBiometric} label="Use biometrics">
+          {onBiometric ? <Ionicons name="finger-print" size={28} color={C.primary} /> : null}
         </Key>
-        <Key onPress={() => press('0')} label="0">
-          <Text style={{ fontSize: 22, fontWeight: '600', color: C.text }}>0</Text>
+        <Digit d="0" />
+        <Key plain onPress={pin.length ? back : undefined} label="Delete">
+          <Ionicons name="backspace-outline" size={26} color={pin.length ? C.text : '#C4CBD2'} />
         </Key>
-        <Key onPress={back} label="Delete">
-          <Ionicons name="backspace-outline" size={24} color={C.text} />
-        </Key>
-      </View>
+      </Row>
       {footer}
     </View>
   );

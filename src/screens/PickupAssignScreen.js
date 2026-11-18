@@ -3,7 +3,7 @@ import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Refr
 import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  AlertTriangle, Ban, CalendarDays, CalendarRange, ChartColumn, CircleAlert, CircleCheck, CircleX, ClipboardCheck, History, MapPin,
+  AlertTriangle, Ban, CalendarDays, Check, X, CalendarRange, ChartColumn, CircleAlert, CircleCheck, CircleX, ClipboardCheck, History, MapPin,
   Navigation, Package, Phone, RefreshCw, Repeat, Search, Truck, WifiOff, Wrench,
 } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -222,16 +222,28 @@ export default function PickupAssignScreen({ navigation, route }) {
           ]}
           date={[cardDate(pickupDay(b)), slotLabel(b).replace(/ – /g, '–')].filter(Boolean).join(' · ')}
           time={null}
-          bottomPill={next ? { text: busy ? 'Updating…' : next.label, onPress: busy ? () => {} : () => advance(b) } : null}
+          bottomPill={next && !serverAcceptance(b) ? { text: busy ? 'Updating…' : next.label, onPress: busy ? () => {} : () => advance(b) } : null}
           statusLine={re ? 'Reassigned to you' : 'Awaiting your acceptance'}
           statusColor={re ? '#FAA700' : st.color}
           statusRight={contactIcons(b, true)}
           footer={serverAcceptance(b) ? (
-            <TouchableOpacity onPress={() => setDeclineFor(b)} disabled={busy} activeOpacity={0.85} accessibilityRole="button"
-              accessibilityLabel="Decline pickup" style={styles.declineBtn}>
-              <CircleX size={rs(14)} color="#F32C26" strokeWidth={2.4} />
-              <Text style={styles.declineText}>Decline</Text>
-            </TouchableOpacity>
+            // Same Reject / Accept pair as the technician's My Jobs cards.
+            <View style={styles.cardActions}>
+              <TouchableOpacity style={styles.rejectBtn} onPress={() => setDeclineFor(b)} disabled={busy}
+                activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Reject pickup">
+                <View style={styles.rejectDot}><X size={rs(10)} color="#FFFFFF" strokeWidth={3} /></View>
+                <Text style={styles.rejectText} numberOfLines={1}>Reject</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.acceptBtn} onPress={() => advance(b)} disabled={busy}
+                activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Accept pickup">
+                {busy ? <ActivityIndicator color="#FFFFFF" size="small" /> : (
+                  <>
+                    <View style={styles.acceptDot}><Check size={rs(10)} color="#035C6C" strokeWidth={3} /></View>
+                    <Text style={styles.acceptText} numberOfLines={1}>Accept</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           ) : null}
           onPress={acceptFirst}
         />
@@ -408,6 +420,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: rs(5), marginTop: rs(6),
     paddingHorizontal: rs(10), paddingVertical: rs(5), borderRadius: rs(9), borderWidth: 1.2, borderColor: '#F32C26', backgroundColor: '#FFFFFF',
   },
+  cardActions: { flexDirection: 'row', gap: rs(6), marginTop: rs(6) },
+  rejectBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(5),
+    backgroundColor: '#FDECEC', borderWidth: 1, borderColor: '#F9C9C7', borderRadius: rs(10),
+    paddingVertical: rs(4), paddingLeft: rs(5), paddingRight: rs(8),
+  },
+  rejectDot: { width: rs(18), height: rs(18), borderRadius: rs(9), backgroundColor: '#F32C26', alignItems: 'center', justifyContent: 'center' },
+  rejectText: { color: '#F32C26', fontSize: rf(11.5), fontWeight: '700' },
+  acceptBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: rs(5),
+    backgroundColor: '#035C6C', borderRadius: rs(10),
+    paddingVertical: rs(4), paddingLeft: rs(5), paddingRight: rs(8),
+    shadowColor: '#035C6C', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 3,
+  },
+  acceptDot: { width: rs(18), height: rs(18), borderRadius: rs(9), backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  acceptText: { color: '#FFFFFF', fontSize: rf(11.5), fontWeight: '700' },
   declineText: { fontSize: rf(12), fontWeight: '800', color: '#F32C26' },
   action: { flex: 1, alignItems: 'center' },
   actionBtn: { width: rs(28), height: rs(28), borderRadius: rs(14), borderWidth: 1, alignItems: 'center', justifyContent: 'center' },

@@ -8,6 +8,7 @@ import { setSession, clearSession as clearAuth } from '../store/authSlice';
 import LoginScreen from '../screens/LoginScreen';
 import TechnicianNavigator from './TechnicianNavigator';
 import GeofenceGate from '../components/GeofenceGate';
+import AppLockGate from '../components/AppLockGate';
 import DeviceSessionGate from '../security/DeviceSessionGate';
 import { clearLockPrefs } from '../auth/appLock';
 import BootSplash from '../components/BootSplash';
@@ -110,11 +111,12 @@ export default function RootNavigator() {
   // right after login — out of the shop's 100m range shows a blocking lock
   // screen instead of the technician stack.
   return (
-    // Login MPIN / biometric lock + device session (replaces the old AppLockGate).
-    <DeviceSessionGate onLogout={handleLogout}>
-      <GeofenceGate onLogout={handleLogout}>
-        <TechnicianNavigator session={session} onLogout={handleLogout} />
-      </GeofenceGate>
-    </DeviceSessionGate>
+    <AppLockGate onLogout={handleLogout}>
+      <DeviceSessionGate onLogout={handleLogout}>
+        <GeofenceGate onLogout={handleLogout}>
+          <TechnicianNavigator session={session} onLogout={handleLogout} />
+        </GeofenceGate>
+      </DeviceSessionGate>
+    </AppLockGate>
   );
 }

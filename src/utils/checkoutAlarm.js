@@ -150,9 +150,11 @@ export async function syncPickupReminders(pickups) {
       .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)));
     const now = Date.now();
     const due = [];
+    // The server pushes the 10-minute reminder to a registered device; the local one is the fallback only.
+    const leads = pushRegistered ? PICKUP_LEADS.filter((l) => l !== 10) : PICKUP_LEADS;
     (pickups || []).forEach((p) => {
       if (!(p?.startAt instanceof Date)) return;
-      PICKUP_LEADS.forEach((lead) => {
+      leads.forEach((lead) => {
         const at = new Date(p.startAt.getTime() - lead * 60000);
         if (at.getTime() > now) due.push({ p, lead, at });
       });
@@ -236,4 +238,49 @@ export async function syncCheckoutAlarm(todayAttendance) {
   } catch (e) {
     console.warn('[checkoutAlarm] schedule failed', e?.message);
   }
+}
+
+// ── Remote push (server T−10 pickup reminders, task pushes) ─────────────────
+// Registers this device with order-service POST /push-tokens (app EMPLOYEE,
+// user from the JWT). Android: native FCM token; iOS: Expo token. Best-effort,
+// never throws. A server push uses the same data.kind / bookingId as the local
+// reminder, so onPickupReminderTap opens the same task.
+const PUSH_TOKEN_KEY = 'push.employeeToken';
+let pushRegistered = false;
+let pushInflight = null;
+export function registerForPush() {
+  if (pushInflight) return pushInflight;
+  pushInflight = (async () => {
+    const N = load();
+    if (!N) return null;
+    try {
+      if (!(await ensurePermission())) return null;
+      let token = null;
+      if (Platform.OS === 'android') token = (await N.getDevicePushTokenAsync())?.data;
+      else {
+        const Constants = require('expo-constants').default;
+        const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+        if (projectId) token = (await N.getExpoPushTokenAsync({ projectId }))?.data;
+      }
+      if (!token || typeof token !== 'string') return null;
+      const { orderApi } = require('../api/client');
+      await orderApi.post('/push-tokens', { body: { token, platform: Platform.OS, app: 'EMPLOYEE' } });
+      pushRegistered = true;
+      require('@react-native-async-storage/async-storage').default.setItem(PUSH_TOKEN_KEY, token).catch(() => {});
+      return token;
+    } catch (_) { return null; } finally { pushInflight = null; }
+  })();
+  return pushInflight;
+}
+/** Before the session is cleared (needs the auth header). Bounded; never throws. */
+export async function unregisterPush() {
+  try {
+    const AS = require('@react-native-async-storage/async-storage').default;
+    const token = await AS.getItem(PUSH_TOKEN_KEY);
+    pushRegistered = false;
+    if (!token) return;
+    await AS.removeItem(PUSH_TOKEN_KEY);
+    const { orderApi } = require('../api/client');
+    await Promise.race([orderApi.post('/push-tokens/remove', { body: { token } }), new Promise((r) => setTimeout(r, 4000))]);
+  } catch (_) {}
 }

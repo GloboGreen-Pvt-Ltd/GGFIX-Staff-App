@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import BootSplash from './BootSplash';
 import { ActivityIndicator, AppState, Image, Platform, Pressable, View } from 'react-native';
 import { Text } from './Typography';
 import { Lock } from 'lucide-react-native';
@@ -119,7 +120,7 @@ export default function AppLockGate({ children, onLogout }) {
     return () => sub.remove();
   }, [enabled, checkFailed, runUnlock, runCheck]);
 
-  if (enabled === null) return null;         // brief boot check
+  if (enabled === null) return <BootSplash />; // brief boot check (no blank flash)
   if (!enabled || !locked) {
     // Unlocked → show the app, with a privacy cover when backgrounded.
     return (
@@ -131,6 +132,16 @@ export default function AppLockGate({ children, onLogout }) {
     );
   }
 
+  // Locked: keep the app mounted underneath so device-session / geofence
+  // checks finish while the MPIN is entered — no loading page after unlock.
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={{ flex: 1 }} pointerEvents="none" importantForAccessibility="no-hide-descendants">{children}</View>
+      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>{renderLock()}</View>
+    </View>
+  );
+
+  function renderLock() {
   if (pinMode && !checkFailed) {
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center' }}>
@@ -174,6 +185,7 @@ export default function AppLockGate({ children, onLogout }) {
       </Pressable>
     </View>
   );
+  }
 }
 
 // Opaque overlay shown while the app is backgrounded (iOS), so sensitive

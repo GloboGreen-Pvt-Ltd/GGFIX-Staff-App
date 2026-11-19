@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+
+# Expo / Metro / generated web output
+.expo/
+.expo-dist/
+.expo-web-*/
+dist/
+dist-*/
+web-build/
+
+# native (managed workflow regenerates these)
+/ios
+/android
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# logs and transient backups
+*.log
+*.bak
+
+# signing / keystores
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/

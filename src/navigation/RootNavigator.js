@@ -1,0 +1,122 @@
+import React, { useState, useEffect } from 'react';
+import { useDispatch } from 'react-redux';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { getSession, getToken, clearSession, setAuthExpiredHandler } from '../auth/session';
+import { logout } from '../api/auth';
+import { isJwtExpired } from '../api/client';
+import { setSession, clearSession as clearAuth } from '../store/authSlice';
+import LoginScreen from '../screens/LoginScreen';
+import TechnicianNavigator from './TechnicianNavigator';
+import GeofenceGate from '../components/GeofenceGate';
+import AppLockGate from '../components/AppLockGate';
+import DeviceSessionGate from '../security/DeviceSessionGate';
+import { clearLockPrefs } from '../auth/appLock';
+import BootSplash from '../components/BootSplash';
+import { notify } from '../components/confirm';
+
+// Keep the boot splash up long enough for its intro animation to play.
+const MIN_SPLASH_MS = 1600;
+// A storage read that hangs or fails must never keep the splash up forever:
+// it resolves to `fallback` after BOOT_TIMEOUT_MS (nothing is cleared).
+const BOOT_TIMEOUT_MS = 8000;
+const bounded = (promise, fallback) => Promise.race([
+  Promise.resolve().then(() => promise).catch((e) => { console.warn('[boot] storage read failed', e?.message || e); return fallback; }),
+  new Promise((r) => setTimeout(() => r(fallback), BOOT_TIMEOUT_MS)),
+]);
+
+const Stack = createNativeStackNavigator();
+
+// Employee app: customer accounts cannot use it. Any other authenticated
+// shop role (TECHNICIAN, SHOP_OWNER, etc.) lands on the technician stack
+// for now — owner-only screens can be layered in later.
+function isCustomerOnly(session) {
+  const roles = session?.roles || [];
+  if (!roles.length) return false;
+  return roles.every((r) => r === 'CUSTOMER');
+}
+
+export default function RootNavigator() {
+  const dispatch = useDispatch();
+  const [session, setSessionState] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // The token now lives in secure storage (not the persisted profile blob),
+    // so re-attach it to the in-memory session for the logged-in routing check.
+    // try/finally + bounded reads: the splash always ends, even when storage
+    // throws or hangs. A failed read only means "no session this launch" — the
+    // stored token is never cleared for it, so the next launch restores it.
+    (async () => {
+      try {
+        const [profile, token] = await Promise.all([
+          bounded(getSession(), null), bounded(getToken(), null), new Promise((r) => setTimeout(r, MIN_SPLASH_MS)),
+        ]);
+        // An expired stored token gets 403 from every service — start at Login instead.
+        if (token && isJwtExpired(token)) {
+          await bounded(clearSession(), null);
+          return;
+        }
+        const s = token ? { ...(profile || {}), accessToken: token } : profile;
+        setSessionState(s);
+        dispatch(setSession(s));
+      } catch (e) {
+        console.warn('[boot] session restore failed', e?.message || e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [dispatch]);
+
+  useEffect(() => {
+    setAuthExpiredHandler(() => {
+      // Several requests can fail at once; the toast slot shows this once.
+      notify('Session expired. Please log in again.', '', { type: 'warning' });
+      setSessionState(null);
+      dispatch(clearAuth());
+    });
+    return () => setAuthExpiredHandler(null);
+  }, [dispatch]);
+
+  const handleLogin = (newSession) => {
+    setSessionState(newSession);
+    dispatch(setSession(newSession));
+  };
+  // opts.quiet: the caller already showed its own confirmation (check-out).
+  const handleLogout = async (opts) => {
+    try { await logout(); } catch (_) {}
+    await clearSession();
+    await clearLockPrefs(); // unlock permissions belong to this employee only
+    setSessionState(null);
+    dispatch(clearAuth());
+    if (!opts?.quiet) notify('Logged out successfully', '', { type: 'success' });
+  };
+
+  if (loading) return <BootSplash />;
+
+  if (!session?.accessToken || isCustomerOnly(session)) {
+    if (isCustomerOnly(session)) {
+      // Clear the rejected customer session so the next login isn't blocked.
+      clearSession();
+    }
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Login">
+          {(props) => <LoginScreen {...props} onLogin={handleLogin} />}
+        </Stack.Screen>
+      </Stack.Navigator>
+    );
+  }
+
+  // Geofence gate wraps the whole authenticated app so the location check runs
+  // right after login — out of the shop's 100m range shows a blocking lock
+  // screen instead of the technician stack.
+  return (
+    <AppLockGate onLogout={handleLogout}>
+      <DeviceSessionGate onLogout={handleLogout}>
+        <GeofenceGate onLogout={handleLogout}>
+          <TechnicianNavigator session={session} onLogout={handleLogout} />
+        </GeofenceGate>
+      </DeviceSessionGate>
+    </AppLockGate>
+  );
+}

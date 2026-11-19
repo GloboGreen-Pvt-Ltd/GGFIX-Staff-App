@@ -1,0 +1,111 @@
+// Use your computer's IP when running on a physical device so the app can reach your backend.
+// Run: set EXPO_PUBLIC_API_HOST=192.168.1.5  (then npx expo start)
+// Or create .env with EXPO_PUBLIC_API_HOST=192.168.1.5
+const host = process.env.EXPO_PUBLIC_API_HOST || null;
+
+export default {
+  expo: {
+    name: 'Employee',
+    slug: 'neargfix-employee',
+    // EAS account/organization that owns the project (from your Expo dashboard).
+    // Verify this matches expo.dev → your account. Change if different.
+    owner: 'globogreen-system-and-technology-private-limited',
+    version: '1.0.0',
+    // OTA (EAS Update): updates download in the background on launch and apply on
+    // the next cold start (fallbackToCacheTimeout 0) - no mid-session reloads.
+    runtimeVersion: { policy: 'appVersion' },
+    updates: {
+      url: 'https://u.expo.dev/' + (process.env.EAS_PROJECT_ID || '3f39a0fb-1c52-43c8-a321-646e9a94a98a'),
+      checkAutomatically: 'ON_LOAD',
+      fallbackToCacheTimeout: 0,
+    },
+    platforms: ['ios', 'android', 'web'],
+    orientation: 'portrait',
+    userInterfaceStyle: 'automatic',
+    jsEngine: 'hermes',
+    icon: './assets/logo.png',
+    splash: { image: './assets/logo.png', resizeMode: 'contain', backgroundColor: '#F3F4F6' },
+    ios: {
+      supportsTablet: true,
+      // iPad: the app is portrait-locked, and an iPad app that doesn't support
+      // every orientation must opt out of Split View / Slide Over
+      // (UIRequiresFullScreen) or App Store validation rejects the build.
+      requireFullScreen: true,
+      bundleIdentifier: 'com.neargfix.employee',
+      infoPlist: {
+        NSAppTransportSecurity: { NSAllowsArbitraryLoads: true },
+      },
+    },
+    android: {
+      package: 'com.neargfix.employee',
+      // No adb/cloud backup of app data (session profile, cached jobs).
+      allowBackup: false,
+      // Firebase (project "neargfix") — needed for Android push (FCM).
+      // EAS: secret file env var GOOGLE_SERVICES_JSON (the JSON is not in git);
+      // local builds fall back to the untracked ./google-services.json.
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || './google-services.json',
+      adaptiveIcon: { foregroundImage: './assets/logo.png', backgroundColor: '#202124' },
+      // Checkout SOS alarm: exact timing at 6:30 PM + survive reboot.
+      permissions: ['SCHEDULE_EXACT_ALARM', 'RECEIVE_BOOT_COMPLETED', 'VIBRATE', 'POST_NOTIFICATIONS'],
+      // Pickup reminder map (react-native-maps). Expo Go has its own key; dev /
+      // release builds need a Maps SDK for Android key (EAS env, never in git).
+      ...(process.env.GOOGLE_MAPS_ANDROID_API_KEY ? { config: { googleMaps: { apiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY } } } : {}),
+    },
+    plugins: [
+      // Checkout SOS alarm sound (src/utils/checkoutAlarm.js), bundled as a native resource.
+      ['expo-notifications', { sounds: ['./assets/sounds/sos_alarm.wav'], color: '#D32F2F' }],
+      // Required config plugins for these modules as of Expo SDK 58.
+      'expo-asset',
+      'expo-font',
+      'expo-sharing',
+      'expo-status-bar',
+      // Voice notes on the ticket detail screen (record + playback).
+      ['expo-audio', { microphonePermission: 'We use the microphone to record voice notes on repair tickets.' }],
+      // Keychain/Keystore-backed storage for the auth token (see src/auth/session.js).
+      'expo-secure-store',
+      ['expo-local-authentication', { faceIDPermission: 'Use Face ID to unlock NearGFix.' }],
+      // Live camera for scanning ticket QR slips (Home header scan icon).
+      ['expo-camera', { cameraPermission: 'We use your camera to scan ticket QR slips and open the job.' }],
+      // The bare `android.usesCleartextTraffic` key is NOT read by Expo prebuild —
+      // cleartext HTTP must be enabled via expo-build-properties or the release APK blocks it.
+      [
+        'expo-build-properties',
+        {
+          android: {
+            // Only LAN dev (EXPO_PUBLIC_API_HOST) talks plain http; EAS builds are https-only.
+            usesCleartextTraffic: !!host,
+            // Ship native libraries for real phones only (arm64-v8a). This drops the
+            // emulator-only ABIs (x86/x86_64) and old 32-bit devices (armeabi-v7a),
+            // shrinking the universal APK from ~114MB to ~50MB. buildArchs writes
+            // `reactNativeArchitectures` into gradle.properties.
+            buildArchs: ['arm64-v8a'],
+            // R8: shrink + optimize + obfuscate code, drop unused resources (release only).
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+            // SDK 58 template enables R8 in release. Room finds WorkManager's DB by
+            // reflection (WorkDatabase_Impl); without these keeps R8 strips/renames it
+            // and androidx.startup crashes before React Native starts.
+            extraProguardRules: [
+              '-keep class * extends androidx.room.RoomDatabase { <init>(); }',
+              '-keep class androidx.work.impl.WorkDatabase_Impl { *; }',
+              '-keep class androidx.work.** { *; }',
+              '-keep class androidx.room.** { *; }',
+              '-keep class androidx.startup.** { *; }',
+              '-keep class * implements androidx.startup.Initializer { <init>(); }',
+            ].join('\n'),
+          },
+        },
+      ],
+    ],
+    extra: {
+      API_HOST: host,
+      // Required for EAS builds. Get this value by running `npx eas init`
+      // (it prints the ID), or copy it from expo.dev → your project → settings.
+      eas: {
+        projectId:
+          process.env.EAS_PROJECT_ID ||
+          '3f39a0fb-1c52-43c8-a321-646e9a94a98a',
+      },
+    },
+  },
+};

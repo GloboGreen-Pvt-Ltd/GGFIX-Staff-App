@@ -1,0 +1,579 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Text, TextInput } from '../components/Typography';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  ArrowLeft, ArrowRight, CalendarCheck, Phone, Settings, ShieldCheck, Smartphone, Truck, Wrench,
+} from 'lucide-react-native';
+import { mpinLogin } from '../api/auth';
+import { AUTH_BASE } from '../api/config';
+import { rf, rlh, rs } from '../utils/responsive';
+import { normalizeIndianMobile } from '../utils/mobile';
+import { logProfileDebug } from '../utils/profileDebug';
+import BrandMark from '../components/BrandMark';
+import { notify } from '../components/confirm';
+import { userMessage } from '../utils/userMessages';
+
+/**
+ * Employee sign-in: registered mobile number → 6-digit Login MPIN set by the
+ * shop owner in the Partner App. No OTP, password or self-registration.
+ * Two steps live in this one screen because RootNavigator mounts a single
+ * "Login" screen while logged out.
+ *
+ *   POST /auth/employee/mpin-login { mobile, mpin } — server enforces
+ *   account/shop status and a 5-try / 15-minute lockout.
+ */
+
+const OTP_LENGTH = 6; // MPIN length
+const MOBILE_DIGITS = 10;
+
+// Server reason codes → clear, non-revealing messages.
+function mpinErrorText(e) {
+  if (e?.code === 'DEVICE_APPROVAL_REQUIRED') return e.message;
+  const m = String(e?.serverMessage || e?.message || '');
+  if (/disabled|inactive/i.test(m)) return m;
+  const left = m.match(/WRONG_PIN:(\d+)/);
+  if (left) return `Incorrect MPIN. ${left[1]} attempt${left[1] === '1' ? '' : 's'} left.`;
+  if (/PIN_LOCKED/.test(m)) return 'Too many wrong attempts. Try again after 15 minutes.';
+  if (/MPIN_NOT_SET/.test(m)) return 'MPIN not set. Ask your shop owner to set your Login MPIN.';
+  if (/inactive/i.test(m)) return m;
+  if (e?.status === 400 || e?.status === 401) return 'Invalid mobile number or MPIN.';
+  return null;
+}
+
+// Brand palette: green, red, yellow, ink + light neutrals (same as Home).
+const GREEN = '#035C6C';
+const GREEN_DARK = '#024A57';
+const RED = '#F32C26';
+const YELLOW = '#FAA700';
+const INK = '#111111';
+const BG = '#F3F4F6';
+const GREEN_TINT = '#E5F3F5';
+const RED_TINT = '#FEECEC';
+const YELLOW_TINT = '#FDF6E0';
+const TEXT = INK;
+const MUTED = '#6B7280';
+const BORDER = '#E5E7EB';
+const MAX_WIDTH = 480;
+
+export default function LoginScreen({ onLogin }) {
+  const insets = useSafeAreaInsets();
+  const [step, setStep] = useState('MOBILE'); // MOBILE | OTP (= MPIN step)
+  const [mobile, setMobile] = useState('');
+  const [otp, setOtp] = useState(''); // MPIN digits
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const shownError = error;
+  const otpRef = useRef(null);
+  // Guards the auto-submit that fires when the 6th digit lands, so a slow
+  // request can't be double-sent by another keystroke (or by paste + tap).
+  const verifyingRef = useRef(false);
+
+  /**
+   * Only surface internal host/URL topology (AUTH_BASE, tried URL) in dev
+   * builds — leaking the backend IP/port map to end users aids attackers and
+   * adds nothing for them. Production shows a generic, non-revealing message.
+   */
+  const describeError = (e, fallback) => {
+    if (__DEV__ && /localhost|127\.0\.0\.1/.test(String(e?.diagnostic || ''))) {
+      return `Can't reach server (trying localhost). Current AUTH_BASE: ${AUTH_BASE}. Restart Expo with EXPO_PUBLIC_API_HOST=YOUR_PC_IP.`;
+    }
+    return userMessage(e, fallback);
+  };
+  // Mobile step: validate locally only (no OTP, no account-existence probe).
+  const sendOtp = () => {
+    setError(null);
+    const normalized = normalizeIndianMobile(mobile);
+    if (!normalized) {
+      setError(`Enter your ${MOBILE_DIGITS}-digit mobile number`);
+      return;
+    }
+    if (normalized !== mobile) setMobile(normalized);
+    setStep('OTP');
+  };
+
+  const verify = async (code) => {
+    const entered = (code ?? otp).trim();
+    setError(null);
+    if (entered.length !== OTP_LENGTH) {
+      setError(`Enter your ${OTP_LENGTH}-digit MPIN`);
+      return;
+    }
+    if (verifyingRef.current) return;
+    verifyingRef.current = true;
+    setError(null);
+    try {
+      setLoading(true);
+      const data = await mpinLogin(mobile, entered);
+      logProfileDebug('login ok', {
+        enteredMobile: mobile,
+        loginResponse: {
+          userId: data?.userId ?? null,
+          shopId: data?.shopId ?? null,
+          roles: data?.roles ?? null,
+          roleLabel: data?.roleLabel ?? null,
+          mobile: data?.mobile ?? null,
+          email: data?.email ?? null,
+          technicianId: data?.technicianId ?? null,
+          keys: data ? Object.keys(data) : [],
+        },
+      });
+      notify('Logged in successfully', '', { type: 'success' });
+      onLogin(data);
+    } catch (e) {
+      const text = mpinErrorText(e) || describeError(e, 'Authentication failed');
+      setError(text);
+      notify(text, '', { type: 'error' });
+      // Wrong MPIN → wipe the boxes and re-focus so the retry is one action.
+      // A network/server failure keeps the digits.
+      if (e?.status === 401 || e?.status === 403) {
+        setOtp('');
+        otpRef.current?.focus();
+      }
+    } finally {
+      verifyingRef.current = false;
+      setLoading(false);
+    }
+  };
+
+  const backToMobile = () => {
+    setStep('MOBILE');
+    setError(null);
+  };
+
+  const { width: winW } = useWindowDimensions();
+  const contentW = Math.min(winW, MAX_WIDTH) - rs(40);
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.page}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <Backdrop />
+      <ScrollView
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingTop: insets.top + rs(16), paddingBottom: insets.bottom + rs(20) },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={false}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={{ width: contentW }}>
+          {step === 'MOBILE' ? (
+            <MobileStep
+              mobile={mobile}
+              setMobile={setMobile}
+              loading={loading}
+              error={shownError}
+              onSubmit={sendOtp}
+              wide={contentW >= 340}
+            />
+          ) : step === 'MPIN' ? (
+            <View style={{ backgroundColor: '#FFFFFF', borderRadius: rs(18), paddingVertical: rs(20), paddingHorizontal: rs(8) }}>
+              <PinPad
+                key={pinKey}
+                title="Enter Login MPIN"
+                subtitle={`+91 ${mobile} · set by your shop owner`}
+                error={error}
+                busy={loading}
+                onComplete={submitMpin}
+                footer={(
+                  <View style={{ alignItems: 'center', marginTop: rs(10) }}>
+                    <Pressable onPress={backToMobile} hitSlop={8}><Text style={{ color: PIN_C.primary, fontWeight: '700', fontSize: rf(13) }}>Change number</Text></Pressable>
+                    <Text style={{ color: PIN_C.muted, fontSize: rf(12), marginTop: rs(8), textAlign: 'center' }}>Forgot MPIN? Ask your shop owner to reset it.</Text>
+                  </View>
+                )}
+              />
+            </View>
+          ) : (
+            <OtpStep
+              mobile={mobile}
+              otp={otp}
+              otpRef={otpRef}
+              onOtpChange={onOtpChange}
+              onSubmit={() => verify()}
+              onBack={backToMobile}
+              loading={loading}
+              error={shownError}
+            />
+          )}
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+/* --------------------------------------------------------------- backdrop */
+
+// Soft green shapes in the corners — decorative only.
+function Backdrop() {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={[styles.blob, { top: -rs(80), right: -rs(90), width: rs(300), height: rs(300), backgroundColor: '#EAF7EC' }]} />
+      <View style={[styles.blob, { top: rs(40), left: -rs(120), width: rs(220), height: rs(220), backgroundColor: '#F1F8F2' }]} />
+      <View style={[styles.blob, { bottom: -rs(110), left: -rs(80), width: rs(220), height: rs(220), backgroundColor: '#E5F3F5' }]} />
+      <View style={[styles.blob, { bottom: -rs(60), left: -rs(30), width: rs(130), height: rs(130), backgroundColor: '#E5F3F5', opacity: 0.55 }]} />
+      <View style={[styles.blob, { bottom: -rs(110), right: -rs(80), width: rs(220), height: rs(220), backgroundColor: '#E5F3F5' }]} />
+      <View style={[styles.blob, { bottom: -rs(60), right: -rs(30), width: rs(130), height: rs(130), backgroundColor: '#E5F3F5', opacity: 0.55 }]} />
+    </View>
+  );
+}
+
+// Repair-themed illustration built from shapes + icons (no image assets):
+// a phone showing the logo on a pedestal, with wrench / phone / gear badges.
+function HeroArt({ size }) {
+  const phoneW = size * 0.46;
+  const phoneH = phoneW * 1.9;
+  const badge = size * 0.27;
+  return (
+    <View pointerEvents="none" style={{ width: size, height: size * 1.12 }}>
+      <View style={[styles.blob, { top: size * 0.02, right: -size * 0.1, width: size * 0.95, height: size * 0.95, backgroundColor: GREEN_TINT }]} />
+      <View style={[styles.blob, { top: size * 0.38, left: size * 0.02, width: size * 0.5, height: size * 0.5, backgroundColor: YELLOW_TINT }]} />
+      {/* pedestal */}
+      <View style={{ position: 'absolute', bottom: size * 0.02, left: size * 0.16, width: size * 0.78, height: size * 0.16, borderRadius: size * 0.4, backgroundColor: '#FFFFFF', shadowColor: INK, shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 4 }} />
+      {/* phone */}
+      <View style={{
+        position: 'absolute', bottom: size * 0.1, right: size * 0.16, width: phoneW, height: phoneH,
+        borderRadius: phoneW * 0.2, backgroundColor: INK, padding: phoneW * 0.06, transform: [{ rotate: '10deg' }],
+        shadowColor: INK, shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 4, height: 8 }, elevation: 6,
+      }}>
+        <LinearGradient colors={['#E5F3F5', '#E5F3F5']} style={{ flex: 1, borderRadius: phoneW * 0.15, alignItems: 'center', justifyContent: 'center' }}>
+          <Image source={require('../../assets/logo.png')} style={{ width: phoneW * 0.6, height: phoneW * 0.6 }} resizeMode="contain" />
+        </LinearGradient>
+      </View>
+      {/* badges */}
+      <View style={[styles.badge, { width: badge, height: badge, borderRadius: badge / 2, top: size * 0.06, left: size * 0.04, backgroundColor: RED }]}>
+        <Wrench size={badge * 0.46} color="#FFFFFF" strokeWidth={2.4} />
+      </View>
+      <View style={[styles.badge, { width: badge, height: badge, borderRadius: badge / 2, top: size * 0.42, right: -size * 0.04, backgroundColor: YELLOW }]}>
+        <Smartphone size={badge * 0.46} color="#FFFFFF" strokeWidth={2.4} />
+      </View>
+      <View style={{ position: 'absolute', bottom: size * 0.08, right: size * 0.02 }}>
+        <Settings size={size * 0.26} color={GREEN_DARK} fill={GREEN} strokeWidth={1.6} />
+      </View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ step 1 */
+
+function MobileStep({ mobile, setMobile, loading, error, onSubmit, wide }) {
+  const art = wide ? rs(170) : rs(130);
+  return (
+    <View>
+      {/* Hero: logo + heading on the left, illustration on the right */}
+      <View style={styles.hero}>
+        <View style={{ position: 'absolute', right: -rs(6), top: 0 }}>
+          <HeroArt size={art} />
+        </View>
+        <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+        <Text style={styles.h1}>
+          Login with{'\n'}
+          <Text style={{ color: GREEN }}>mobile number</Text>
+        </Text>
+        <Text style={styles.sub}>Welcome to NearGFix Employee App</Text>
+      </View>
+
+      {/* Login card */}
+      <View style={styles.card}>
+        <Text style={styles.label}>Mobile number</Text>
+        <View style={styles.numberCard}>
+          <Phone size={rs(19)} color={MUTED} strokeWidth={2} />
+          <View style={styles.inputDivider} />
+          <TextInput
+            value={mobile}
+            onChangeText={(v) => setMobile(v.replace(/[^\d+]/g, '').slice(0, 13))}
+            placeholder="9876543210"
+            placeholderTextColor="#A3A3A3"
+            keyboardType="number-pad"
+            maxLength={16}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={onSubmit}
+            style={styles.numberInput}
+          />
+        </View>
+
+        <ErrorBox msg={error} />
+
+        <PrimaryButton label="LOGIN" loading={loading} onPress={onSubmit} />
+
+        <View style={styles.orRow}>
+          <View style={styles.orLine} />
+          <Text style={styles.orText}>STAFF ONLY</Text>
+          <View style={styles.orLine} />
+        </View>
+        <Text style={styles.cardNote}>
+          For <Text style={styles.cardNoteStrong}>Technician · Pickup Person · Staff</Text> accounts
+        </Text>
+      </View>
+
+      {/* Feature row */}
+      <View style={styles.features}>
+        <Feature icon={CalendarCheck} bg={GREEN_TINT} fg={GREEN} label={'Mark\nattendance'} />
+        <View style={styles.featureDivider} />
+        <Feature icon={Truck} bg={YELLOW_TINT} fg="#FAA700" label={'Manage\npickups'} />
+        <View style={styles.featureDivider} />
+        <Feature icon={ShieldCheck} bg={RED_TINT} fg={RED} label={'Trusted\n& secure'} />
+      </View>
+
+      <Text style={styles.footnote}>
+        Customers should use the Globo Green customer app.
+      </Text>
+    </View>
+  );
+}
+
+function Feature({ icon: Icon, bg, fg, label }) {
+  const dot = rs(48);
+  return (
+    <View style={styles.feature}>
+      <View style={{ width: dot, height: dot, borderRadius: dot / 2, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={rs(22)} color={fg} strokeWidth={2.2} />
+      </View>
+      <Text style={styles.featureText}>{label}</Text>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ step 2 */
+
+function OtpStep({
+  mobile, otp, otpRef, onOtpChange, onSubmit, onBack, loading, error,
+}) {
+  const boxes = Array.from({ length: OTP_LENGTH });
+
+  return (
+    <View>
+      <Pressable onPress={onBack} hitSlop={12} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Back">
+        <ArrowLeft size={rs(20)} color={TEXT} />
+      </Pressable>
+
+      <BrandMark size={80} />
+      <Text style={[styles.h1Center, { marginTop: rs(16) }]}>
+        Enter <Text style={{ color: GREEN }}>MPIN</Text>
+      </Text>
+      <Text style={styles.subCenter}>Enter the {OTP_LENGTH}-digit MPIN set by your shop owner for</Text>
+      <View style={styles.phonePill}>
+        <Phone size={rs(16)} color={MUTED} strokeWidth={2.2} />
+        <Text style={styles.phonePillText}>{mobile}</Text>
+        <TouchableOpacity onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel="Edit number">
+          <Text style={styles.phonePillEdit}>Edit</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.card}>
+        {/* The visible boxes are display-only; one transparent input sits on top
+            of the whole row so backspace, paste and SMS autofill all behave like
+            a normal single field instead of six that fight over focus. */}
+        <Pressable onPress={() => otpRef.current?.focus()} style={styles.otpWrap}>
+          <View style={styles.otpRow} pointerEvents="none">
+          {boxes.map((_, i) => {
+            const char = otp[i] || '';
+            const active = otp.length === i;
+            return (
+              <View key={i} style={[styles.otpBox, active && styles.otpBoxActive]}>
+                <Text style={char ? styles.otpChar : styles.otpCharEmpty}>{char ? '•' : ''}</Text>
+              </View>
+            );
+          })}
+          </View>
+          {/* Outside the box row and absolutely positioned, so typed digits can
+              never give it width and squeeze/shift the boxes. */}
+          <TextInput
+            ref={otpRef}
+            value={otp}
+            onChangeText={onOtpChange}
+            keyboardType="number-pad"
+            maxLength={OTP_LENGTH}
+            autoFocus
+            caretHidden
+            contextMenuHidden
+            scrollEnabled={false}
+            textContentType="none"
+            autoComplete="off"
+            secureTextEntry
+            style={styles.otpHiddenInput}
+          />
+        </Pressable>
+
+        <ErrorBox msg={error} />
+
+        <PrimaryButton label="LOGIN" loading={loading} onPress={onSubmit} />
+
+        <View style={styles.resendRow}>
+          <Text style={styles.resendMuted}>Forgot MPIN? Ask your shop owner to reset it.</Text>
+        </View>
+      </View>
+
+      <View style={styles.safeCard}>
+        <View style={styles.safeIcon}>
+          <ShieldCheck size={rs(20)} color={GREEN} strokeWidth={2.2} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.safeTitle}>Your MPIN is never shown or shared</Text>
+          <Text style={styles.safeSub}>Stored securely and verified only by the server</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------- parts */
+
+function PrimaryButton({ label, loading, onPress }) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={loading}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      activeOpacity={0.9}
+      style={[styles.cta, loading && { opacity: 0.75 }]}
+    >
+      <LinearGradient colors={['#035C6C', GREEN, GREEN_DARK]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.ctaInner}>
+        {loading ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <>
+            <Text style={styles.ctaText}>{label}</Text>
+            <ArrowRight size={rs(20)} color="#FFFFFF" strokeWidth={2.4} />
+          </>
+        )}
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+function ErrorBox({ msg }) {
+  if (!msg) return null;
+  return (
+    <View style={styles.errorBox}>
+      <Text style={styles.errorText}>{msg}</Text>
+    </View>
+  );
+}
+
+const cardShadow = {
+  shadowColor: INK, shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5,
+};
+
+const styles = StyleSheet.create({
+  page: { flex: 1, backgroundColor: BG },
+  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
+  scrollTop: { justifyContent: 'flex-start' },
+  blob: { position: 'absolute', borderRadius: 9999 },
+  badge: {
+    position: 'absolute', alignItems: 'center', justifyContent: 'center',
+    shadowColor: INK, shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4,
+  },
+
+  // The PNG is a teal roundel on an opaque white square canvas, so `contain`
+  // keeps the whole mark visible without cropping.
+  logo: { height: rs(96), width: rs(96), marginBottom: rs(18) },
+
+  hero: { minHeight: rs(250), justifyContent: 'flex-end', paddingBottom: rs(4) },
+  h1: { fontSize: rf(30), lineHeight: rlh(37), fontWeight: '900', color: TEXT, letterSpacing: -0.4 },
+  h1Center: { fontSize: rf(28), lineHeight: rlh(34), fontWeight: '900', color: TEXT, textAlign: 'center' },
+  sub: { fontSize: rf(14.5), lineHeight: rlh(20), color: MUTED, marginTop: rs(6) },
+  subCenter: { fontSize: rf(14), lineHeight: rlh(20), color: MUTED, textAlign: 'center', marginTop: rs(6) },
+
+  card: {
+    marginTop: rs(22), backgroundColor: '#FFFFFF', borderRadius: rs(26),
+    paddingHorizontal: rs(18), paddingVertical: rs(20), ...cardShadow,
+  },
+  label: { fontSize: rf(13.5), color: MUTED, marginBottom: rs(8), marginLeft: rs(2) },
+  numberCard: {
+    flexDirection: 'row', alignItems: 'center',
+    height: rs(56), paddingHorizontal: rs(16), borderRadius: rs(16),
+    borderWidth: 1, borderColor: BORDER, backgroundColor: '#FFFFFF',
+  },
+  inputDivider: { width: 1, height: rs(24), backgroundColor: BORDER, marginHorizontal: rs(14) },
+  numberInput: { flex: 1, fontSize: rf(17), fontWeight: '600', color: TEXT, padding: 0, letterSpacing: 0.5 },
+
+  orRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(20) },
+  orLine: { flex: 1, height: 1, backgroundColor: BORDER },
+  orText: { fontSize: rf(11.5), fontWeight: '700', color: MUTED, marginHorizontal: rs(12), letterSpacing: 1 },
+  cardNote: { fontSize: rf(13), color: TEXT, textAlign: 'center', marginTop: rs(10) },
+  cardNoteStrong: { fontWeight: '800', color: GREEN_DARK },
+
+  features: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', marginTop: rs(22) },
+  feature: { flex: 1, alignItems: 'center' },
+  featureDivider: { width: 1, height: rs(46), backgroundColor: BORDER, marginTop: rs(10) },
+  featureText: { fontSize: rf(13), lineHeight: rlh(17), color: TEXT, textAlign: 'center', marginTop: rs(8) },
+
+  backBtn: {
+    alignSelf: 'flex-start', height: rs(42), width: rs(42), borderRadius: rs(21), alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#FFFFFF', marginBottom: rs(12), ...cardShadow,
+  },
+
+  otpWrap: { position: 'relative' },
+  otpRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  otpBox: {
+    flexGrow: 1,
+    flexShrink: 0,
+    flexBasis: 0,
+    height: rs(56),
+    marginHorizontal: rs(4),
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: rs(14),
+    // Fixed 2px border for every box so the active highlight never changes size.
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F7F7F7',
+    shadowColor: INK, shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+  },
+  otpBoxActive: { borderColor: GREEN, backgroundColor: '#FFFFFF' },
+  otpChar: { fontSize: rf(20), fontWeight: '800', color: TEXT },
+  otpCharEmpty: { fontSize: rf(20), fontWeight: '700', color: '#CFCFCF' },
+  otpHiddenInput: {
+    position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+    opacity: 0, color: 'transparent', padding: 0, fontSize: 1,
+  },
+
+  note: { fontSize: rf(12.5), color: GREEN_DARK, fontWeight: '600', marginTop: rs(12), textAlign: 'center' },
+
+  cta: {
+    height: rs(56), borderRadius: 999, marginTop: rs(18), overflow: 'hidden',
+    shadowColor: GREEN, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6,
+  },
+  ctaInner: { flex: 1, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  ctaText: { color: '#FFFFFF', fontSize: rf(16), fontWeight: '900', letterSpacing: 2, marginRight: rs(12) },
+
+  phonePill: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'center', marginTop: rs(10),
+    backgroundColor: '#FFFFFF', borderRadius: rs(14), borderWidth: 1, borderColor: BORDER,
+    paddingHorizontal: rs(14), height: rs(44), minWidth: rs(230),
+    shadowColor: INK, shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
+  },
+  phonePillText: { flex: 1, fontSize: rf(15), fontWeight: '600', color: TEXT, marginLeft: rs(10), letterSpacing: 0.5 },
+  phonePillEdit: { fontSize: rf(13.5), fontWeight: '800', color: GREEN_DARK, marginLeft: rs(12) },
+  safeCard: {
+    flexDirection: 'row', alignItems: 'center', marginTop: rs(18), backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: rs(18), borderWidth: 1, borderColor: '#EEF2EE', paddingHorizontal: rs(14), paddingVertical: rs(12),
+  },
+  safeIcon: { width: rs(40), height: rs(40), borderRadius: rs(20), backgroundColor: GREEN_TINT, alignItems: 'center', justifyContent: 'center', marginRight: rs(12) },
+  safeTitle: { fontSize: rf(13.5), fontWeight: '800', color: TEXT },
+  safeSub: { fontSize: rf(11.5), color: MUTED, marginTop: 2 },
+  resendRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: rs(18) },
+  resendMuted: { fontSize: rf(13), color: MUTED },
+  resendLink: { fontSize: rf(13), fontWeight: '800', color: GREEN_DARK },
+
+  resendLinkOff: { color: MUTED, fontWeight: '600' },
+
+  footnote: { fontSize: rf(11.5), lineHeight: rlh(16), color: MUTED, textAlign: 'center', marginTop: rs(18) },
+
+  errorBox: {
+    marginTop: rs(12),
+    borderRadius: rs(12),
+    borderWidth: 1,
+    borderColor: 'rgba(248,65,65,0.35)',
+    backgroundColor: RED_TINT,
+    paddingHorizontal: rs(12),
+    paddingVertical: rs(9),
+  },
+  errorText: { fontSize: rf(12.5), lineHeight: rlh(17), color: '#F32C26' },
+});

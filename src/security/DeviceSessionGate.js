@@ -63,7 +63,7 @@ export default function DeviceSessionGate({ children, onLogout }) {
     return (
       <View style={{ flex: 1 }}>
         {children}
-        <TpinSheet session={session} tpinSet={!!status?.tpinSet} onTpinCreated={() => loadStatus().catch(() => {})} />
+        <TpinSheet session={session} tpinSet={!!status?.tpinSet} onTpinCreated={() => loadStatus().catch(() => {})} refreshStatus={loadStatus} />
       </View>
     );
   }

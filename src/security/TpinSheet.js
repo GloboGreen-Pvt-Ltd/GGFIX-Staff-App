@@ -2,7 +2,7 @@
 // session is open: protected requests pause here, get a single-use
 // authorization, then continue. One sheet at a time (no duplicate modals).
 import React, { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import PinPad, { C } from './SecurityPinPad';
@@ -16,7 +16,7 @@ const ACTION_LABEL = {
   PAYMENT: 'Confirm payment', SELL_CONFIRM: 'Confirm sell transaction', BUY_ORDER: 'Confirm buy order',
 };
 
-export default function TpinSheet({ session, tpinSet, onTpinCreated }) {
+export default function TpinSheet({ session, tpinSet, onTpinCreated, refreshStatus }) {
   const insets = useSafeAreaInsets();
   const [req, setReq] = useState(null); // { action, method, path }
   const [mode, setMode] = useState('verify');
@@ -26,16 +26,35 @@ export default function TpinSheet({ session, tpinSet, onTpinCreated }) {
   const pending = useRef(null);
   const hasTpin = useRef(tpinSet);
   hasTpin.current = tpinSet;
+  const refreshRef = useRef(refreshStatus);
+  refreshRef.current = refreshStatus;
+
+  // Backend is the source of truth: re-check TPIN status before every protected
+  // action. A failed status call must never be read as "no TPIN" (that opened
+  // Create TPIN for employees who already had one) — show Retry instead.
+  const resolveMode = async () => {
+    if (!refreshRef.current) { setMode(hasTpin.current ? 'verify' : 'create'); return; }
+    setMode('loading'); setError(null);
+    try {
+      const st = await refreshRef.current();
+      if (typeof st?.tpinSet !== 'boolean') throw new Error('TPIN status unavailable');
+      setMode(st.tpinSet ? 'verify' : 'create');
+    } catch (e) {
+      setError(pinErrorMessage(e) || 'Could not check your Transaction PIN. Please retry.');
+      setMode('status-error');
+    }
+  };
 
   useEffect(() => {
     setTpinHandler((r) => new Promise((resolve, reject) => {
       if (pending.current) { reject(new Error('Another TPIN verification is in progress')); return; }
       pending.current = { resolve, reject };
       setError(null); setVerified(null); setBusy(false);
-      setMode(hasTpin.current ? 'verify' : 'create');
       setReq(r);
+      resolveMode();
     }));
     return () => setTpinHandler(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const finish = (token, err) => {
@@ -82,8 +101,19 @@ export default function TpinSheet({ session, tpinSet, onTpinCreated }) {
               <Ionicons name="checkmark-circle" size={44} color={C.primary} />
               <Text style={{ marginTop: 8, fontSize: 15, fontWeight: '800', color: C.text }}>Verified: {verified}</Text>
             </View>
+          ) : mode === 'loading' ? (
+            <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+              <ActivityIndicator color={C.primary} />
+            </View>
+          ) : mode === 'status-error' ? (
+            <View style={{ alignItems: 'center', alignSelf: 'stretch', paddingVertical: 20 }}>
+              <Text style={{ color: C.error, textAlign: 'center' }}>{error}</Text>
+              <Pressable onPress={resolveMode} style={{ alignSelf: 'stretch', height: 46, borderRadius: 14, marginTop: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: C.primary }}>
+                <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 14 }}>Retry</Text>
+              </Pressable>
+            </View>
           ) : mode === 'create' ? (
-            <NewPinFlow type="TPIN" subtitle="Set your permanent Transaction PIN once" onDone={() => { onTpinCreated?.(); setMode('verify'); }} />
+            <NewPinFlow type="TPIN" subtitle="Set your permanent Transaction PIN once" onDone={() => { onTpinCreated?.(); resolveMode(); }} />
           ) : mode === 'reset' ? (
             <ResetPinFlow type="TPIN" session={session} onDone={() => setMode('verify')} onCancel={() => setMode('verify')} />
           ) : (

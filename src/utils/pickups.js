@@ -156,7 +156,8 @@ export function nextStatusFor(currentStatus, kind) {
     return { code: 'REACHED_SHOP', label: 'Reached Shop', action: 'reached' };
   }
   if (s === 'REACHED_SHOP') {
-    return { code: 'RECEIVED_AT_SHOP', label: 'Hand Over to Shop' };
+    // Completed only by the shop's TPIN confirmation (Partner App).
+    return { code: 'HANDOVER_REQUEST', label: 'Request Shop Handover', action: 'handover' };
   }
   return null;
 }

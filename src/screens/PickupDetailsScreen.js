@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, ScrollView, TouchableOpacity, ActivityIndicator, Image, RefreshControl, StyleSheet } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -12,7 +12,7 @@ import { JobHeader, DevicePhoto } from '../components/JobCardKit';
 import { callCustomer, openDirections } from '../components/PickupCard';
 import PickupProblemSheet from '../components/PickupProblemSheet';
 import PickupDeclineSheet from '../components/PickupDeclineSheet';
-import { getPickupRepairEstimate, listMyAssignedPickups } from '../api/pickups';
+import { getPickupRepairEstimate, getShopHandover, listMyAssignedPickups } from '../api/pickups';
 import usePickupAdvance from '../utils/usePickupAdvance';
 import {
   PICKUP_STEPS, stepsFor, actorLabel, awaitingAccept, canReportProblem, cancelInfo, customerPhone, deviceLabel, eventColor, eventLabel, fmtDay, fmtStamp,
@@ -44,6 +44,7 @@ export default function PickupDetailsScreen({ navigation, route }) {
   // The action bar waits for the first server read: the booking passed in
   // from the list can be stale, and a step worked out from it could be wrong.
   const [synced, setSynced] = useState(false);
+  const [handover, setHandover] = useState(null); // shop TPIN handover state
 
   const load = useCallback(async () => {
     if (!bookingId) { setLoading(false); return; }
@@ -57,6 +58,10 @@ export default function PickupDetailsScreen({ navigation, route }) {
         setSynced(true);
         // From the estimate step on — including once the shop has moved the
         // booking on to its repair statuses — read the saved estimate.
+        const fs = String(fresh.status || '').toUpperCase();
+        if (fresh.kind !== 'SELL' && (fs === 'REACHED_SHOP' || fs === 'RECEIVED_AT_SHOP')) {
+          getShopHandover(bookingId).then((h) => setHandover(h || null)).catch(() => {});
+        } else setHandover(null);
         if (fresh.kind !== 'SELL' && (isPastPickup(fresh.status) || stepIndex(fresh.status) >= STEP_FROM)) {
           getPickupRepairEstimate(bookingId).then((e) => setEstimate(e || null)).catch(() => {});
         }
@@ -71,6 +76,18 @@ export default function PickupDetailsScreen({ navigation, route }) {
   }, [bookingId]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const { advance, busyId } = usePickupAdvance({ navigation, onDone: load });
+  // Waiting on the shop: re-read the handover state every 5 s until it completes.
+  const waiting = handover?.state === 'PENDING' || handover?.state === 'IN_PROGRESS';
+  useEffect(() => {
+    if (!waiting || !bookingId) return undefined;
+    const t = setInterval(() => {
+      getShopHandover(bookingId).then((h) => {
+        setHandover(h || null);
+        if (h?.state === 'COMPLETED') load();
+      }).catch(() => {});
+    }, 5000);
+    return () => clearInterval(t);
+  }, [waiting, bookingId, load]);
 
   if (loading && !booking) {
     return (
@@ -133,7 +150,11 @@ export default function PickupDetailsScreen({ navigation, route }) {
   const stepAt = (status) => steps.findIndex((x) => x.codes.includes(String(status || '').toUpperCase()));
   // Past the pickup (shop repair statuses) = every pickup step done.
   const idx = isPastPickup(booking.status) ? steps.length - 1 : stepAt(booking.status);
-  const next = nextStepFor(booking);
+  const nextRaw = nextStepFor(booking);
+  const hState = handover?.state;
+  // Handover requested: the button re-sends the request (retry after a missed push).
+  const next = nextRaw?.action === 'handover' && hState === 'PENDING' ? { ...nextRaw, label: 'Resend Handover Request' }
+    : nextRaw?.action === 'handover' && hState === 'IN_PROGRESS' ? null : nextRaw;
   // Accepted but not started: Decline (back to the shop) instead of Unable to Pickup.
   const declineStep = serverAcceptance(booking) && stepIndex(booking.status) === 0;
   const cancel = cancelInfo(booking);
@@ -162,6 +183,34 @@ export default function PickupDetailsScreen({ navigation, route }) {
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={['#035C6C']} tintColor="#035C6C" />}>
         {error ? <Text style={s.error}>{error}</Text> : null}
+
+        {hState === 'PENDING' || hState === 'IN_PROGRESS' || hState === 'COMPLETED' ? (
+          <View style={[s.card, { borderColor: hState === 'COMPLETED' ? '#BBF7D0' : '#FDE68A', backgroundColor: hState === 'COMPLETED' ? '#F0FDF4' : '#FFFBEB' }]}>
+            <View style={s.row}>
+              {hState === 'COMPLETED' ? <Check size={rs(18)} color="#16A34A" strokeWidth={2.6} />
+                : hState === 'IN_PROGRESS' ? <ActivityIndicator size="small" color="#035C6C" /> : <Clock size={rs(18)} color="#B45309" strokeWidth={2.4} />}
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ fontSize: rf(13.5), fontWeight: '800', color: hState === 'COMPLETED' ? '#166534' : '#92400E' }}>
+                  {hState === 'COMPLETED' ? 'Handover Completed' : hState === 'IN_PROGRESS' ? 'Shop Confirmation in Progress' : 'Waiting for Shop Confirmation'}
+                </Text>
+                {hState === 'COMPLETED' ? (
+                  <>
+                    <Text style={s.muted}>Received By: <Text style={{ fontWeight: '800', color: '#111111' }}>{handover.verifiedByName || '—'}</Text></Text>
+                    <Text style={s.muted}>Role: {roleLabel(handover.verifiedRole) || '—'}</Text>
+                    <Text style={s.muted}>Verified: {handover.confirmedAt ? fmtHandoverAt(handover.confirmedAt) : '—'}</Text>
+                    {handover.shopName ? <Text style={s.muted}>Shop: {handover.shopName}</Text> : null}
+                  </>
+                ) : (
+                  <Text style={s.muted}>
+                    {hState === 'IN_PROGRESS'
+                      ? 'The shop is verifying with TPIN. This updates automatically.'
+                      : `Request sent${handover?.requestedAt ? ` · ${fmtHandoverAt(handover.requestedAt)}` : ''}. The Owner, Shop or a shop employee confirms with their TPIN in the Partner App.`}
+                  </Text>
+                )}
+              </View>
+            </View>
+          </View>
+        ) : null}
 
         {/* Device + status */}
         <View style={s.card}>
@@ -378,6 +427,12 @@ function Quick({ icon: Icon, label, color, onPress, disabled }) {
     </TouchableOpacity>
   );
 }
+
+const roleLabel = (r) => ({ OWNER: 'Owner', SHOP: 'Shop', EMPLOYEE: 'Employee' }[String(r || '').toUpperCase()] || r);
+const fmtHandoverAt = (v) => {
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+};
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F3F4F6' },

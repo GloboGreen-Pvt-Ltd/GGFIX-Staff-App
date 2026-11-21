@@ -1,202 +1,214 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, StyleSheet, View, useWindowDimensions } from 'react-native';
-import { Text } from './Typography';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Animated, Easing, Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle, Path } from 'react-native-svg';
-import { ClipboardCheck, Fingerprint, ShieldCheck } from 'lucide-react-native';
-import { rf, rs } from '../utils/responsive';
+import Svg, { Defs, LinearGradient as SvgGradient, Path, Rect, Stop } from 'react-native-svg';
+import { BriefcaseBusiness, CalendarCheck, ClipboardList, Coins, IndianRupee, MapPin, Package } from 'lucide-react-native';
+import { interFamily } from '../theme/typography';
 
 /**
  * Employee-app boot screen, shown by RootNavigator while the stored session is
  * restored. Visuals only — it owns no session, timer or navigation logic.
- * Layout follows the NearGFix brand splash: a deep-green header that curves into
- * a light page, device hero art across the curve, tagline, progress and a
- * trust row. Device art comes from the CDN so it can change without a release.
+ * Laid out on the 841×1870 brand mockup grid and scaled uniformly to the
+ * screen; the logo tile and hero art are cut from that mockup (assets/).
  */
-const DEVICE_URL = 'https://cdn.neargfix.com/GGFIX-Partner-App/Device.png';
+const DW = 841;
+const DH = 1870;
 
-// Warm the image cache as soon as this module loads (best-effort, never blocks).
-Image.prefetch(DEVICE_URL).catch(() => {});
+const PAGE_BG = '#FFFFFF';
+const TEAL = '#035C6C';
+const CYAN = '#00B8C6';
+const INK = '#181717';
+const GREEN = '#057A2C';
+const LIME = '#5BB531';
+const TILE_BG = '#EAF8F5';
 
-const PAGE_BG = '#F3F4F6';
-const GREEN = '#035C6C';
-const GREEN_BRIGHT = '#5CC8D7'; // "FIX" + ring on the dark header
-const GREEN_DEEP = '#024A57';
-const YELLOW = '#FAA700';
-const INK = '#111111';
-const MINT = '#E5F3F5';
+const font = (w) => {
+  const f = interFamily(w);
+  return f ? { fontFamily: f } : { fontWeight: String(w) };
+};
 
-const tierFor = (h) => (h < 700 ? 0 : h < 850 ? 1 : 2);
-
-function TrustItem({ icon: Icon, label, size, font }) {
-  return (
-    <View style={styles.trustItem}>
-      <View style={[styles.trustDisc, { width: size, height: size, borderRadius: size / 2 }]}>
-        <Icon size={size * 0.48} color={GREEN} strokeWidth={2.2} />
+const FEATURES = [
+  { cx: 143, label: 'Attendance', render: (z) => <CalendarCheck size={z} color="#03917C" strokeWidth={2.2} /> },
+  { cx: 335, label: 'Tasks', render: (z) => <ClipboardList size={z} color="#047F6B" strokeWidth={2.2} /> },
+  {
+    cx: 522,
+    label: 'Pickup',
+    render: (z) => (
+      <View>
+        <Package size={z} color="#0B6E7E" strokeWidth={2.1} />
+        <View style={{ position: 'absolute', right: -z * 0.22, bottom: -z * 0.12, backgroundColor: TILE_BG, borderRadius: z }}>
+          <MapPin size={z * 0.5} color="#16A34A" fill="#16A34A" strokeWidth={2} />
+        </View>
       </View>
-      <Text style={[styles.trustLabel, { fontSize: font, lineHeight: font * 1.3 }]}>{label}</Text>
-    </View>
-  );
-}
+    ),
+  },
+  {
+    cx: 708,
+    label: 'Salary',
+    render: (z) => (
+      <View>
+        <Coins size={z} color="#16A34A" strokeWidth={2.2} />
+        <View style={{ position: 'absolute', right: -z * 0.16, top: -z * 0.14, backgroundColor: '#16A34A', borderRadius: z, padding: z * 0.05 }}>
+          <IndianRupee size={z * 0.3} color="#FFFFFF" strokeWidth={3} />
+        </View>
+      </View>
+    ),
+  },
+];
 
 export default function BootSplash() {
-  const { width, height } = useWindowDimensions();
-  const t = tierFor(height);
-  const pick = (a, b, c) => [a, b, c][t];
-  const contentW = Math.min(width, 460);
-
-  const logo = rs(pick(78, 90, 100));
-  const titleFont = rf(pick(40, 46, 52));
-  const headerH = height * pick(0.5, 0.48, 0.47);
-  const [ratio, setRatio] = useState(0.62);
-  const deviceW = Math.min(contentW * 0.86, (height * pick(0.2, 0.23, 0.25)) / ratio);
+  const { width: W, height: H } = useWindowDimensions();
+  const s = Math.min(W / DW, H / DH);
+  const fx = (W - DW * s) / 2;
+  const fy = Math.max(0, (H - DH * s) / 2);
+  const box = (x, y, w, h) => ({ position: 'absolute', left: x * s, top: y * s, width: w * s, height: h * s });
+  const row = (cy, h) => ({ ...box(0, cy - h / 2, DW, h), alignItems: 'center', justifyContent: 'center' });
+  const txt = (size, weight, color, extra) => ({
+    ...font(weight), fontSize: size * s, lineHeight: size * 1.25 * s, color, includeFontPadding: false, ...extra,
+  });
 
   const fade = useRef(new Animated.Value(0)).current;
   const rise = useRef(new Animated.Value(0)).current;
   const bar = useRef(new Animated.Value(0)).current;
-  const glow = useRef(new Animated.Value(0.5)).current;
+  const [dots, setDots] = useState(3);
 
   useEffect(() => {
-    Animated.stagger(160, [
+    Animated.stagger(150, [
       Animated.timing(fade, { toValue: 1, duration: 450, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.timing(rise, { toValue: 1, duration: 520, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(rise, { toValue: 1, duration: 550, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
-    Animated.timing(bar, { toValue: 1, duration: 1200, delay: 400, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
-    const pulse = Animated.loop(Animated.sequence([
-      Animated.timing(glow, { toValue: 1, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(glow, { toValue: 0.5, duration: 1400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-    ]));
-    pulse.start();
-    return () => pulse.stop();
-  }, [fade, rise, bar, glow]);
+    // Fills quickly over the minimum splash time, then creeps while a slow
+    // session restore finishes — it never claims 100% before the app is ready.
+    const fill = Animated.sequence([
+      Animated.timing(bar, { toValue: 0.9, duration: 1500, easing: Easing.out(Easing.cubic), useNativeDriver: false }),
+      Animated.timing(bar, { toValue: 0.98, duration: 6000, easing: Easing.linear, useNativeDriver: false }),
+    ]);
+    fill.start();
+    const id = setInterval(() => setDots((d) => (d % 3) + 1), 400);
+    return () => { fill.stop(); clearInterval(id); };
+  }, [fade, rise, bar]);
 
-  // Curved bottom edge of the green header (drawn in page colour on top of it).
-  const curve = `M0 ${headerH * 0.78} C${width * 0.28} ${headerH * 0.98} ${width * 0.62} ${headerH * 0.7} ${width} ${headerH * 0.86} L${width} ${headerH + 2} L0 ${headerH + 2} Z`;
+  const pop = { opacity: fade, transform: [{ scale: fade.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) }] };
+  const up = { opacity: rise, transform: [{ translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [24 * s, 0] }) }] };
 
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
 
-      {/* Green header with soft light swirls and a curved edge */}
-      <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: headerH }}>
-        <LinearGradient colors={[GREEN_DEEP, '#035C6C', '#035C6C']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-        <Svg width={width} height={headerH + 2} style={StyleSheet.absoluteFill}>
-          <Circle cx={width * 0.95} cy={headerH * 0.05} r={width * 0.32} fill="#FFFFFF" fillOpacity={0.05} stroke="#FFFFFF" strokeOpacity={0.18} strokeWidth={1} />
-          <Circle cx={-width * 0.1} cy={headerH * 0.62} r={width * 0.42} fill="#FFFFFF" fillOpacity={0.05} />
-          <Circle cx={width * 1.02} cy={headerH * 0.7} r={width * 0.3} fill="#FFFFFF" fillOpacity={0.06} />
-          <Path d={curve} fill={PAGE_BG} />
-        </Svg>
-      </View>
-
-      {/* Soft mint waves grounding the footer */}
-      <Svg pointerEvents="none" width={width} height={height} style={StyleSheet.absoluteFill}>
-        <Path d={`M0 ${height * 0.9} C${width * 0.35} ${height * 0.85} ${width * 0.65} ${height * 0.95} ${width} ${height * 0.88} L${width} ${height} L0 ${height} Z`} fill={MINT} fillOpacity={0.7} />
+      {/* Blue header bowl with the lime swoosh under its right edge */}
+      <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: fy + 1, backgroundColor: '#025C88' }} />
+      <Svg pointerEvents="none" width={W} height={430 * s} viewBox="0 0 841 430" preserveAspectRatio="none" style={{ position: 'absolute', left: 0, top: fy }}>
+        <Defs>
+          <SvgGradient id="hdr" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor="#025C88" />
+            <Stop offset="0.45" stopColor="#016E9A" />
+            <Stop offset="1" stopColor="#015784" />
+          </SvgGradient>
+          <SvgGradient id="lime" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#85C648" />
+            <Stop offset="1" stopColor="#AFD735" />
+          </SvgGradient>
+        </Defs>
+        <Path d="M0 0 H841 V230 C700 330 470 412 330 412 C200 412 60 300 0 170 Z" fill="url(#lime)" />
+        <Path d="M0 0 H841 V177 C700 300 460 404 330 404 C200 404 60 300 0 167 Z" fill="url(#hdr)" />
       </Svg>
 
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={[styles.content, { maxWidth: contentW }]}>
-          <Animated.View style={{ alignItems: 'center', opacity: fade, transform: [{ scale: fade.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }] }}>
-            {/* Logo in a glowing ring */}
-            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-              <Animated.View style={[styles.glow, { width: logo + rs(34), height: logo + rs(34), borderRadius: (logo + rs(34)) / 2, opacity: glow }]} />
-              <View style={[styles.ring, { width: logo + rs(14), height: logo + rs(14), borderRadius: (logo + rs(14)) / 2 }]}>
-                <View style={{ width: logo, height: logo, borderRadius: logo / 2, overflow: 'hidden', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }}>
-                  <Image source={require('../../assets/logo.png')} style={{ width: logo * 1.04, height: logo * 1.04 }} resizeMode="contain" />
-                </View>
-              </View>
-            </View>
+      {/* Faint city skyline along the bottom */}
+      <Skyline width={W} height={230 * s} />
 
-            <Text style={[styles.wordmark, { fontSize: titleFont, marginTop: rs(pick(10, 14, 16)) }]}>
-              NEAR G <Text style={{ color: GREEN_BRIGHT }}>FIX</Text>
+      {/* Mockup grid, scaled to the screen */}
+      <View style={{ position: 'absolute', left: fx, top: fy, width: DW * s, height: DH * s }}>
+        <Animated.View style={[box(282, 173, 277, 280), styles.tileShadow, { borderRadius: 56 * s }, pop]}>
+          <Image source={require('../../assets/splash-tile.png')} style={{ width: '100%', height: '100%', borderRadius: 56 * s }} resizeMode="cover" />
+        </Animated.View>
+
+        <Animated.View style={[row(538, 130), pop]}>
+          <Text allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[txt(104, 900, TEAL, { letterSpacing: -2 * s }), { maxWidth: 680 * s }]}>
+            NEAR G <Text style={{ color: CYAN }}>FIX</Text>
+          </Text>
+        </Animated.View>
+
+        <Animated.View style={[row(615, 50), { flexDirection: 'row' }, pop]}>
+          <View style={[styles.rule, { width: 95 * s, height: 3 * s }]} />
+          <Text allowFontScaling={false} numberOfLines={1} style={[txt(33, 700, '#044C5B', { letterSpacing: 7 * s }), { marginHorizontal: 22 * s }]}>
+            BY GLOBO GREEN
+          </Text>
+          <View style={[styles.rule, { width: 95 * s, height: 3 * s }]} />
+        </Animated.View>
+
+        <Animated.View style={[box(197, 668, 448, 75), { borderRadius: 38 * s, overflow: 'hidden' }, pop]}>
+          <LinearGradient colors={['#035C6C', '#035C6C']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[StyleSheet.absoluteFill, styles.center, { flexDirection: 'row' }]}>
+            <BriefcaseBusiness size={48 * s} color="#FFFFFF" strokeWidth={2.2} />
+            <Text allowFontScaling={false} numberOfLines={1} style={[txt(33, 800, '#FFFFFF', { letterSpacing: 3.5 * s }), { marginLeft: 26 * s }]}>
+              EMPLOYEE APP
             </Text>
-            <Text style={[styles.byline, { fontSize: rf(pick(13, 14, 15)) }]}>BY GLOBO GREEN</Text>
-            <View style={[styles.appChip, { marginTop: rs(pick(6, 8, 10)) }]}>
-              <Text style={styles.appChipText}>EMPLOYEE APP</Text>
+          </LinearGradient>
+        </Animated.View>
+
+        <Animated.View style={[box(140, 758, 560, 474), up]}>
+          <Image source={require('../../assets/splash-hero.png')} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+        </Animated.View>
+
+        <Animated.View style={[box(0, 1235, DW, 160), { alignItems: 'center' }, up]}>
+          <View style={{ alignItems: 'center', transform: [{ skewX: '-10deg' }] }}>
+            <Text allowFontScaling={false} numberOfLines={1} style={txt(48, 900, INK, { letterSpacing: -0.5 * s })}>Manage Your Work</Text>
+            <Text allowFontScaling={false} numberOfLines={1} style={[txt(52, 900, GREEN, { letterSpacing: -0.5 * s }), { marginTop: 2 * s }]}>On The Go</Text>
+          </View>
+          <Svg width={260 * s} height={34 * s} viewBox="0 0 260 34" style={{ marginTop: -4 * s, marginLeft: 20 * s }}>
+            <Path d="M4 30 C70 14 160 8 256 10 C160 14 80 20 4 30 Z" fill={LIME} stroke={LIME} strokeWidth={4} strokeLinejoin="round" />
+          </Svg>
+        </Animated.View>
+
+        {FEATURES.map((f) => (
+          <Animated.View key={f.label} style={[box(f.cx - 95, 1420, 190, 150), { alignItems: 'center' }, up]}>
+            <View style={[styles.center, { width: 116 * s, height: 100 * s, borderRadius: 26 * s, backgroundColor: TILE_BG }]}>
+              {f.render(56 * s)}
             </View>
-            <Text style={[styles.services, { fontSize: rf(pick(14, 15, 16)), marginTop: rs(pick(6, 8, 10)) }]}>
-              Attendance <Text style={styles.dot}>•</Text> Tasks <Text style={styles.dot}>•</Text> Pickup <Text style={styles.dot}>•</Text> Salary
-            </Text>
+            <Text allowFontScaling={false} numberOfLines={1} style={[txt(27, 700, '#111111'), { marginTop: 10 * s }]}>{f.label}</Text>
           </Animated.View>
+        ))}
+        {[240, 429, 616].map((x) => (
+          <View key={x} style={[box(x - 1, 1440, 2, 80), { backgroundColor: '#E2ECEC' }]} />
+        ))}
 
-          {/* Device hero art across the curve */}
-          <Animated.View
-            style={{
-              width: deviceW, aspectRatio: 1 / ratio, marginTop: rs(pick(8, 14, 18)),
-              opacity: rise, transform: [{ translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
-            }}
-          >
-            <Image
-              source={{ uri: DEVICE_URL }}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="contain"
-              onLoad={(e) => {
-                const { width: w, height: h } = e?.nativeEvent?.source || {};
-                if (w > 0 && h > 0) setRatio(h / w);
-              }}
-            />
+        <View style={[box(150, 1630, 540, 22), { borderRadius: 11 * s, backgroundColor: '#DFDEDE', overflow: 'hidden' }]}>
+          <Animated.View style={{ height: '100%', borderRadius: 11 * s, overflow: 'hidden', width: bar.interpolate({ inputRange: [0, 1], outputRange: [0, 540 * s] }) }}>
+            <LinearGradient colors={['#00BFCB', '#0193A3']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
           </Animated.View>
-
-          {/* Tagline */}
-          <View style={{ alignItems: 'center', marginTop: rs(pick(8, 12, 16)) }}>
-            <Text style={[styles.tagline, { fontSize: rf(pick(22, 25, 28)) }]}>YOUR WORKDAY,</Text>
-            <Text style={[styles.tagline, { fontSize: rf(pick(22, 25, 28)), color: GREEN }]}>SIMPLIFIED.</Text>
-            <Svg width={rs(150)} height={rs(10)} style={{ marginTop: -rs(2) }}>
-              <Path d={`M4 ${rs(7)} Q${rs(75)} ${rs(1)} ${rs(146)} ${rs(6)}`} stroke={YELLOW} strokeWidth={3.5} strokeLinecap="round" fill="none" />
-            </Svg>
-          </View>
-
-          {/* Progress */}
-          <View style={{ width: Math.min(contentW * 0.66, rs(270)), marginTop: rs(pick(12, 18, 22)), alignItems: 'center' }}>
-            <View style={styles.track}>
-              <Animated.View style={{ height: '100%', borderRadius: 999, overflow: 'hidden', width: bar.interpolate({ inputRange: [0, 1], outputRange: ['4%', '72%'] }) }}>
-                <LinearGradient colors={['#035C6C', GREEN]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flex: 1 }} />
-              </Animated.View>
-            </View>
-            <Text style={styles.loading}>LOADING...</Text>
-          </View>
-
-          {/* Trust row */}
-          <View style={[styles.trustRow, { marginTop: rs(pick(14, 20, 26)) }]}>
-            <TrustItem icon={Fingerprint} label={'SMART\nATTENDANCE'} size={rs(pick(44, 50, 54))} font={rf(pick(11, 12, 12.5))} />
-            <View style={styles.divider} />
-            <TrustItem icon={ClipboardCheck} label={'TASK\nTRACKING'} size={rs(pick(44, 50, 54))} font={rf(pick(11, 12, 12.5))} />
-            <View style={styles.divider} />
-            <TrustItem icon={ShieldCheck} label={'SECURE\n& PRIVATE'} size={rs(pick(44, 50, 54))} font={rf(pick(11, 12, 12.5))} />
-          </View>
         </View>
-      </SafeAreaView>
+
+        <View style={row(1690, 50)}>
+          <Text allowFontScaling={false} style={txt(30, 600, '#3F4448')}>
+            Loading{'.'.repeat(dots)}
+            <Text style={{ color: 'transparent' }}>{'.'.repeat(3 - dots)}</Text>
+          </Text>
+        </View>
+      </View>
     </View>
+  );
+}
+
+// Faint city skyline pinned to the bottom of a screen (also used by Login).
+export function Skyline({ width, height }) {
+  return (
+    <Svg pointerEvents="none" width={width} height={height} viewBox="0 0 841 230" preserveAspectRatio="none" style={{ position: 'absolute', left: 0, bottom: 0 }}>
+      <Path
+        fill="#E3F1F3"
+        fillOpacity={0.75}
+        d="M0 230 V150 H40 V110 H70 V150 H95 V90 H140 V160 H170 V120 H205 V170 H240 V140 H270 V190 H570 V140 H600 V100 H640 V150 H670 V70 H710 V130 H735 V95 H770 V150 H800 V115 H841 V230 Z"
+      />
+      <Rect x="0" y="200" width="841" height="30" fill="#EBF6F7" />
+    </Svg>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: PAGE_BG },
-  safe: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { width: '100%', alignItems: 'center', paddingHorizontal: rs(20) },
-  glow: { position: 'absolute', backgroundColor: GREEN_BRIGHT, opacity: 0.35 },
-  ring: {
-    alignItems: 'center', justifyContent: 'center', borderWidth: 2.5, borderColor: GREEN_BRIGHT,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    shadowColor: GREEN_BRIGHT, shadowOpacity: 0.8, shadowRadius: 14, shadowOffset: { width: 0, height: 0 }, elevation: 8,
+  center: { alignItems: 'center', justifyContent: 'center' },
+  rule: { backgroundColor: '#BEC7C9', borderRadius: 2 },
+  tileShadow: {
+    backgroundColor: '#035C6C',
+    shadowColor: '#7FE3F0', shadowOpacity: 0.55, shadowRadius: 18, shadowOffset: { width: 0, height: 4 }, elevation: 10,
   },
-  wordmark: { fontWeight: '900', letterSpacing: -0.5, color: '#FFFFFF' },
-  byline: { fontWeight: '700', letterSpacing: 3, color: '#FFFFFF', marginTop: rs(2) },
-  appChip: { paddingHorizontal: rs(12), paddingVertical: rs(3) },
-  appChipText: { fontSize: rf(11), fontWeight: '800', letterSpacing: 1.6, color: '#FFFFFF' },
-  services: { fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3, backgroundColor: GREEN_DEEP, borderRadius: 999, overflow: 'hidden', paddingHorizontal: rs(12), paddingVertical: rs(3) },
-  dot: { color: YELLOW, fontWeight: '900' },
-  tagline: { textAlign: 'center', fontWeight: '900', letterSpacing: 0.6, color: INK },
-  track: {
-    width: '100%', height: rs(12), borderRadius: 999, backgroundColor: '#FFFFFF', padding: rs(2),
-    borderWidth: 1, borderColor: '#E5E7EB',
-    shadowColor: INK, shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2,
-  },
-  loading: { fontSize: rf(13), fontWeight: '700', letterSpacing: 5, color: '#6B7280', marginTop: rs(10) },
-  trustRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-around', width: '100%' },
-  trustItem: { flex: 1, alignItems: 'center', maxWidth: rs(120) },
-  trustDisc: { backgroundColor: MINT, alignItems: 'center', justifyContent: 'center' },
-  trustLabel: { textAlign: 'center', fontWeight: '800', color: INK, marginTop: rs(7) },
-  divider: { width: 1, height: rs(46), backgroundColor: '#E5E7EB', marginTop: rs(6) },
 });

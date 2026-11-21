@@ -9,7 +9,7 @@ import {
 } from './config';
 import { getToken, getSession, clearSession, notifyAuthExpired } from '../auth/session';
 import { friendlyApiMessage, transportMessage, logDiagnostic } from '../utils/userMessages';
-import { matchTpinRoute, requestTpin, tpinActive, TPIN_HEADER } from '../security/tpinBridge';
+import { matchTpinRoute, serverTpinRoute, requestTpin, tpinActive, TPIN_HEADER } from '../security/tpinBridge';
 import { refreshDeviceSession, jwtExpiresSoon } from '../security/deviceTokens';
 
 // Decode a JWT's `exp` claim locally (base64url, no library) to distinguish a
@@ -34,7 +34,7 @@ export function isJwtExpired(token) {
 // token refresh (15-min access JWT, migration 116). Legacy tokens pass through.
 async function request(baseUrlOrNull, method, path, opts = {}) {
   let o = opts;
-  const action = tpinActive() && !(o.headers && o.headers[TPIN_HEADER]) ? matchTpinRoute(method, path) : null;
+  const action = tpinActive() && !(o.headers && o.headers[TPIN_HEADER]) ? matchTpinRoute(method, path, o) : null;
   if (action) {
     const auth = await requestTpin(action, method, path);
     if (auth) o = { ...o, headers: { ...(o.headers || {}), [TPIN_HEADER]: auth } };
@@ -43,6 +43,12 @@ async function request(baseUrlOrNull, method, path, opts = {}) {
   try {
     return await rawRequest(baseUrlOrNull, method, path, { ...o, _deviceRetry: !o.skipAuthExpiry });
   } catch (e) {
+    // Routine step the server still guards with TPIN (TPIN_ENFORCED on): ask once, retry once.
+    const srv = !action && tpinActive() && e?.status === 403 && /TPIN_REQUIRED/.test(String(e?.serverMessage || '')) ? serverTpinRoute(method, path) : null;
+    if (srv) {
+      const auth = await requestTpin(srv, method, path);
+      if (auth) return rawRequest(baseUrlOrNull, method, path, { ...o, headers: { ...(o.headers || {}), [TPIN_HEADER]: auth } });
+    }
     if (e?.deviceRefresh && !o.skipAuthExpiry) {
       const r = await refreshDeviceSession();
       if (r.token) return rawRequest(baseUrlOrNull, method, path, o);
@@ -116,7 +122,10 @@ async function rawRequest(baseUrlOrNull, method, path, { query, body, headers, s
     // token means THAT service can't verify it (secret drift / older build) and
     // must NOT bounce the whole app to Login. Spring services answer an expired
     // token with a bare 403 (unauthenticated), so a 403 + past exp also counts.
-    const sessionExpired = token && (
+    // A wrong / locked MPIN or TPIN is answered 401 WRONG_PIN:n / PIN_LOCKED by
+    // auth-service — a credential error, NOT a dead session. Never log out on it.
+    const pinRejected = /WRONG_PIN|PIN_LOCKED/.test(String((json && (json.message || json.error)) || text || ''));
+    const sessionExpired = token && !pinRejected && (
       (res.status === 401 && (isAuthService || isJwtExpired(token)))
       || (res.status === 403 && isJwtExpired(token))
     );

@@ -36,6 +36,28 @@ export const verifyPin = (pin) => wrap(authApi.post('/auth/security/mpin/verify'
     if (msg) throw Object.assign(new Error(msg), { status: e.status, userFacing: true, payload: { message: msg }, cause: e });
     throw e;
   });
+/**
+ * Employee changes their own Login MPIN (auth-service PUT /auth/employee/change-mpin).
+ * The server identifies the employee from the session, verifies the current MPIN
+ * (shared 5-try lockout) and revokes all sessions — the caller must log out.
+ */
+export async function changeLoginMpin(currentMpin, newMpin) {
+  try {
+    return await authApi.put('/auth/employee/change-mpin', { body: { currentMpin, newMpin } });
+  } catch (e) {
+    const m = String(e?.serverMessage || '');
+    const left = m.match(/WRONG_PIN:(\d+)/);
+    const msg = left ? `Current MPIN is incorrect. ${left[1]} attempt(s) left.`
+      : /PIN_LOCKED/.test(m) ? 'Too many wrong attempts. Try again in 15 minutes.'
+        : /different/i.test(m) ? 'New MPIN must be different from your current MPIN.'
+          : /too simple/i.test(m) ? 'MPIN is too simple. Avoid repeated or sequential digits.'
+            : /6 digits/i.test(m) ? 'MPIN must be exactly 6 digits.'
+              : null;
+    if (msg) throw Object.assign(new Error(msg), { status: e.status, userFacing: true, payload: { message: msg }, cause: e });
+    throw e;
+  }
+}
+
 export const savePin = async (pin, currentPin) => { checkWeak(pin); return wrap(authApi.put('/auth/me/pin', { body: { pin, currentPin } })); };
 /** Forgot PIN: OTP from /auth/otp/send for the employee's own mobile / email. */
 export const resetPin = async (identifier, otp, pin) => { checkWeak(pin); return wrap(authApi.post('/auth/me/pin/reset', { body: { identifier, otp, pin } })); };

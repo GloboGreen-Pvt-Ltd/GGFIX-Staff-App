@@ -5,10 +5,14 @@
 import { getPinStatus } from '../api/pin';
 import { getLockPrefs, hasBiometrics, authenticate, isDeviceSecure } from './appLock';
 import { openPinPrompt } from '../components/PinPad';
+import { tpinActive, matchTpinRoute } from '../security/tpinBridge';
 
 const cancelled = (msg) => Object.assign(new Error(msg), { userFacing: true, payload: { message: msg } });
 
-export async function requireFreshAuth(title = 'Confirm it’s you') {
+export async function requireFreshAuth(title = 'Confirm it’s you', { method, path, body } = {}) {
+  // TPIN-protected request: the API client asks TPIN once for it (tpinBridge),
+  // so no second prompt here. Everything else (App Lock, biometrics) keeps MPIN / device auth.
+  if (tpinActive() && method && path && matchTpinRoute(method, path, body)) return true;
   let status = null;
   try { status = await getPinStatus(); } catch (_) { status = null; }
   const prefs = await getLockPrefs();

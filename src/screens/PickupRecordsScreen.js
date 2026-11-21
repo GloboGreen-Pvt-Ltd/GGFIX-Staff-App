@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { View, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Ban, Camera, ChartColumn, CircleCheck, CircleX, Inbox, MapPin, RefreshCw, Repeat, WifiOff } from 'lucide-react-native';
+import { Ban, Camera, CircleCheck, CircleX, Inbox, MapPin, RefreshCw, Repeat, Truck, WifiOff } from 'lucide-react-native';
 import { Text } from '../components/Typography';
 import { useHideNativeHeader } from '../components/MintScreenHeader';
 import { SearchBar } from '../components/rnr';
@@ -21,7 +21,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 // pickup person; Cancelled = by the shop or the customer (the last CANCELLED
 // event's actor). Completed = handed over, or since moved on by the shop.
 const FILTERS = [
-  { key: 'All', label: 'All', icon: ChartColumn, tone: 'teal', match: () => true },
+  { key: 'All', label: 'All', icon: Truck, tone: 'teal', match: () => true },
   { key: 'Completed', label: 'Completed', icon: CircleCheck, tone: 'green', match: (b) => bucketOf(b.status) === 'COMPLETED' },
   { key: 'Failed', label: 'Failed', icon: CircleX, tone: 'red', match: (b) => cancelInfo(b)?.byMe === true },
   { key: 'Cancelled', label: 'Cancelled', icon: Ban, tone: toneOf('#6B7280'), match: (b) => cancelInfo(b)?.byMe === false },

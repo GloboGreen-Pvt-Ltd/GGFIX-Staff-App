@@ -6,7 +6,7 @@ import { rf, rlh, rs } from '../utils/responsive';
 import { interFamily } from '../theme/typography';
 import { resolveDeviceImageSource } from '../utils/images';
 import { listBrands, listModelsForBrand } from '../api/master';
-import Svg, { Defs, LinearGradient as SvgGradient, Path, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient as SvgGradient, Path, Rect, Stop } from 'react-native-svg';
 
 // The Partner app's Job Report look (header, month bar, gradient status rail,
 // picture job card), shared by Job Assign and My Jobs / Job Report.
@@ -63,12 +63,29 @@ export function GradientFill({ tone, radius }) {
 
 // Rail tile palettes: soft white top fading to the category tint.
 export const RAIL_TONES = {
-  teal: { top: '#F9FEFF', bottom: '#DDF2F4', color: '#0B6A74' },
+  teal: { top: '#F9FEFF', bottom: '#DDF2F4', color: '#035C6C' },
   orange: { top: '#FFFDF7', bottom: '#FFF1C9', color: '#F4A300' },
   red: { top: '#FFF9F9', bottom: '#FFD9D9', color: '#FF2D2D' },
   green: { top: '#FBFFF8', bottom: '#DDEFCF', color: '#5E9F2E' },
   blue: { top: '#F7FBFF', bottom: '#D9ECF8', color: '#0788C9' },
 };
+// Selected rail tile: ring + glyph colour.
+const RAIL_ACTIVE = '#035C6C';
+
+// "Assigned" glyph from the Partner rail: a worker in a cap with a check
+// badge. Same props as a lucide icon (size, color, strokeWidth).
+export function WorkerCheck({ size = 24, color = KIT.ink, strokeWidth = 2 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M6.8 7.2h10.4" />
+      <Path d="M8.4 7.2a3.6 3.6 0 0 1 7.2 0" />
+      <Path d="M8.7 8.9a3.4 3.4 0 0 0 6.6 0" />
+      <Path d="M4 21a8 8 0 0 1 10.4-7.6" />
+      <Circle cx="18" cy="18" r="3.6" />
+      <Path d="M16.4 18.1l1.1 1.1 2.2-2.3" />
+    </Svg>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Header: round back · centred title + subtitle · search + scan
@@ -127,7 +144,6 @@ export function MonthBar({ title, sub, onPrev, onNext, disabled }) {
 // ---------------------------------------------------------------------------
 // Status rail: gradient tiles, solid icon circle, white-outlined count badge
 // ---------------------------------------------------------------------------
-const RAIL_RADIUS = rs(15);
 
 // Gradient tile: solid icon circle (white icon), white count badge with a
 // coloured outline, label in the tile colour. `tone` is a RAIL_TONES key or a
@@ -141,14 +157,17 @@ const RAIL_RADIUS = rs(15);
 // selected one a 2pt border in its colour (Partner Job Report rail).
 // labelSize: the rail's shared label size (useUniformLabel) — set, the label
 // no longer shrinks on its own; onLabelWidth reports the room the label has.
-export function GradientTile({ icon: Icon, tone, label, count, sub, active, onPress, compact, selectTeal, noBorder, softBorder, plain, style, labelSize, onLabelWidth }) {
+// Partner rail look: white circle with a soft shadow and an outline glyph,
+// count badge (white, ringed and numbered in the tile colour) at its top-right,
+// bold label underneath. The selected tile gets a teal ring and teal glyph.
+// (noBorder / softBorder / plain / selectTeal are accepted for older callers.)
+export function GradientTile({ icon: Icon, tone, label, count, sub, active, onPress, compact, style, labelSize, onLabelWidth }) {
   const t = typeof tone === 'string' ? (RAIL_TONES[tone] || RAIL_TONES.teal) : tone;
-  const tealSel = selectTeal && active;
-  // My Jobs rail (softBorder): a much lighter tint, a touch more on the selected tile.
-  const fill = tealSel ? { ...RAIL_TONES.teal, color: KIT.teal }
-    : softBorder ? toneOf(t.color, active ? 0.1 : 0.06) : t;
-  const radius = compact ? rs(12) : RAIL_RADIUS;
-  const disc = compact ? rs(26) : rs(33);
+  // Measured off the Partner rail: circle ≈ 58% of the rail width, inner disc
+  // 87% of it, glyph 41%, badge 37% centred just outside the top-right edge.
+  const disc = compact ? rs(36) : rs(43);
+  const inner = Math.round(disc * 0.87);
+  const badge = compact ? rs(14) : rs(16);
   const Wrap = onPress ? TouchableOpacity : View;
   return (
     <Wrap
@@ -156,34 +175,32 @@ export function GradientTile({ icon: Icon, tone, label, count, sub, active, onPr
         onPress, activeOpacity: 0.8, accessibilityRole: 'tab', accessibilityState: { selected: !!active },
       } : {})}
       accessibilityLabel={[label, count, sub].filter((x) => x != null && x !== '').join(', ')}
-      style={[s.railTile, compact && s.tileCompact, {
-        borderRadius: radius,
-        // Solid top colour under the gradient so the Android elevation shadow renders.
-        backgroundColor: plain ? KIT.white : fill.top,
-        // plain (My Jobs): white tile, gray borders; the selected one darker / heavier.
-        borderColor: plain ? (active ? '#9CA3AF' : KIT.line) : softBorder && !active ? (fill.edge || toneOf(fill.color).edge) : fill.color,
-        // Thin border; the selected filter's is a touch heavier.
-        borderWidth: active ? (tealSel ? 1.8 : softBorder ? 2 : 1.6) : (noBorder ? 0 : 1),
-        shadowColor: fill.color,
-        // My Jobs rail: a soft, light grey shadow behind each tile (Partner reference).
-        ...(softBorder ? { shadowColor: '#111111', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 } : null),
-      }, style]}
+      style={[s.railTile, compact && s.tileCompact, style]}
     >
-      {plain ? null : <GradientFill tone={fill} radius={radius} />}
-      <View>
-        <View style={[s.railDisc, { width: disc, height: disc, borderRadius: disc / 2, backgroundColor: t.color }]}>
-          <Icon size={compact ? rs(13) : rs(15)} color={KIT.white} strokeWidth={2.5} />
+      <View style={{ width: disc, height: disc }}>
+        {/* Outer white rim with a soft glow in the tile colour; teal ring when selected. */}
+        <View style={[s.railDisc, {
+          width: disc, height: disc, borderRadius: disc / 2,
+          borderWidth: active ? 2 : 0, borderColor: RAIL_ACTIVE,
+          shadowColor: active ? RAIL_ACTIVE : t.color,
+        }]}>
+          <View style={{ width: inner, height: inner, borderRadius: inner / 2, backgroundColor: '#F6F8FA', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon size={Math.round(disc * 0.41)} color={active ? RAIL_ACTIVE : KIT.ink} strokeWidth={1.6} />
+          </View>
         </View>
         {count != null && count !== '' ? (
-          <View style={[s.railBadge, compact && s.badgeCompact, { borderColor: plain ? KIT.line : t.color }]}>
-            <KText size={compact ? 9 : 10} weight="800" color={plain ? KIT.ink : t.color} numberOfLines={1}>{typeof count === 'number' && count > 99 ? '99+' : count}</KText>
+          <View style={[s.railBadge, {
+            top: Math.round(disc * 0.08 - badge / 2), right: -Math.round(disc * 0.02 + badge / 2),
+            minWidth: badge, height: badge, borderRadius: badge / 2, borderColor: t.color,
+          }]}>
+            <KText size={compact ? 8 : 9} weight="800" color={t.color} numberOfLines={1} style={{ includeFontPadding: false }}>{typeof count === 'number' && count > 99 ? '99+' : count}</KText>
           </View>
         ) : null}
       </View>
       <KText
-        size={labelSize || (compact ? 10 : 11.5)}
+        size={labelSize || (compact ? 9.5 : 10.5)}
         weight="800"
-        color={plain ? KIT.ink : t.color}
+        color={KIT.ink}
         numberOfLines={1}
         adjustsFontSizeToFit={!labelSize}
         minimumFontScale={0.7}
@@ -218,7 +235,7 @@ export function useSidebarWidth() {
 // One label size for a whole rail: the largest (up to `base`) at which the
 // longest label still fits a tile, so every tile's text is the same size.
 // Each label is measured at `base` in a hidden probe; tiles report the room.
-const LABEL_BASE = 11.5;
+const LABEL_BASE = 10.5;
 function useUniformLabel(labels, base = LABEL_BASE) {
   const [natural, setNatural] = useState({});
   const [room, setRoom] = useState(0);
@@ -503,17 +520,16 @@ const s = StyleSheet.create({
   labelProbe: { position: 'absolute', top: 0, left: -2000, width: 1500, opacity: 0, alignItems: 'flex-start' },
   sideRow: { flex: 1, flexDirection: 'row' },
   sideMain: { flex: 1, minWidth: 0 },
-  railContent: { paddingHorizontal: rs(5), paddingTop: rs(10), paddingBottom: rs(20), gap: rs(9) },
-  railTile: {
-    alignItems: 'center', borderRadius: RAIL_RADIUS, paddingTop: rs(11), paddingBottom: rs(9), paddingHorizontal: rs(3),
-    shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 2,
+  railContent: { paddingHorizontal: rs(3), paddingTop: rs(16), paddingBottom: rs(20), gap: rs(18) },
+  railTile: { alignItems: 'center', paddingTop: rs(2), paddingHorizontal: rs(1) },
+  railDisc: {
+    alignItems: 'center', justifyContent: 'center', backgroundColor: KIT.white,
+    shadowOpacity: 0.3, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 5,
   },
-  railDisc: { width: rs(33), height: rs(33), borderRadius: rs(17), alignItems: 'center', justifyContent: 'center' },
-  tileCompact: { paddingTop: rs(8), paddingBottom: rs(6), paddingHorizontal: rs(2), elevation: 1 },
-  badgeCompact: { top: -rs(4), right: -rs(10), minWidth: rs(16), height: rs(15), paddingHorizontal: rs(3), borderRadius: rs(8) },
+  tileCompact: { paddingTop: rs(1) },
   railBadge: {
-    position: 'absolute', top: -rs(5), right: -rs(11), minWidth: rs(18), height: rs(18), paddingHorizontal: rs(4),
-    borderRadius: rs(9), alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, backgroundColor: KIT.white,
+    position: 'absolute', paddingHorizontal: rs(3),
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, backgroundColor: KIT.white,
   },
 
   card: {

@@ -32,32 +32,19 @@ export function formatMmSs(sec) {
 }
 
 /** Seconds left on the OTP cooldown for this number (0 when none). */
-export async function otpCooldownLeft(identifier) {
-  const until = (await load())[norm(identifier)] || 0;
-  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
-}
-
-function limited(secs) {
-  return Object.assign(new Error(`Too many OTP requests. Try again in ${formatMmSs(secs)}.`), { status: 429, retryAfterSeconds: secs });
+// Cooldown disabled: users can always request a new OTP (no client-side block).
+export async function otpCooldownLeft(_identifier) {
+  return 0;
 }
 
 export async function guardOtp(identifier, send) {
   const k = norm(identifier);
   if (inflight.has(k)) return inflight.get(k);
   const p = (async () => {
-    const left = await otpCooldownLeft(k);
-    if (left > 0) throw limited(left);
-    try {
-      return await send();
-    } catch (e) {
-      if (e?.status === 429) {
-        const secs = Number(e?.payload?.retryAfterSeconds) || 60;
-        (await load())[k] = Date.now() + secs * 1000;
-        await save();
-        throw limited(secs);
-      }
-      throw e;
-    }
+    // Clear any cooldown saved by older builds, then always send.
+    const c = await load();
+    if (c[k]) { delete c[k]; await save(); }
+    return send();
   })().finally(() => inflight.delete(k));
   inflight.set(k, p);
   return p;

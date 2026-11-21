@@ -16,6 +16,7 @@ const TAB_FOR_ROUTE = {
 
   AttendanceTab: 'Attendance',
   DailyAttendance: 'Attendance',
+  ShopPresenceHistory: 'Attendance',
   DailyShiftSchedule: 'Attendance',
   MonthlySummary: 'Attendance',
   LeaveReport: 'Attendance',
@@ -26,6 +27,7 @@ const TAB_FOR_ROUTE = {
   TaskAssign: 'Tasks',
   TaskReport: 'Tasks',
   PickupAssign: 'Tasks',
+  MyJobs: 'Tasks',
   PickupDetails: 'Tasks',
   PickupCalendar: 'Tasks',
   PickupRecords: 'Tasks',
@@ -145,11 +147,13 @@ import AccountTabScreen from '../screens/AccountTabScreen';
 
 // Category drill-down screens
 import DailyAttendanceScreen from '../screens/DailyAttendanceScreen';
+import ShopPresenceHistoryScreen from '../screens/ShopPresenceHistoryScreen';
 import DailyShiftScheduleScreen from '../screens/DailyShiftScheduleScreen';
 import MonthlySummaryScreen from '../screens/MonthlySummaryScreen';
 import LeaveReportScreen from '../screens/LeaveReportScreen';
 import JobReportScreen from '../screens/JobReportScreen';
 import PickupAssignScreen from '../screens/PickupAssignScreen';
+import MyJobsScreen from '../screens/MyJobsScreen';
 import PickupDetailsScreen from '../screens/PickupDetailsScreen';
 import PickupCalendarScreen from '../screens/PickupCalendarScreen';
 import PickupRecordsScreen from '../screens/PickupRecordsScreen';
@@ -271,11 +275,13 @@ export default function TechnicianNavigator({ session, onLogout }) {
 
         {/* Category drill-downs */}
         <Stack.Screen name="DailyAttendance" component={DailyAttendanceScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="ShopPresenceHistory" component={ShopPresenceHistoryScreen} options={{ headerShown: false }} />
         <Stack.Screen name="DailyShiftSchedule" component={DailyShiftScheduleScreen} options={{ headerShown: false }} />
         <Stack.Screen name="MonthlySummary" component={MonthlySummaryScreen} options={{ title: 'Monthly Summary' }} />
         <Stack.Screen name="LeaveReport" component={LeaveReportScreen} options={{ headerShown: false }} />
         <Stack.Screen name="TaskReport" component={JobReportScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupAssign" component={PickupAssignScreen} options={{ title: 'My Pickups' }} />
+        <Stack.Screen name="MyJobs" component={MyJobsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupDetails" component={PickupDetailsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupCalendar" component={PickupCalendarScreen} options={{ headerShown: false }} />
         <Stack.Screen name="PickupRecords" component={PickupRecordsScreen} options={{ headerShown: false }} />

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { acceptPickup, getPickupRepairEstimate, getSellEvaluation, updatePickupStatus } from '../api/pickups';
+import { acceptPickup, getPickupRepairEstimate, getSellEvaluation, requestShopHandover, updatePickupStatus } from '../api/pickups';
 import { confirm, notify } from '../components/confirm';
 import { readPickupPersonLocation } from './pickupLocation';
 import { ACCEPT_LEAD_MIN, acceptOpensAt, nextStepFor } from './pickups';
@@ -32,6 +32,21 @@ export default function usePickupAdvance({ navigation, onDone }) {
         notify('Too early to start', `You can start this pickup from ${when} (1 hour before the pickup time).`, { type: 'warning' });
         return;
       }
+    }
+    if (next.action === 'handover') {
+      inFlight.current = true;
+      setBusyId(booking.id);
+      try {
+        await requestShopHandover(booking.id);
+        notify('Request sent', 'Waiting for shop confirmation. The shop confirms the device handover with their TPIN.', { type: 'success' });
+      } catch (e) {
+        notify('Could not request handover', userMessage(e, 'Please try again.'), { type: 'error' });
+      } finally {
+        inFlight.current = false;
+        setBusyId(null);
+        await onDone?.();
+      }
+      return;
     }
     if (next.action === 'sellStage') {
       // Device purchase at the door: OTP → Compare & Inspect → Price → Payment & Pickup.

@@ -6,17 +6,7 @@ import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  ChartColumn,
-  RefreshCw,
-  CircleAlert,
-  Check,
-  UserCog,
-  Inbox,
-  WifiOff,
-  Wrench,
-  FileText,
-  Users,
-  X,
+  RefreshCw, Check, UserCog, Inbox, WifiOff, Wrench, Users, X,
 } from 'lucide-react-native';
 import { selectTechnicianId, selectShopId } from '../store/authSlice';
 import { ticketApi, shopApi } from '../api/client';
@@ -28,7 +18,8 @@ import { rf, rs } from '../utils/responsive';
 import { confirm, notify } from '../components/confirm';
 import { ticketRef } from '../utils/ticketRef';
 import { SearchBar } from '../components/rnr';
-import { JobHeader, JobRail, JobPictureCard, KText, toneOf } from '../components/JobCardKit';
+import { JobHeader, JobRail, JobPictureCard, KText, toneOf, WorkerCheck } from '../components/JobCardKit';
+import { Briefcase, Clock, CircleCheck, CircleX } from 'lucide-react-native';
 import AcceptJobDialog from '../components/AcceptJobDialog';
 
 // One My Jobs screen (the old Job Assign Report merged in): the rail filters
@@ -442,6 +433,23 @@ export default function JobReportScreen({ navigation, route }) {
     [list, eventsById, technicianId],
   );
 
+  // Server-confirmed move (Accept → its active tab, finish → Completed): open
+  // that tab. Only jobs whose events were loaded in both reads count, so the
+  // first load never jumps.
+  const prevStage = useRef(null);
+  useEffect(() => {
+    const now = new Map(jobs.filter((t) => eventsById[t.id]).map((t) => [t.id, t.stage]));
+    const was = prevStage.current;
+    prevStage.current = now;
+    if (!was) return;
+    for (const [id, st] of now) {
+      const old = was.get(id);
+      if (!old || old === st) continue;
+      if (isAwaitingAccept(old) && !isAwaitingAccept(st) && st !== 'Cancelled') { setFilter(st); return; }
+      if (st === 'Completed' && old !== 'Cancelled') { setFilter('Completed'); return; }
+    }
+  }, [jobs, eventsById]);
+
   // Newest first (by last update, else creation), every job — no month
   // filter. A search matches ref, device, customer, phone or issue.
   const searched = useMemo(() => {
@@ -660,13 +668,13 @@ export default function JobReportScreen({ navigation, route }) {
 
 // Rail filters (Partner Job Report icons and gradient tones).
 const RAIL = [
-  { key: 'All', label: 'All', icon: ChartColumn, tone: 'teal' },
-  { key: 'Assigned', label: 'Assigned', icon: FileText, tone: 'blue' },
+  { key: 'All', label: 'All', icon: Briefcase, tone: 'teal' },
+  { key: 'Assigned', label: 'Assigned', icon: WorkerCheck, tone: 'blue' },
   { key: 'Reassigned', label: 'Reassigned', icon: Users, tone: toneOf(CATEGORY_COLOR.Reassigned) },
   { key: 'In Process', label: 'In Process', icon: RefreshCw, tone: 'orange' },
-  { key: 'Pending', label: 'Pending', icon: CircleAlert, tone: 'red' },
-  { key: 'Completed', label: 'Completed', icon: Check, tone: 'green' },
-  { key: 'Cancelled', label: 'Cancelled', icon: X, tone: toneOf(CATEGORY_COLOR.Cancelled) },
+  { key: 'Pending', label: 'Pending', icon: Clock, tone: 'orange' },
+  { key: 'Completed', label: 'Completed', icon: CircleCheck, tone: 'green' },
+  { key: 'Cancelled', label: 'Cancelled', icon: CircleX, tone: toneOf(CATEGORY_COLOR.Cancelled) },
 ];
 
 const timeOf = (iso) => { if (!iso) return ''; const d = new Date(iso); if (Number.isNaN(d.getTime())) return ''; const h = d.getHours(); return `${String(h % 12 || 12).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };

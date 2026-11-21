@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Image, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { Text } from '../../components/Typography';
 import { useFocusEffect } from '@react-navigation/native';
@@ -24,11 +24,20 @@ export default function RepairDeliveriesScreen({ navigation, route }) {
   const [error, setError] = useState(null);
   const [tab, setTab] = useState(route?.params?.tab === 'HISTORY' ? 'HISTORY' : 'ACTIVE');
   const [refreshing, setRefreshing] = useState(false);
+  const prevHist = useRef(null);
+  const [moved, setMoved] = useState(null);
 
   const load = useCallback(async () => {
     try {
       const data = await listRepairDeliveries();
-      setList(Array.isArray(data) ? data : []);
+      const arr = Array.isArray(data) ? data : [];
+      // Delivered (server-confirmed) since the last read → open History, job first.
+      const hist = REPAIR_DELIVERY_TABS.find((t) => t.key === 'HISTORY').statuses;
+      const was = prevHist.current;
+      prevHist.current = new Map(arr.map((d) => [d.id, hist.includes(d.status)]));
+      const hit = was && arr.find((d) => was.get(d.id) === false && d.status === 'DELIVERED');
+      if (hit) { setMoved(hit.id); setTab('HISTORY'); }
+      setList(arr);
       setError(null);
     } catch (e) {
       setError(apiError(e, 'Could not load deliveries.'));
@@ -39,7 +48,7 @@ export default function RepairDeliveriesScreen({ navigation, route }) {
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
   const statuses = REPAIR_DELIVERY_TABS.find((t) => t.key === tab).statuses;
-  const shown = (list || []).filter((d) => statuses.includes(d.status));
+  const shown = (list || []).filter((d) => statuses.includes(d.status)).sort((x, y) => (y.id === moved) - (x.id === moved));
 
   return (
     <Page title="Repair Deliveries" subtitle="Shop → Customer" navigation={navigation}>

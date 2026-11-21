@@ -1,17 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import { Text, TextInput } from '../components/Typography';
+import { ActivityIndicator, Image, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions, Text as RNText, TextInput as RNTextInput } from 'react-native';
+import { Text } from '../components/Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { StatusBar } from 'expo-status-bar';
+import Svg, { Defs, LinearGradient as SvgGradient, Path, Stop } from 'react-native-svg';
 import {
-  ArrowLeft, ArrowRight, CalendarCheck, Phone, Settings, ShieldCheck, Smartphone, Truck, Wrench,
+  ArrowLeft, ArrowRight, BriefcaseBusiness, CalendarCheck, Phone, ShieldCheck, Truck,
 } from 'lucide-react-native';
+import { interFamily } from '../theme/typography';
+import { Skyline } from '../components/BootSplash';
 import { mpinLogin } from '../api/auth';
 import { AUTH_BASE } from '../api/config';
 import { rf, rlh, rs } from '../utils/responsive';
 import { normalizeIndianMobile } from '../utils/mobile';
 import { logProfileDebug } from '../utils/profileDebug';
-import BrandMark from '../components/BrandMark';
 import { notify } from '../components/confirm';
 import { userMessage } from '../utils/userMessages';
 
@@ -41,21 +44,6 @@ function mpinErrorText(e) {
   if (e?.status === 400 || e?.status === 401) return 'Invalid mobile number or MPIN.';
   return null;
 }
-
-// Brand palette: green, red, yellow, ink + light neutrals (same as Home).
-const GREEN = '#035C6C';
-const GREEN_DARK = '#024A57';
-const RED = '#F32C26';
-const YELLOW = '#FAA700';
-const INK = '#111111';
-const BG = '#F3F4F6';
-const GREEN_TINT = '#E5F3F5';
-const RED_TINT = '#FEECEC';
-const YELLOW_TINT = '#FDF6E0';
-const TEXT = INK;
-const MUTED = '#6B7280';
-const BORDER = '#E5E7EB';
-const MAX_WIDTH = 480;
 
 export default function LoginScreen({ onLogin }) {
   const insets = useSafeAreaInsets();
@@ -91,6 +79,13 @@ export default function LoginScreen({ onLogin }) {
     }
     if (normalized !== mobile) setMobile(normalized);
     setStep('OTP');
+  };
+
+  const onOtpChange = (t) => {
+    const digits = (t || '').replace(/\D/g, '').slice(0, OTP_LENGTH);
+    setOtp(digits);
+    if (error) setError(null);
+    if (digits.length === OTP_LENGTH) verify(digits);
   };
 
   const verify = async (code) => {
@@ -142,147 +137,185 @@ export default function LoginScreen({ onLogin }) {
     setError(null);
   };
 
-  const { width: winW } = useWindowDimensions();
-  const contentW = Math.min(winW, MAX_WIDTH) - rs(40);
+  const { width: winW, height: winH } = useWindowDimensions();
+  const isMobileStep = step === 'MOBILE';
+  // Both steps are laid out on the 941px-wide brand mockup grid: scaled to the
+  // screen width (capped for tablets) and shrunk further on short screens so
+  // the whole page fits; spare height on tall screens goes to flexible gaps.
+  const availH = winH - insets.bottom - Math.max(0, insets.top - rs(24));
+  const k = Math.min(Math.min(winW, 520) / LOGIN_DW, availH / (isMobileStep ? LOGIN_DH : OTP_DH));
+  // Pushes the content below a tall status bar / notch.
+  const shift = Math.max(0, insets.top + rs(4) - 66 * k);
+
+  // Keyboard open: bring the mobile / OTP field above it (edge-to-edge Android
+  // doesn't resize the window, so the page has to shrink and scroll itself).
+  const scrollRef = useRef(null);
+  useEffect(() => {
+    const sub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => {
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
+    });
+    return () => sub.remove();
+  }, []);
 
   return (
     <KeyboardAvoidingView
       style={styles.page}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
     >
-      <Backdrop />
+      <StatusBar style="light" />
       <ScrollView
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingTop: insets.top + rs(16), paddingBottom: insets.bottom + rs(20) },
-        ]}
+        ref={scrollRef}
+        contentContainerStyle={{ flexGrow: 1, alignItems: 'center', paddingBottom: insets.bottom + 30 * k }}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets={false}
         showsVerticalScrollIndicator={false}
       >
-        <View style={{ width: contentW }}>
-          {step === 'MOBILE' ? (
-            <MobileStep
-              mobile={mobile}
-              setMobile={setMobile}
-              loading={loading}
-              error={shownError}
-              onSubmit={sendOtp}
-              wide={contentW >= 340}
-            />
-          ) : step === 'MPIN' ? (
-            <View style={{ backgroundColor: '#FFFFFF', borderRadius: rs(18), paddingVertical: rs(20), paddingHorizontal: rs(8) }}>
-              <PinPad
-                key={pinKey}
-                title="Enter Login MPIN"
-                subtitle={`+91 ${mobile} · set by your shop owner`}
-                error={error}
-                busy={loading}
-                onComplete={submitMpin}
-                footer={(
-                  <View style={{ alignItems: 'center', marginTop: rs(10) }}>
-                    <Pressable onPress={backToMobile} hitSlop={8}><Text style={{ color: PIN_C.primary, fontWeight: '700', fontSize: rf(13) }}>Change number</Text></Pressable>
-                    <Text style={{ color: PIN_C.muted, fontSize: rf(12), marginTop: rs(8), textAlign: 'center' }}>Forgot MPIN? Ask your shop owner to reset it.</Text>
-                  </View>
-                )}
-              />
-            </View>
-          ) : (
-            <OtpStep
-              mobile={mobile}
-              otp={otp}
-              otpRef={otpRef}
-              onOtpChange={onOtpChange}
-              onSubmit={() => verify()}
-              onBack={backToMobile}
-              loading={loading}
-              error={shownError}
-            />
-          )}
-        </View>
+        <Skyline width={winW} height={230 * k} />
+        <LoginBowl width={winW} k={k} shift={shift} />
+        {isMobileStep ? (
+          <MobileStep
+            mobile={mobile}
+            setMobile={setMobile}
+            loading={loading}
+            error={shownError}
+            onSubmit={sendOtp}
+            k={k}
+            shift={shift}
+          />
+        ) : (
+          <OtpStep
+            mobile={mobile}
+            otp={otp}
+            otpRef={otpRef}
+            onOtpChange={onOtpChange}
+            onSubmit={() => verify()}
+            onBack={backToMobile}
+            loading={loading}
+            error={shownError}
+            k={k}
+            shift={shift}
+          />
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-/* --------------------------------------------------------------- backdrop */
+/* ------------------------------------------------------------ brand layout */
 
-// Soft green shapes in the corners — decorative only.
-function Backdrop() {
+const LOGIN_DW = 941; // mockup width both steps are measured on
+const LOGIN_DH = 1580; // design height of the mobile step (fit-to-screen)
+const OTP_DH = 1480; // design height of the MPIN step
+
+// Inter by weight (exact sizes — skips the shared type-scale snapping).
+const lf = (w) => {
+  const f = interFamily(w);
+  return f ? { fontFamily: f } : { fontWeight: String(w) };
+};
+
+// Text style on the mockup grid: design px × k, no OS font scaling.
+const textOn = (k) => (size, weight, color, extra) => ({
+  ...lf(weight), fontSize: size * k, lineHeight: size * 1.3 * k, color, includeFontPadding: false, ...extra,
+});
+
+// Flexible gap: at least `min` design px, grows to share spare screen height.
+function Gap({ k, min }) {
+  return <View style={{ flexGrow: 1, minHeight: min * k }} />;
+}
+
+// Blue header bowl with the lime swoosh under its right edge.
+function LoginBowl({ width, k, shift }) {
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      <View style={[styles.blob, { top: -rs(80), right: -rs(90), width: rs(300), height: rs(300), backgroundColor: '#EAF7EC' }]} />
-      <View style={[styles.blob, { top: rs(40), left: -rs(120), width: rs(220), height: rs(220), backgroundColor: '#F1F8F2' }]} />
-      <View style={[styles.blob, { bottom: -rs(110), left: -rs(80), width: rs(220), height: rs(220), backgroundColor: '#E5F3F5' }]} />
-      <View style={[styles.blob, { bottom: -rs(60), left: -rs(30), width: rs(130), height: rs(130), backgroundColor: '#E5F3F5', opacity: 0.55 }]} />
-      <View style={[styles.blob, { bottom: -rs(110), right: -rs(80), width: rs(220), height: rs(220), backgroundColor: '#E5F3F5' }]} />
-      <View style={[styles.blob, { bottom: -rs(60), right: -rs(30), width: rs(130), height: rs(130), backgroundColor: '#E5F3F5', opacity: 0.55 }]} />
+    <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, width }}>
+      {shift > 0 ? <View style={{ height: shift, backgroundColor: '#025D89' }} /> : null}
+      <Svg width={width} height={260 * k} viewBox="0 0 941 260" preserveAspectRatio="none">
+        <Defs>
+          <SvgGradient id="lhdr" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor="#025D89" />
+            <Stop offset="0.5" stopColor="#03779D" />
+            <Stop offset="1" stopColor="#006692" />
+          </SvgGradient>
+          <SvgGradient id="llime" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#85C648" />
+            <Stop offset="1" stopColor="#BDE739" />
+          </SvgGradient>
+        </Defs>
+        <Path d="M0 0 H941 V104 C820 170 600 248 400 248 C240 248 100 200 0 62 Z" fill="url(#llime)" />
+        <Path d="M0 0 H941 V64 C800 170 560 240 400 240 C240 240 100 190 0 60 Z" fill="url(#lhdr)" />
+      </Svg>
     </View>
   );
 }
 
-// Repair-themed illustration built from shapes + icons (no image assets):
-// a phone showing the logo on a pedestal, with wrench / phone / gear badges.
-function HeroArt({ size }) {
-  const phoneW = size * 0.46;
-  const phoneH = phoneW * 1.9;
-  const badge = size * 0.27;
+// Logo tile, wordmark, byline and app chip — shared by both steps.
+function BrandBlock({ k, t, shift }) {
   return (
-    <View pointerEvents="none" style={{ width: size, height: size * 1.12 }}>
-      <View style={[styles.blob, { top: size * 0.02, right: -size * 0.1, width: size * 0.95, height: size * 0.95, backgroundColor: GREEN_TINT }]} />
-      <View style={[styles.blob, { top: size * 0.38, left: size * 0.02, width: size * 0.5, height: size * 0.5, backgroundColor: YELLOW_TINT }]} />
-      {/* pedestal */}
-      <View style={{ position: 'absolute', bottom: size * 0.02, left: size * 0.16, width: size * 0.78, height: size * 0.16, borderRadius: size * 0.4, backgroundColor: '#FFFFFF', shadowColor: INK, shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 4 }} />
-      {/* phone */}
-      <View style={{
-        position: 'absolute', bottom: size * 0.1, right: size * 0.16, width: phoneW, height: phoneH,
-        borderRadius: phoneW * 0.2, backgroundColor: INK, padding: phoneW * 0.06, transform: [{ rotate: '10deg' }],
-        shadowColor: INK, shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 4, height: 8 }, elevation: 6,
-      }}>
-        <LinearGradient colors={['#E5F3F5', '#E5F3F5']} style={{ flex: 1, borderRadius: phoneW * 0.15, alignItems: 'center', justifyContent: 'center' }}>
-          <Image source={require('../../assets/logo.png')} style={{ width: phoneW * 0.6, height: phoneW * 0.6 }} resizeMode="contain" />
-        </LinearGradient>
+    <>
+      <View style={[lx.tile, { marginTop: 66 * k + shift, width: 196 * k, height: 196 * k, borderRadius: 40 * k }]}>
+        <Image source={require('../../assets/splash-tile.png')} style={{ width: '100%', height: '100%', borderRadius: 40 * k }} resizeMode="cover" />
       </View>
-      {/* badges */}
-      <View style={[styles.badge, { width: badge, height: badge, borderRadius: badge / 2, top: size * 0.06, left: size * 0.04, backgroundColor: RED }]}>
-        <Wrench size={badge * 0.46} color="#FFFFFF" strokeWidth={2.4} />
+      <RNText allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[t(78, 900, '#014755', { letterSpacing: -1.5 * k, lineHeight: 90 * k }), { marginTop: 10 * k, maxWidth: 520 * k }]}>
+        NEAR G <RNText style={{ color: '#00BEBC' }}>FIX</RNText>
+      </RNText>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View style={[lx.rule, { width: 70 * k }]} />
+        <RNText allowFontScaling={false} numberOfLines={1} style={[t(23, 700, '#01414C', { letterSpacing: 5 * k }), { marginHorizontal: 16 * k }]}>BY GLOBO GREEN</RNText>
+        <View style={[lx.rule, { width: 70 * k }]} />
       </View>
-      <View style={[styles.badge, { width: badge, height: badge, borderRadius: badge / 2, top: size * 0.42, right: -size * 0.04, backgroundColor: YELLOW }]}>
-        <Smartphone size={badge * 0.46} color="#FFFFFF" strokeWidth={2.4} />
-      </View>
-      <View style={{ position: 'absolute', bottom: size * 0.08, right: size * 0.02 }}>
-        <Settings size={size * 0.26} color={GREEN_DARK} fill={GREEN} strokeWidth={1.6} />
-      </View>
-    </View>
+      <LinearGradient colors={['#035C6C', '#035C6C']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+        style={{ marginTop: 16 * k, width: 377 * k, height: 56 * k, borderRadius: 28 * k, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+        <BriefcaseBusiness size={34 * k} color="#FFFFFF" strokeWidth={2.2} />
+        <RNText allowFontScaling={false} numberOfLines={1} style={[t(27, 800, '#FFFFFF', { letterSpacing: 2.5 * k }), { marginLeft: 22 * k }]}>EMPLOYEE APP</RNText>
+      </LinearGradient>
+    </>
+  );
+}
+
+// Teal pill CTA with a right arrow (LOGIN on both steps).
+function CtaButton({ k, t, label, loading, onPress }) {
+  return (
+    <TouchableOpacity onPress={onPress} disabled={loading} accessibilityRole="button" accessibilityLabel={label} activeOpacity={0.9}
+      style={[lx.cta, { marginTop: 30 * k, height: 85 * k, borderRadius: 43 * k }, loading && { opacity: 0.75 }]}>
+      <LinearGradient colors={['#035C6C', '#035C6C', '#035C6C']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+        style={{ flex: 1, borderRadius: 43 * k, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+        {loading ? <ActivityIndicator color="#FFFFFF" /> : (
+          <>
+            <RNText allowFontScaling={false} style={t(32, 800, '#FFFFFF', { letterSpacing: 5 * k })}>{label}</RNText>
+            <ArrowRight size={36 * k} color="#FFFFFF" strokeWidth={2.4} style={{ marginLeft: 20 * k }} />
+          </>
+        )}
+      </LinearGradient>
+    </TouchableOpacity>
   );
 }
 
 /* ------------------------------------------------------------------ step 1 */
 
-function MobileStep({ mobile, setMobile, loading, error, onSubmit, wide }) {
-  const art = wide ? rs(170) : rs(130);
+function MobileStep({ mobile, setMobile, loading, error, onSubmit, k, shift }) {
+  const t = textOn(k);
+  const strong = { ...lf(800), color: '#035C6C' };
   return (
-    <View>
-      {/* Hero: logo + heading on the left, illustration on the right */}
-      <View style={styles.hero}>
-        <View style={{ position: 'absolute', right: -rs(6), top: 0 }}>
-          <HeroArt size={art} />
-        </View>
-        <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
-        <Text style={styles.h1}>
-          Login with{'\n'}
-          <Text style={{ color: GREEN }}>mobile number</Text>
-        </Text>
-        <Text style={styles.sub}>Welcome to NearGFix Employee App</Text>
-      </View>
+    <View style={{ width: LOGIN_DW * k, alignItems: 'center', flexGrow: 1 }}>
+      <BrandBlock k={k} t={t} shift={shift} />
+
+      {/* Hero art + heading */}
+      <Gap k={k} min={4} />
+      <Image source={require('../../assets/login-hero.png')} style={{ width: 436 * k, height: 296 * k }} resizeMode="contain" />
+      <RNText allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[t(46, 900, '#0A0B0B', { letterSpacing: -0.6 * k, lineHeight: 58 * k }), { maxWidth: 860 * k }]}>
+        Login with <RNText style={{ color: '#035C6C' }}>mobile number</RNText>
+      </RNText>
+      <RNText allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[t(28, 400, '#5C677A'), { marginTop: 2 * k, maxWidth: 860 * k }]}>
+        Welcome to NearGFix Employee App
+      </RNText>
 
       {/* Login card */}
-      <View style={styles.card}>
-        <Text style={styles.label}>Mobile number</Text>
-        <View style={styles.numberCard}>
-          <Phone size={rs(19)} color={MUTED} strokeWidth={2} />
-          <View style={styles.inputDivider} />
-          <TextInput
+      <Gap k={k} min={26} />
+      <View style={[lx.card, { width: 748 * k, borderRadius: 40 * k, paddingHorizontal: 38 * k, paddingTop: 24 * k, paddingBottom: 28 * k }]}>
+        <RNText allowFontScaling={false} style={[t(27, 500, '#5E6B7A'), { marginLeft: 6 * k }]}>Mobile number</RNText>
+        <View style={[lx.input, { marginTop: 10 * k, height: 80 * k, borderRadius: 22 * k, paddingHorizontal: 30 * k }]}>
+          <Phone size={34 * k} color="#5C697B" strokeWidth={1.8} />
+          <View style={{ width: 1.5, height: 40 * k, backgroundColor: '#DDE2E7', marginHorizontal: 22 * k }} />
+          <RNTextInput
             value={mobile}
             onChangeText={(v) => setMobile(v.replace(/[^\d+]/g, '').slice(0, 13))}
             placeholder="9876543210"
@@ -292,48 +325,52 @@ function MobileStep({ mobile, setMobile, loading, error, onSubmit, wide }) {
             autoFocus
             returnKeyType="done"
             onSubmitEditing={onSubmit}
-            style={styles.numberInput}
+            allowFontScaling={false}
+            accessibilityLabel="Mobile number"
+            style={{ flex: 1, ...lf(700), fontSize: 34 * k, color: '#000000', padding: 0, letterSpacing: 1 * k }}
           />
         </View>
 
         <ErrorBox msg={error} />
 
-        <PrimaryButton label="LOGIN" loading={loading} onPress={onSubmit} />
+        <CtaButton k={k} t={t} label="LOGIN" loading={loading} onPress={onSubmit} />
 
-        <View style={styles.orRow}>
-          <View style={styles.orLine} />
-          <Text style={styles.orText}>STAFF ONLY</Text>
-          <View style={styles.orLine} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 30 * k }}>
+          <View style={lx.line} />
+          <RNText allowFontScaling={false} style={[t(21, 700, '#586072', { letterSpacing: 3.5 * k }), { marginHorizontal: 26 * k }]}>STAFF ONLY</RNText>
+          <View style={lx.line} />
         </View>
-        <Text style={styles.cardNote}>
-          For <Text style={styles.cardNoteStrong}>Technician · Pickup Person · Staff</Text> accounts
-        </Text>
+        <RNText allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[t(26, 500, '#111111'), { textAlign: 'center', marginTop: 18 * k }]}>
+          For <RNText style={strong}>Technician · Pickup Person · Staff</RNText> accounts
+        </RNText>
       </View>
 
       {/* Feature row */}
-      <View style={styles.features}>
-        <Feature icon={CalendarCheck} bg={GREEN_TINT} fg={GREEN} label={'Mark\nattendance'} />
-        <View style={styles.featureDivider} />
-        <Feature icon={Truck} bg={YELLOW_TINT} fg="#FAA700" label={'Manage\npickups'} />
-        <View style={styles.featureDivider} />
-        <Feature icon={ShieldCheck} bg={RED_TINT} fg={RED} label={'Trusted\n& secure'} />
+      <Gap k={k} min={34} />
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', width: 771 * k }}>
+        <Feature k={k} t={t} icon={CalendarCheck} fg="#048870" label={'Mark\nattendance'} />
+        <View style={[lx.featureDivider, { height: 90 * k, marginTop: 34 * k }]} />
+        <Feature k={k} t={t} icon={Truck} fg="#009545" label={'Manage\npickups'} />
+        <View style={[lx.featureDivider, { height: 90 * k, marginTop: 34 * k }]} />
+        <Feature k={k} t={t} icon={ShieldCheck} fg="#008630" label={'Trusted\n& secure'} />
       </View>
 
-      <Text style={styles.footnote}>
+      <Gap k={k} min={36} />
+      <RNText allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[t(22, 400, '#505B6F'), { textAlign: 'center', maxWidth: 860 * k }]}>
         Customers should use the Globo Green customer app.
-      </Text>
+      </RNText>
     </View>
   );
 }
 
-function Feature({ icon: Icon, bg, fg, label }) {
-  const dot = rs(48);
+function Feature({ k, t, icon: Icon, fg, label }) {
   return (
-    <View style={styles.feature}>
-      <View style={{ width: dot, height: dot, borderRadius: dot / 2, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon size={rs(22)} color={fg} strokeWidth={2.2} />
-      </View>
-      <Text style={styles.featureText}>{label}</Text>
+    <View style={{ flex: 1, alignItems: 'center' }}>
+      <LinearGradient colors={['#ECFBF6', '#E0F6EF']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+        style={{ width: 115 * k, height: 90 * k, borderRadius: 26 * k, alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={56 * k} color={fg} strokeWidth={2} />
+      </LinearGradient>
+      <RNText allowFontScaling={false} style={[t(26, 400, '#111111', { lineHeight: 30 * k }), { textAlign: 'center', marginTop: 12 * k }]}>{label}</RNText>
     </View>
   );
 }
@@ -341,48 +378,65 @@ function Feature({ icon: Icon, bg, fg, label }) {
 /* ------------------------------------------------------------------ step 2 */
 
 function OtpStep({
-  mobile, otp, otpRef, onOtpChange, onSubmit, onBack, loading, error,
+  mobile, otp, otpRef, onOtpChange, onSubmit, onBack, loading, error, k, shift,
 }) {
+  const t = textOn(k);
   const boxes = Array.from({ length: OTP_LENGTH });
+  const boxGap = 14;
+  const boxW = (748 - 76 - boxGap * (OTP_LENGTH - 1)) / OTP_LENGTH; // design px
 
   return (
-    <View>
-      <Pressable onPress={onBack} hitSlop={12} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="Back">
-        <ArrowLeft size={rs(20)} color={TEXT} />
+    <View style={{ width: LOGIN_DW * k, alignItems: 'center', flexGrow: 1 }}>
+      <Pressable onPress={onBack} hitSlop={12} accessibilityRole="button" accessibilityLabel="Back"
+        style={[lx.back, { top: 97 * k + shift, left: 41 * k, width: 70 * k, height: 70 * k, borderRadius: 35 * k }]}>
+        <ArrowLeft size={34 * k} color="#014755" strokeWidth={2.4} />
       </Pressable>
 
-      <BrandMark size={80} />
-      <Text style={[styles.h1Center, { marginTop: rs(16) }]}>
-        Enter <Text style={{ color: GREEN }}>MPIN</Text>
-      </Text>
-      <Text style={styles.subCenter}>Enter the {OTP_LENGTH}-digit MPIN set by your shop owner for</Text>
-      <View style={styles.phonePill}>
-        <Phone size={rs(16)} color={MUTED} strokeWidth={2.2} />
-        <Text style={styles.phonePillText}>{mobile}</Text>
+      <BrandBlock k={k} t={t} shift={shift} />
+
+      {/* Hero art + heading */}
+      <Gap k={k} min={4} />
+      <Image source={require('../../assets/login-hero.png')} style={{ width: 300 * k, height: 204 * k }} resizeMode="contain" />
+      <RNText allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[t(50, 900, '#0A0B0B', { letterSpacing: -0.6 * k, lineHeight: 62 * k }), { maxWidth: 860 * k }]}>
+        Enter your <RNText style={{ color: '#035C6C' }}>MPIN</RNText>
+      </RNText>
+      <RNText allowFontScaling={false} style={[t(27, 400, '#5C677A'), { marginTop: 2 * k, textAlign: 'center', maxWidth: 800 * k }]}>
+        Enter the {OTP_LENGTH}-digit MPIN set by your shop owner for
+      </RNText>
+      <View style={[lx.phonePill, { marginTop: 16 * k, height: 70 * k, borderRadius: 35 * k, paddingHorizontal: 30 * k, minWidth: 460 * k }]}>
+        <Phone size={30 * k} color="#5C697B" strokeWidth={1.8} />
+        <RNText allowFontScaling={false} numberOfLines={1} style={[t(30, 700, '#000000', { letterSpacing: 1 * k }), { flex: 1, marginLeft: 16 * k }]}>{mobile}</RNText>
         <TouchableOpacity onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel="Edit number">
-          <Text style={styles.phonePillEdit}>Edit</Text>
+          <RNText allowFontScaling={false} style={[t(27, 800, '#035C6C'), { marginLeft: 24 * k }]}>Edit</RNText>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.card}>
+      {/* MPIN card */}
+      <Gap k={k} min={26} />
+      <View style={[lx.card, { width: 748 * k, borderRadius: 40 * k, paddingHorizontal: 38 * k, paddingTop: 24 * k, paddingBottom: 28 * k }]}>
+        <RNText allowFontScaling={false} style={[t(27, 500, '#5E6B7A'), { marginLeft: 6 * k }]}>Login MPIN</RNText>
         {/* The visible boxes are display-only; one transparent input sits on top
             of the whole row so backspace, paste and SMS autofill all behave like
             a normal single field instead of six that fight over focus. */}
-        <Pressable onPress={() => otpRef.current?.focus()} style={styles.otpWrap}>
-          <View style={styles.otpRow} pointerEvents="none">
-          {boxes.map((_, i) => {
-            const char = otp[i] || '';
-            const active = otp.length === i;
-            return (
-              <View key={i} style={[styles.otpBox, active && styles.otpBoxActive]}>
-                <Text style={char ? styles.otpChar : styles.otpCharEmpty}>{char ? '•' : ''}</Text>
-              </View>
-            );
-          })}
+        <Pressable onPress={() => otpRef.current?.focus()} style={{ marginTop: 12 * k }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }} pointerEvents="none">
+            {boxes.map((_, i) => {
+              const filled = !!otp[i];
+              const active = otp.length === i;
+              return (
+                <View key={i} style={[lx.otpBox, {
+                  width: boxW * k, height: 100 * k, borderRadius: 22 * k,
+                  borderColor: active ? '#035C6C' : filled ? '#9FD3D6' : '#DDE2E7',
+                  backgroundColor: active || filled ? '#FFFFFF' : '#F7F9FA',
+                }]}>
+                  <RNText allowFontScaling={false} style={t(40, 800, '#000000')}>{filled ? '•' : ''}</RNText>
+                </View>
+              );
+            })}
           </View>
           {/* Outside the box row and absolutely positioned, so typed digits can
               never give it width and squeeze/shift the boxes. */}
-          <TextInput
+          <RNTextInput
             ref={otpRef}
             value={otp}
             onChangeText={onOtpChange}
@@ -395,26 +449,30 @@ function OtpStep({
             textContentType="none"
             autoComplete="off"
             secureTextEntry
+            accessibilityLabel="Login MPIN"
             style={styles.otpHiddenInput}
           />
         </Pressable>
 
         <ErrorBox msg={error} />
 
-        <PrimaryButton label="LOGIN" loading={loading} onPress={onSubmit} />
+        <CtaButton k={k} t={t} label="LOGIN" loading={loading} onPress={onSubmit} />
 
-        <View style={styles.resendRow}>
-          <Text style={styles.resendMuted}>Forgot MPIN? Ask your shop owner to reset it.</Text>
-        </View>
+        <RNText allowFontScaling={false} style={[t(24, 400, '#5C677A'), { textAlign: 'center', marginTop: 24 * k }]}>
+          Forgot MPIN? Ask your shop owner to reset it.
+        </RNText>
       </View>
 
-      <View style={styles.safeCard}>
-        <View style={styles.safeIcon}>
-          <ShieldCheck size={rs(20)} color={GREEN} strokeWidth={2.2} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.safeTitle}>Your MPIN is never shown or shared</Text>
-          <Text style={styles.safeSub}>Stored securely and verified only by the server</Text>
+      {/* Safety note */}
+      <Gap k={k} min={30} />
+      <View style={[lx.safe, { width: 748 * k, borderRadius: 32 * k, padding: 22 * k }]}>
+        <LinearGradient colors={['#ECFBF6', '#E0F6EF']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+          style={{ width: 90 * k, height: 80 * k, borderRadius: 24 * k, alignItems: 'center', justifyContent: 'center' }}>
+          <ShieldCheck size={44 * k} color="#008630" strokeWidth={2} />
+        </LinearGradient>
+        <View style={{ flex: 1, marginLeft: 22 * k }}>
+          <RNText allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={t(26, 800, '#111111')}>Your MPIN is never shown or shared</RNText>
+          <RNText allowFontScaling={false} numberOfLines={1} adjustsFontSizeToFit style={[t(22, 400, '#5C677A'), { marginTop: 4 * k }]}>Stored securely and verified only by the server</RNText>
         </View>
       </View>
     </View>
@@ -422,30 +480,6 @@ function OtpStep({
 }
 
 /* ------------------------------------------------------------------- parts */
-
-function PrimaryButton({ label, loading, onPress }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      disabled={loading}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      activeOpacity={0.9}
-      style={[styles.cta, loading && { opacity: 0.75 }]}
-    >
-      <LinearGradient colors={['#035C6C', GREEN, GREEN_DARK]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={styles.ctaInner}>
-        {loading ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <>
-            <Text style={styles.ctaText}>{label}</Text>
-            <ArrowRight size={rs(20)} color="#FFFFFF" strokeWidth={2.4} />
-          </>
-        )}
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-}
 
 function ErrorBox({ msg }) {
   if (!msg) return null;
@@ -456,122 +490,50 @@ function ErrorBox({ msg }) {
   );
 }
 
-const cardShadow = {
-  shadowColor: INK, shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5,
-};
+const lx = StyleSheet.create({
+  tile: {
+    backgroundColor: '#035C6C',
+    shadowColor: '#7FE3F0', shadowOpacity: 0.55, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 8,
+  },
+  rule: { height: 2, backgroundColor: '#BBC6CC', borderRadius: 1 },
+  card: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#111111', shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 5,
+  },
+  input: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: '#DDE2E7', backgroundColor: '#FFFFFF' },
+  cta: {
+    backgroundColor: '#035C6C',
+    shadowColor: '#035C6C', shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 6,
+  },
+  line: { flex: 1, height: 1.5, backgroundColor: '#E1E5EA' },
+  featureDivider: { width: 1.5, backgroundColor: '#E5E8EB' },
+  back: {
+    position: 'absolute', zIndex: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF',
+    shadowColor: '#0B3B40', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+  },
+  phonePill: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#DDE2E7',
+    shadowColor: '#111111', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
+  },
+  otpBox: { alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
+  safe: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#EEF2F2',
+    shadowColor: '#111111', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
+  },
+});
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: BG },
-  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
-  scrollTop: { justifyContent: 'flex-start' },
-  blob: { position: 'absolute', borderRadius: 9999 },
-  badge: {
-    position: 'absolute', alignItems: 'center', justifyContent: 'center',
-    shadowColor: INK, shadowOpacity: 0.15, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4,
-  },
-
-  // The PNG is a teal roundel on an opaque white square canvas, so `contain`
-  // keeps the whole mark visible without cropping.
-  logo: { height: rs(96), width: rs(96), marginBottom: rs(18) },
-
-  hero: { minHeight: rs(250), justifyContent: 'flex-end', paddingBottom: rs(4) },
-  h1: { fontSize: rf(30), lineHeight: rlh(37), fontWeight: '900', color: TEXT, letterSpacing: -0.4 },
-  h1Center: { fontSize: rf(28), lineHeight: rlh(34), fontWeight: '900', color: TEXT, textAlign: 'center' },
-  sub: { fontSize: rf(14.5), lineHeight: rlh(20), color: MUTED, marginTop: rs(6) },
-  subCenter: { fontSize: rf(14), lineHeight: rlh(20), color: MUTED, textAlign: 'center', marginTop: rs(6) },
-
-  card: {
-    marginTop: rs(22), backgroundColor: '#FFFFFF', borderRadius: rs(26),
-    paddingHorizontal: rs(18), paddingVertical: rs(20), ...cardShadow,
-  },
-  label: { fontSize: rf(13.5), color: MUTED, marginBottom: rs(8), marginLeft: rs(2) },
-  numberCard: {
-    flexDirection: 'row', alignItems: 'center',
-    height: rs(56), paddingHorizontal: rs(16), borderRadius: rs(16),
-    borderWidth: 1, borderColor: BORDER, backgroundColor: '#FFFFFF',
-  },
-  inputDivider: { width: 1, height: rs(24), backgroundColor: BORDER, marginHorizontal: rs(14) },
-  numberInput: { flex: 1, fontSize: rf(17), fontWeight: '600', color: TEXT, padding: 0, letterSpacing: 0.5 },
-
-  orRow: { flexDirection: 'row', alignItems: 'center', marginTop: rs(20) },
-  orLine: { flex: 1, height: 1, backgroundColor: BORDER },
-  orText: { fontSize: rf(11.5), fontWeight: '700', color: MUTED, marginHorizontal: rs(12), letterSpacing: 1 },
-  cardNote: { fontSize: rf(13), color: TEXT, textAlign: 'center', marginTop: rs(10) },
-  cardNoteStrong: { fontWeight: '800', color: GREEN_DARK },
-
-  features: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', marginTop: rs(22) },
-  feature: { flex: 1, alignItems: 'center' },
-  featureDivider: { width: 1, height: rs(46), backgroundColor: BORDER, marginTop: rs(10) },
-  featureText: { fontSize: rf(13), lineHeight: rlh(17), color: TEXT, textAlign: 'center', marginTop: rs(8) },
-
-  backBtn: {
-    alignSelf: 'flex-start', height: rs(42), width: rs(42), borderRadius: rs(21), alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#FFFFFF', marginBottom: rs(12), ...cardShadow,
-  },
-
-  otpWrap: { position: 'relative' },
-  otpRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  otpBox: {
-    flexGrow: 1,
-    flexShrink: 0,
-    flexBasis: 0,
-    height: rs(56),
-    marginHorizontal: rs(4),
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: rs(14),
-    // Fixed 2px border for every box so the active highlight never changes size.
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#F7F7F7',
-    shadowColor: INK, shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 }, elevation: 1,
-  },
-  otpBoxActive: { borderColor: GREEN, backgroundColor: '#FFFFFF' },
-  otpChar: { fontSize: rf(20), fontWeight: '800', color: TEXT },
-  otpCharEmpty: { fontSize: rf(20), fontWeight: '700', color: '#CFCFCF' },
+  page: { flex: 1, backgroundColor: '#FFFFFF' },
   otpHiddenInput: {
     position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
     opacity: 0, color: 'transparent', padding: 0, fontSize: 1,
   },
-
-  note: { fontSize: rf(12.5), color: GREEN_DARK, fontWeight: '600', marginTop: rs(12), textAlign: 'center' },
-
-  cta: {
-    height: rs(56), borderRadius: 999, marginTop: rs(18), overflow: 'hidden',
-    shadowColor: GREEN, shadowOpacity: 0.35, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6,
-  },
-  ctaInner: { flex: 1, borderRadius: 999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  ctaText: { color: '#FFFFFF', fontSize: rf(16), fontWeight: '900', letterSpacing: 2, marginRight: rs(12) },
-
-  phonePill: {
-    flexDirection: 'row', alignItems: 'center', alignSelf: 'center', marginTop: rs(10),
-    backgroundColor: '#FFFFFF', borderRadius: rs(14), borderWidth: 1, borderColor: BORDER,
-    paddingHorizontal: rs(14), height: rs(44), minWidth: rs(230),
-    shadowColor: INK, shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2,
-  },
-  phonePillText: { flex: 1, fontSize: rf(15), fontWeight: '600', color: TEXT, marginLeft: rs(10), letterSpacing: 0.5 },
-  phonePillEdit: { fontSize: rf(13.5), fontWeight: '800', color: GREEN_DARK, marginLeft: rs(12) },
-  safeCard: {
-    flexDirection: 'row', alignItems: 'center', marginTop: rs(18), backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: rs(18), borderWidth: 1, borderColor: '#EEF2EE', paddingHorizontal: rs(14), paddingVertical: rs(12),
-  },
-  safeIcon: { width: rs(40), height: rs(40), borderRadius: rs(20), backgroundColor: GREEN_TINT, alignItems: 'center', justifyContent: 'center', marginRight: rs(12) },
-  safeTitle: { fontSize: rf(13.5), fontWeight: '800', color: TEXT },
-  safeSub: { fontSize: rf(11.5), color: MUTED, marginTop: 2 },
-  resendRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: rs(18) },
-  resendMuted: { fontSize: rf(13), color: MUTED },
-  resendLink: { fontSize: rf(13), fontWeight: '800', color: GREEN_DARK },
-
-  resendLinkOff: { color: MUTED, fontWeight: '600' },
-
-  footnote: { fontSize: rf(11.5), lineHeight: rlh(16), color: MUTED, textAlign: 'center', marginTop: rs(18) },
-
   errorBox: {
     marginTop: rs(12),
     borderRadius: rs(12),
     borderWidth: 1,
     borderColor: 'rgba(248,65,65,0.35)',
-    backgroundColor: RED_TINT,
+    backgroundColor: '#FEECEC',
     paddingHorizontal: rs(12),
     paddingVertical: rs(9),
   },

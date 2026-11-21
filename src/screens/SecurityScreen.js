@@ -9,7 +9,8 @@ import MintScreenHeader from '../components/MintScreenHeader';
 import { PinPadBody } from '../components/PinPad';
 import { notify } from '../components/confirm';
 import { selectSession } from '../store/authSlice';
-import { getPinStatus, resetPin, savePin } from '../api/pin';
+import { changeLoginMpin, getPinStatus, resetPin, savePin } from '../api/pin';
+import { useLogout } from '../auth/LogoutContext';
 import { requestOtp } from '../api/auth';
 import { authenticateBiometric, biometricUnavailableReason, getLockPrefs, setLockPrefs } from '../auth/appLock';
 import { requireFreshAuth } from '../auth/freshAuth';
@@ -33,6 +34,39 @@ export default function SecurityScreen({ navigation }) {
   const [flow, setFlow] = useState(null); // PIN flow state (see Flow)
   const [tpinReset, setTpinReset] = useState(false);
   const [tpinSet, setTpinSet] = useState(null); // null = unknown (keeps Reset)
+  const onLogout = useLogout();
+  // Change Login MPIN form (current + new + confirm). Never stored beyond this sheet.
+  const [mpinForm, setMpinForm] = useState(null); // { current, next, confirm, busy, error }
+  const saveMpin = async () => {
+    const f = mpinForm;
+    const err = !/^\d{6}$/.test(f.current) ? 'Enter your current 6-digit MPIN.'
+      : !/^\d{6}$/.test(f.next) ? 'New MPIN must be exactly 6 digits.'
+        : f.next !== f.confirm ? 'New MPIN and Confirm MPIN do not match.'
+          : f.next === f.current ? 'New MPIN must be different from your current MPIN.'
+            : null;
+    if (err) { setMpinForm({ ...f, error: err }); return; }
+    setMpinForm({ ...f, busy: true, error: null });
+    try {
+      await changeLoginMpin(f.current, f.next);
+      setMpinForm(null);
+      notify('MPIN changed', 'Please log in again with your new MPIN.', { type: 'success' });
+      onLogout(); // server already revoked every session
+    } catch (e) {
+      setMpinForm({ ...f, current: '', busy: false, error: userMessage(e, 'Could not change the MPIN.') });
+    }
+  };
+  const mpinInput = (key, label) => (
+    <View style={{ marginTop: 12 }}>
+      <Text style={{ fontSize: rf(12.5), fontWeight: '700', color: '#374151', marginBottom: 6 }}>{label}</Text>
+      <TextInput
+        value={mpinForm?.[key] || ''}
+        onChangeText={(t) => setMpinForm((f) => ({ ...f, [key]: t.replace(/\D/g, '').slice(0, 6), error: null }))}
+        keyboardType="number-pad" maxLength={6} secureTextEntry autoComplete="off" textContentType="none"
+        editable={!mpinForm?.busy} placeholder="••••••" placeholderTextColor="#9CA3AF"
+        style={{ borderWidth: 1.5, borderColor: '#D1D5DB', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: rf(18), letterSpacing: 6, color: '#111111', backgroundColor: '#F9FAFB' }}
+      />
+    </View>
+  );
 
   const load = useCallback(async () => {
     setLoadErr(null);
@@ -124,8 +158,9 @@ export default function SecurityScreen({ navigation }) {
             : loadErr ? <Pressable onPress={load} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, backgroundColor: TEAL }}><Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: rf(12) }}>Retry</Text></Pressable> : null}
         </View>
         <View style={card}>
-          {/* Login MPIN is owner-managed (Partner App → Employee Profile); no self create/change/reset. */}
-          <Row icon={KeyRound} label="Login MPIN" sub="Set and reset only by your shop owner. Forgot it? Ask your shop owner." last />
+          {/* Employee changes own Login MPIN (current MPIN required); owner can still reset it in the Partner App. */}
+          <Row icon={KeyRound} label="Change Login MPIN" sub="Change your login MPIN securely. Your shop owner can also reset it."
+            onPress={() => setMpinForm({ current: '', next: '', confirm: '', busy: false, error: null })} last />
         </View>
         <View style={card}>
           <Row icon={Lock} label="App Lock" sub="Ask for PIN / biometrics when reopening the app"
@@ -163,6 +198,26 @@ export default function SecurityScreen({ navigation }) {
                 onCancel={flow.busy ? undefined : () => setFlow(null)}
               />
             ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!mpinForm} transparent animationType="slide" onRequestClose={() => !mpinForm?.busy && setMpinForm(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(17,17,17,0.45)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20 }}>
+            <Text style={{ fontSize: rf(17), fontWeight: '800', color: '#111111', textAlign: 'center' }}>Change Login MPIN</Text>
+            <Text style={{ fontSize: rf(12.5), color: '#6B7280', textAlign: 'center', marginTop: 4 }}>You will be logged out and must sign in with the new MPIN.</Text>
+            {mpinInput('current', 'Current MPIN')}
+            {mpinInput('next', 'New MPIN')}
+            {mpinInput('confirm', 'Confirm New MPIN')}
+            {mpinForm?.error ? <Text style={{ color: '#DC2626', fontSize: rf(12.5), fontWeight: '600', marginTop: 10, textAlign: 'center' }}>{mpinForm.error}</Text> : null}
+            <Pressable onPress={saveMpin} disabled={mpinForm?.busy}
+              style={{ backgroundColor: TEAL, opacity: mpinForm?.busy ? 0.6 : 1, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 16 }}>
+              {mpinForm?.busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>Save MPIN</Text>}
+            </Pressable>
+            <Pressable onPress={() => !mpinForm?.busy && setMpinForm(null)} style={{ alignItems: 'center', padding: 10 }}>
+              <Text style={{ color: '#6B7280', fontWeight: '700' }}>Cancel</Text>
+            </Pressable>
           </View>
         </View>
       </Modal>

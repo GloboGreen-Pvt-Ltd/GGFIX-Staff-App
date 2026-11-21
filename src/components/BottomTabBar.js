@@ -6,7 +6,7 @@ import { Text } from './Typography';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import { CommonActions } from '@react-navigation/native';
-import { House, Calendar, Laptop, LayoutGrid } from 'lucide-react-native';
+import { House, Calendar, ClipboardCheck, LayoutGrid } from 'lucide-react-native';
 import { selectSession } from '../store/authSlice';
 import { resolveRoleKey } from '../config/categories';
 import { rf, fontScale, isTablet } from '../utils/responsive';
@@ -25,9 +25,9 @@ import { resolveFontSize } from '../theme/typography';
 // Partner values (tabBarMetrics TAB_BAR_HEIGHT_PHONE / _TABLET).
 export const TAB_BAR_HEIGHT = isTablet ? 56 : 50;
 
-const ICON_ON = '#F32C26';                       // active icon + label (partner ICON_ON)
-const ACTIVE_PILL = '#FEEAE9';                   // active tab's pill — light tint of #F32C26
-const SCAN_TEAL = '#035C6C';                     // centre Scan button (partner NAV_TEAL)
+const ICON_ON = '#035C6C';                       // active icon + label (deep teal)
+const ACTIVE_PILL = '#E2F5F4';                   // active tab's pill — mint tint of the teal
+const SCAN_TEAL = '#035C6C';                     // centre Scan button
 const ICON_OFF = '#374151';                      // inactive icon + label (partner ICON_OFF)
 const GLASS_WASH = '#FFFFFF';                    // bar body (no-blur fallback)
 const GLASS_OUTLINE = '#ECECEC';                 // thin light-grey edge
@@ -69,9 +69,9 @@ function tabsFor(roleKey) {
     { key: 'Attendance', label: 'Attendance', icon: Calendar, route: 'DailyAttendance' },
   ];
   if (roleKey === 'PICKUP_PERSON') {
-    tabs.push({ key: 'Tasks', label: 'My Jobs', icon: Laptop, route: 'PickupAssign' });
+    tabs.push({ key: 'Tasks', label: 'My Jobs', icon: ClipboardCheck, route: 'MyJobs' });
   } else if (roleKey === 'TECHNICIAN') {
-    tabs.push({ key: 'Tasks', label: 'My Jobs', icon: Laptop, route: 'TaskReport' });
+    tabs.push({ key: 'Tasks', label: 'My Jobs', icon: ClipboardCheck, route: 'TaskReport' });
   }
   tabs.push({ key: 'Account', label: 'More', icon: LayoutGrid, route: 'AccountTab' });
   return tabs;
@@ -203,7 +203,7 @@ export default function BottomTabBar({ active = 'Home', navigation, routeName })
                 style={{ flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', padding: PILL_INSET }}
               >
                 {/* Active: bolder red outline; inactive: thin dark grey (partner TabBarItem). */}
-                <Icon size={ICON_SIZE} color={isActive ? ICON_ON : ICON_OFF} strokeWidth={isActive ? 2.4 : 1.75} />
+                <Icon size={ICON_SIZE} color={isActive ? ICON_ON : ICON_OFF} fill={isActive && t.key === 'Home' ? ICON_ON : 'none'} strokeWidth={isActive ? 2.4 : 1.75} />
                 <View style={{ height: LABEL_H, marginTop: LABEL_GAP, justifyContent: 'center' }}>
                   <Text
                     numberOfLines={1}

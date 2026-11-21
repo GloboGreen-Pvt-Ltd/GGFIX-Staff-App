@@ -119,7 +119,7 @@ export async function declinePickup(bookingId, { reason, note } = {}) {
 // re-check from the sell inspection pages, saved beside the customer's answers.
 export async function updatePickupStatus(bookingId, nextStatus, opts) {
   const { note, latitude, longitude, inspection } = opts || {};
-  if (nextStatus === 'RECEIVED_AT_SHOP') await requireFreshAuth('Confirm handover to shop');
+  if (nextStatus === 'RECEIVED_AT_SHOP') await requireFreshAuth('Confirm handover to shop', { method: 'PATCH', path: `${base(bookingId)}/${bookingId}/status`, body: { status: nextStatus } });
   return await ticketApi.patch(`${base(bookingId)}/${bookingId}/status`, {
     body: {
       status: nextStatus,
@@ -129,6 +129,17 @@ export async function updatePickupStatus(bookingId, nextStatus, opts) {
       ...(inspection ? { inspection } : {}),
     },
   });
+}
+
+// Shop handover (repair pickups at REACHED_SHOP): the pickup person asks the
+// shop to confirm; an Owner / Shop / same-shop Employee confirms with their own
+// TPIN on the Partner App. Idempotent (a repeat tap re-notifies the shop).
+export async function requestShopHandover(bookingId) {
+  return await ticketApi.post(`/technicians/me/pickup-bookings/${bookingId}/handover-request`, { body: {} });
+}
+// { state: NOT_REQUESTED | PENDING | COMPLETED, requestedAt, verifiedByName, verifiedRole, confirmedAt }
+export async function getShopHandover(bookingId) {
+  return await ticketApi.get(`/technicians/me/pickup-bookings/${bookingId}/handover`, { skipAuthExpiry: true });
 }
 
 // Device purchase: what the customer answered when selling (device ids,
@@ -152,7 +163,7 @@ export const submitSellRevision = (id, { amount, reason, note }) => sellStep(id,
 export const sellCustomerDecision = (id, decision) => sellStep(id, 'revision/customer', { decision });
 /** method UPI | CASH; proofUrl from uploadMedia. */
 export const recordSellPayment = async (id, { method, reference, proofUrl }) => {
-  if (String(method).toUpperCase() === 'CASH') await requireFreshAuth('Confirm cash payment');
+  if (String(method).toUpperCase() === 'CASH') await requireFreshAuth('Confirm cash payment', { method: 'POST', path: `/technicians/me/sell-pickups/${id}/payment` });
   return sellStep(id, 'payment', { method, reference, proofUrl });
 };
 

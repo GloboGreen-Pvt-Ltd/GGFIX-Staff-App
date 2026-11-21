@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePresence, recheckPresence, PRESENCE_LABEL, fmtClock, fmtDuration } from '../utils/presenceStore';
 import { AppState, RefreshControl, View, TouchableOpacity, ScrollView, Image, ActivityIndicator, useWindowDimensions, Text as RNText } from 'react-native';
 import { Text } from '../components/Typography';
 import { interFamily } from '../theme/typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useDispatch, useSelector } from 'react-redux';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,7 +13,6 @@ import {
   MapPin,
   ChevronRight,
   Calendar,
-  Briefcase,
   Clock,
   ShieldAlert,
   ShieldCheck,
@@ -26,6 +25,25 @@ import {
   Coffee,
   CloudSun,
   Moon,
+  Layers,
+  RefreshCw,
+  Package,
+  Truck,
+  ArrowRightLeft,
+  Hourglass,
+  CircleDot,
+  CalendarCheck,
+  CalendarCheck2,
+  CalendarPlus,
+  CalendarX,
+  ChartNoAxesColumnIncreasing,
+  UserCheck,
+  FileText,
+  Database,
+  ClipboardCheck,
+  LayoutGrid,
+  ChevronLeft,
+  RotateCcwClock,
 } from 'lucide-react-native';
 import { rf, rlh, rs } from '../utils/responsive';
 import { selectSession, mergeTechnicianProfile, selectShopLocation, selectTechnicianId } from '../store/authSlice';
@@ -43,7 +61,7 @@ import { listMyTickets, listTicketEvents } from '../api/tickets';
 import { listMyAssignedPickups } from '../api/pickups';
 import { DELIVERY_TABS, listMyDeliveries } from '../api/buyDeliveries';
 import { REPAIR_DELIVERY_TABS, listRepairDeliveries } from '../api/repairDeliveries';
-import { bucketOf } from '../utils/pickups';
+import { tabBucketOf } from '../utils/pickups';
 import { jobStage, isLiveStage, isAwaitingAccept } from '../utils/jobStage';
 import { listTechnicianWorkStatuses } from '../api/master';
 import { effectiveLateMinutes } from './DailyAttendanceScreen';
@@ -58,7 +76,7 @@ import MyTasksShortcut from '../components/MyTasksShortcut';
 import { syncCheckoutAlarm, cancelCheckoutAlarm } from '../utils/checkoutAlarm';
 import { CalendarModal, parseISO, toISO } from '../components/DatePickerField';
 import { useBreak, formatMinutes } from '../utils/breakTracker';
-import { BadgeIconTile, MonthPill, TILE_TONES } from '../components/MintKit';
+import { TILE_TONES } from '../components/MintKit';
 
 // Home-screen palette (NearGFix green + mint). Scoped to this screen so the
 // app-wide theme tokens other screens rely on stay untouched.
@@ -89,26 +107,36 @@ const C = {
   faint: '#A3A3A3',
 };
 
+// Home redesign palette (deep teal + mint), from the approved mockup.
+const H = {
+  teal: '#035C6C',
+  tealDeep: '#035C6C',
+  badge: '#035C6C',
+  ink: '#111111',
+  text: '#1F2937',
+  line: '#E8ECEF',
+  cardBorder: '#EEF1F3',
+};
+
 const MAX_CONTENT_WIDTH = 720;
-// Quick Access tiles, styled like the Partner app's dashboard tools: a pastel
-// circle behind a solid MaterialCommunityIcons glyph. Keyed by the category
-// `key` from config/categories.js; same pastel set as the Partner app.
-const QUICK_TILE_INK = '#111111';
-// Brand palette circles with white icons (teal, navy, blue, green, orange, red).
+// Quick Access tiles: mint circle with an outline teal glyph. Keyed by the
+// category `key` from config/categories.js.
+const QUICK_BG = '#EAF7F5';
+const QUICK_FG = '#035C6C';
 const QUICK_TILES = {
-  daily_attendance: { icon: 'account-clock', bg: '#035C6C', fg: '#FFFFFF' },
-  daily_shift:      { icon: 'calendar-clock', bg: '#0788C9', fg: '#FFFFFF' },
-  monthly_summary:  { icon: 'calendar-month', bg: '#1C3053', fg: '#FFFFFF' },
-  leave_request:    { icon: 'calendar-remove', bg: '#F32C26', fg: '#FFFFFF' },
-  apply_permission: { icon: 'shield-check', bg: '#609138', fg: '#FFFFFF' },
-  leave_report:     { icon: 'clipboard-text', bg: '#FAA700', fg: '#FFFFFF' },
-  permission_report: { icon: 'clipboard-clock', bg: '#035C6C', fg: '#FFFFFF' },
-  assign_task:      { icon: 'clipboard-account', bg: '#0788C9', fg: '#FFFFFF' },
-  task_report:      { icon: 'clipboard-check', bg: '#609138', fg: '#FFFFFF' },
-  assign_pickup:    { icon: 'truck', bg: '#1C3053', fg: '#FFFFFF' },
-  pickup_report:    { icon: 'truck-delivery', bg: '#F32C26', fg: '#FFFFFF' },
-  salary_report:    { icon: 'currency-inr', bg: '#FAA700', fg: '#FFFFFF' },
-  default:          { icon: 'view-grid', bg: '#035C6C', fg: '#FFFFFF' },
+  daily_attendance: { icon: CalendarCheck },
+  daily_shift:      { icon: CalendarCheck2 },
+  monthly_summary:  { icon: ChartNoAxesColumnIncreasing },
+  leave_request:    { icon: CalendarPlus },
+  apply_permission: { icon: UserCheck },
+  leave_report:     { icon: FileText },
+  permission_report: { icon: ShieldCheck },
+  assign_task:      { icon: ClipboardList },
+  task_report:      { icon: ClipboardCheck },
+  assign_pickup:    { icon: Truck },
+  pickup_report:    { icon: Package },
+  salary_report:    { icon: Database },
+  default:          { icon: LayoutGrid },
 };
 
 // Status buckets used to split the "assignedToMe" ticket list into the
@@ -228,6 +256,9 @@ function initialsFromName(name) {
 }
 
 export default function HomeScreen({ navigation }) {
+  const presence = usePresence();
+  // Only a live, checked-in reading (gate re-checks every 30 s) is shown as presence.
+  const presenceLive = !!presence?.checkedIn && presence.state !== 'MONITORING_OFF' && Date.now() - (presence.receivedAt || 0) < 5 * 60 * 1000;
   const dispatch = useDispatch();
   const session = useSelector(selectSession);
   const shopLoc = useSelector(selectShopLocation);
@@ -250,6 +281,8 @@ export default function HomeScreen({ navigation }) {
   monthRef.current = { month, year };
 
   const [todayAttendance, setTodayAttendance] = useState(null);
+  // Check-in / check-out changed → start / stop presence monitoring now.
+  useEffect(() => { recheckPresence(); }, [todayAttendance?.checkInTime, todayAttendance?.checkOutTime]);
   const [monthly, setMonthly] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [leaves, setLeaves] = useState([]);
@@ -464,12 +497,12 @@ export default function HomeScreen({ navigation }) {
   }, [reloadTickets, reloadAttendance, isPickupPerson]);
   const pickupSummary = useMemo(() => {
     const list = (pickups || []).filter((b) => b.kind !== 'SELL'); // repair pickups only
-    const count = (bucket) => list.filter((b) => bucketOf(b.status) === bucket).length;
+    const count = (bucket) => list.filter((b) => tabBucketOf(b) === bucket).length;
     return { total: list.length, assigned: count('ASSIGNED'), inProgress: count('IN_PROGRESS'), completed: count('COMPLETED') };
   }, [pickups]);
   const sellSummary = useMemo(() => {
     const list = (pickups || []).filter((b) => b.kind === 'SELL'); // selling pickups from customers
-    const count = (bucket) => list.filter((b) => bucketOf(b.status) === bucket).length;
+    const count = (bucket) => list.filter((b) => tabBucketOf(b) === bucket).length;
     return { total: list.length, assigned: count('ASSIGNED'), inProgress: count('IN_PROGRESS'), completed: count('COMPLETED') };
   }, [pickups]);
 
@@ -724,7 +757,10 @@ export default function HomeScreen({ navigation }) {
     else { brk.startBreak(); notify('Break started', '', { type: 'success' }); }
   };
   const statusText = onBreak ? 'On Break' : buttonMode === 'in' ? 'Not Checked In' : buttonMode === 'out' ? 'On Duty' : 'Completed';
-  const statusColor = buttonMode === 'in' || onBreak ? '#FAA700' : '#609138';
+  const statusWarn = buttonMode === 'in' || onBreak;
+  const statusColor = statusWarn ? '#FAA700' : '#08A50F';
+  const statusTint = statusWarn ? '#FDEFC8' : '#CAF2C7';
+  const statusInk = statusWarn ? '#92400E' : '#14532D';
 
   // Layout maths. Content is capped on tablets so cards don't stretch edge to edge.
   const contentW = Math.min(winW, MAX_CONTENT_WIDTH);
@@ -735,48 +771,48 @@ export default function HomeScreen({ navigation }) {
   // phone (8 tiles = 4 × 2), 5 on a large phone (414+), 6 on a tablet (600+);
   // a short last row stays left-aligned.
   const quickTablet = winW >= 600;
-  const quickCols = quickTablet ? 6 : winW >= 414 ? 5 : 4;
-  const quickGap = quickTablet ? 12 : 8;
-  const quickPad = quickTablet ? 12 : 8;
+  const quickCols = quickTablet ? 6 : 4;
+  const quickGap = quickTablet ? 12 : 6;
+  const quickPad = quickTablet ? 12 : 6;
   // - 2: the panel's 1px border on each side.
   const quickW = Math.floor(Math.max(0, (innerW - 2 - quickPad * 2 - quickGap * (quickCols - 1)) / quickCols));
-  // Month tiles sit icon-beside-value when there's room, icon-above otherwise.
-  const statGap = rs(6);
-  const statTileW = (innerW - rs(24) - statGap * 3) / 4;
-  const statInline = statTileW >= 88;
+  const stepMonth = (delta) => {
+    const d = new Date(year, month - 1 + delta, 1);
+    selectMonth(d.getMonth() + 1, d.getFullYear());
+  };
+  // The next punch (Check In / Break / Check Out) is the raised teal tile.
+  const punchActive = [buttonMode === 'in', onBreak, buttonMode === 'out' && !onBreak];
+  const night = now.getHours() >= 18 || now.getHours() < 5;
 
   // Ticket QR scanning only applies to roles that handle tickets.
   const showScan = resolveRoleKey(session) !== 'STAFF';
 
   const ticketLine = (t) => `${ticketRef(t)} · ${t.deviceDisplayName || 'Device'}${t.repairServicesSummary ? ` - ${t.repairServicesSummary}` : ''}`;
-  // Apply Permission tile: red + count while requests await approval, green + count once approved.
-  const perms = leaves.filter((l) => String(l.leaveType).toUpperCase() === 'PERMISSION');
-  const pendingPerms = perms.filter((l) => !/APPROV|REJECT|CANCEL/i.test(String(l.status || ''))).length;
-  const approvedPerms = perms.filter((l) => /APPROV/i.test(String(l.status || ''))).length;
-  const permTile = pendingPerms ? { bg: TILE_TONES.red, fg: '#FFFFFF' }
-    : approvedPerms ? { bg: TILE_TONES.green, fg: '#FFFFFF' } : null;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: C.card }} edges={['top']}>
       {/* Fixed top bar — stays put while the page scrolls */}
-      <View style={{ backgroundColor: '#FFFFFF', alignItems: 'center', paddingBottom: rs(8), borderBottomWidth: 1, borderBottomColor: C.border }}>
+      <View style={{ backgroundColor: '#FFFFFF', alignItems: 'center', paddingBottom: rs(10) }}>
         <View style={{ width: contentW, paddingHorizontal: pad }}>
             {/* 1. Header: menu, wordmark, (scan), bell, avatar */}
             <View className="flex-row items-center" style={{ paddingTop: rs(8) }}>
               <TouchableOpacity hitSlop={8} onPress={() => navigation.navigate('AccountTab')} accessibilityLabel="Menu">
-                <Menu size={rs(24)} color={C.text} />
+                <Menu size={rs(26)} color={H.ink} strokeWidth={2} />
               </TouchableOpacity>
-              <Text style={{ flex: 1, marginLeft: rs(12), fontSize: rf(20), fontWeight: '900', color: C.text, letterSpacing: 0.3 }} numberOfLines={1}>
-                NEAR G <Text style={{ color: C.green }}>FIX</Text>
-              </Text>
+              <View style={{ flex: 1, minWidth: 0, marginLeft: rs(14) }}>
+                <Text style={{ fontSize: rf(21), fontWeight: '900', color: H.ink, letterSpacing: -0.2 }} numberOfLines={1}>
+                  NEAR G <Text style={{ color: H.tealDeep }}>FIX</Text>
+                </Text>
+                <Text style={{ fontSize: rf(12.5), fontWeight: '500', color: H.text }} numberOfLines={1}>Employee App</Text>
+              </View>
               {showScan ? <HeaderButton plain icon={ScanLine} onPress={() => navigation.navigate('ScanTicketQr')} /> : null}
               <HeaderButton plain icon={Bell} dot={unreadNotifs > 0} onPress={() => navigation.navigate('Notifications')} />
-              <TouchableOpacity hitSlop={6} onPress={() => navigation.navigate('TechnicianProfile')} style={{ marginLeft: rs(8) }} accessibilityLabel="My profile">
-                <Avatar uri={session?.photoUrl} name={displayName} size={rs(40)} />
+              <TouchableOpacity hitSlop={6} onPress={() => navigation.navigate('TechnicianProfile')} style={{ marginLeft: rs(10) }} accessibilityLabel="My profile">
+                <Avatar uri={session?.photoUrl} name={displayName} size={rs(42)} />
                 <View style={{
-                  position: 'absolute', right: -rs(1), bottom: 0,
-                  width: rs(12), height: rs(12), borderRadius: rs(6), borderWidth: 2, borderColor: '#FFFFFF',
-                  backgroundColor: hasCheckedIn && !hasCheckedOut ? C.green : C.faint,
+                  position: 'absolute', right: -rs(1), bottom: rs(1),
+                  width: rs(13), height: rs(13), borderRadius: rs(7), borderWidth: 2, borderColor: '#FFFFFF',
+                  backgroundColor: hasCheckedIn && !hasCheckedOut ? '#06BB12' : C.faint,
                 }} />
               </TouchableOpacity>
             </View>
@@ -790,60 +826,69 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={{ width: contentW, paddingHorizontal: pad }}>
           {/* 2. Greeting + date (left), location card (right) */}
-          <View style={{ marginTop: rs(6), flexDirection: 'row', alignItems: 'stretch', gap: rs(10) }}>
-            <View style={{ flex: 1, minWidth: 0, justifyContent: 'center', backgroundColor: '#EAF5F7', borderRadius: rs(12), borderWidth: 1, borderColor: '#D5EBEF', paddingHorizontal: rs(10), paddingVertical: rs(6), overflow: 'hidden' }}>
-              <View pointerEvents="none" style={{ position: 'absolute', right: rs(6), top: rs(4), opacity: 0.9 }}>
-                {now.getHours() >= 18 || now.getHours() < 5 ? <Moon size={rs(30)} color="#1C3053" strokeWidth={1.6} /> : <CloudSun size={rs(34)} color="#FAA700" strokeWidth={1.6} />}
+          <View style={{ marginTop: rs(10), flexDirection: 'row', alignItems: 'stretch', gap: rs(10) }}>
+            <LinearGradient colors={['#FFFFFF', '#F1F4F6']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={INFO_CARD}>
+              <View pointerEvents="none" style={{ position: 'absolute', right: rs(10), top: rs(10) }}>
+                {night ? <Moon size={rs(28)} color={H.teal} strokeWidth={1.7} /> : <CloudSun size={rs(32)} color={H.teal} strokeWidth={1.7} />}
               </View>
-              <Text style={{ fontSize: rf(12), color: C.muted }} numberOfLines={1}>{greeting},</Text>
-              <Text style={{ fontSize: rf(13), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+              <Text style={{ fontSize: rf(12.5), color: H.text }} numberOfLines={1}>{greeting},</Text>
+              <Text style={{ fontSize: rf(14), fontWeight: '800', color: H.ink, marginTop: rs(4), marginRight: rs(30) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                 {displayName} 👋
               </Text>
-              <View className="flex-row items-center" style={{ marginTop: rs(3) }}>
-                <Calendar size={rs(15)} color={C.green} />
-                <Text style={{ fontSize: rf(11.5), color: C.muted, marginLeft: rs(4) }} numberOfLines={1}>{formatShortDay(now)}</Text>
+              <View className="flex-row items-center" style={{ marginTop: rs(8) }}>
+                <Calendar size={rs(15)} color={H.ink} strokeWidth={1.8} />
+                <Text style={{ fontSize: rf(12.5), color: H.text, marginLeft: rs(6) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{formatShortDay(now)}</Text>
               </View>
-            </View>
-            <View className="flex-row items-center" style={{
-              flex: 1, minWidth: 0, backgroundColor: C.card, borderRadius: rs(12), borderWidth: 1, borderColor: C.border,
-              paddingHorizontal: rs(10), paddingVertical: rs(6), overflow: 'hidden',
-            }}>
-              <MapPin size={rs(17)} color={C.green} fill={C.green} stroke="#FFFFFF" strokeWidth={1.6} />
-              <View style={{ flex: 1, marginLeft: rs(8) }}>
-                <Text style={{ fontSize: rf(12), color: C.muted }}>Your Location</Text>
-                <Text style={{ fontSize: rf(13), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Globo Green</Text>
-                <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Cuddalore, Tamil Nadu</Text>
-                {geo.inRange != null ? (
-                  <View className="flex-row items-center" style={{ marginTop: rs(3) }}>
-                    {geo.inRange ? <ShieldCheck size={rs(12)} color={C.green} /> : <ShieldAlert size={rs(12)} color={C.red} />}
-                    <Text style={{ fontSize: rf(10.5), fontWeight: '700', color: geo.inRange ? C.green : C.red, marginLeft: rs(3) }} numberOfLines={1}>
-                      {geo.inRange ? 'In range' : 'Out of range'}{geo.distance != null ? ` · ${geo.distance}m` : ''}
+            </LinearGradient>
+            <LinearGradient colors={['#FFFFFF', '#F1F4F6']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[INFO_CARD, { flexDirection: 'row', alignItems: 'center' }]}>
+              <MapPin size={rs(22)} color={H.teal} fill={H.teal} stroke="#FFFFFF" strokeWidth={1.6} />
+              <View style={{ flex: 1, minWidth: 0, marginLeft: rs(8) }}>
+                <Text style={{ fontSize: rf(12.5), color: H.text }} numberOfLines={1}>Your Location</Text>
+                <Text style={{ fontSize: rf(14), fontWeight: '800', color: H.ink, marginTop: rs(3) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{presence?.shopName || 'Globo Green'}</Text>
+                <Text style={{ fontSize: rf(12.5), color: H.text, marginTop: rs(3) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Cuddalore, Tamil Nadu</Text>
+                {presenceLive ? (
+                  <View style={{ marginTop: rs(4) }}>
+                    <View className="flex-row items-center">
+                      {presence.state === 'INSIDE_SHOP' || presence.state === 'ON_AUTHORIZED_DUTY' ? <CircleDot size={rs(13)} color={H.teal} strokeWidth={2.2} /> : <ShieldAlert size={rs(13)} color={presence.state === 'OUTSIDE_SHOP' ? C.red : '#B7791F'} />}
+                      <Text style={{ fontSize: rf(12), fontWeight: '800', color: presence.state === 'OUTSIDE_SHOP' ? C.red : presence.state === 'LOCATION_UNVERIFIED' ? '#B7791F' : H.teal, marginLeft: rs(4) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                        {PRESENCE_LABEL[presence.state] || presence.state}
+                        {presence.distanceMeters != null ? <Text style={{ color: H.ink }}>{` • ${presence.distanceMeters}m`}</Text> : null}
+                      </Text>
+                    </View>
+                    {presence.lastVerifiedAt ? <Text style={{ fontSize: rf(11), color: H.text, marginTop: rs(2) }} numberOfLines={1}>{`Verified ${fmtClock(presence.lastVerifiedAt)}`}</Text> : null}
+                  </View>
+                ) : geo.inRange != null ? (
+                  <View className="flex-row items-center" style={{ marginTop: rs(4) }}>
+                    {geo.inRange ? <CircleDot size={rs(13)} color={H.teal} strokeWidth={2.2} /> : <ShieldAlert size={rs(13)} color={C.red} />}
+                    <Text style={{ fontSize: rf(12), fontWeight: '800', color: geo.inRange ? H.teal : C.red, marginLeft: rs(4) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                      {geo.inRange ? 'In range' : 'Out of range'}
+                      {geo.distance != null ? <Text style={{ color: H.ink }}>{` • ${geo.distance}m`}</Text> : null}
                     </Text>
                   </View>
                 ) : null}
               </View>
-            </View>
+            </LinearGradient>
           </View>
 
-          {/* 3. Check In / Check Out tiles */}
+          {/* 3. Check In / Break / Check Out — the next punch is the raised teal tile */}
           <View className="flex-row" style={{
-            marginTop: rs(8), padding: rs(4), borderRadius: rs(14), backgroundColor: C.card,
-            borderWidth: 1, borderColor: C.border, ...shadow(0.06, 12, 4, 3),
+            marginTop: rs(12), borderRadius: rs(16), backgroundColor: C.card,
+            borderWidth: 1, borderColor: H.cardBorder, ...shadow(0.06, 12, 4, 3),
           }}>
             <PunchTile
-              active={buttonMode === 'in'} icon={FingerprintPattern} title={hasCheckedIn ? 'Checked In' : 'Check In'}
+              active={punchActive[0]} icon={FingerprintPattern} title={hasCheckedIn ? 'Checked In' : 'Check In'}
               sub={hasCheckedIn ? checkInLabel : geoBlocksCheckIn ? 'Out of range' : 'Tap to Check In'}
               busy={checkInBusy && buttonMode === 'in'} disabled={buttonMode !== 'in' || buttonDisabled} onPress={handleCheckInPress}
             />
-            <View style={{ width: 1, backgroundColor: C.border, marginVertical: rs(10), marginHorizontal: rs(4) }} />
+            {punchActive[0] || punchActive[1] ? null : <View style={PUNCH_DIVIDER} />}
             <PunchTile
-              active={onBreak} icon={Coffee} accent="#FAA700" title={onBreak ? 'End Break' : 'Break'}
+              active={punchActive[1]} icon={Coffee} title={onBreak ? 'End Break' : 'Break'}
               sub={onBreak ? `On break · ${formatMinutes(breakMin)}` : breakMin > 0 ? `Taken ${formatMinutes(breakMin)}` : buttonMode === 'out' ? 'Tap to start' : 'After check-in'}
               disabled={buttonMode !== 'out' || checkInBusy} onPress={toggleBreak}
             />
-            <View style={{ width: 1, backgroundColor: C.border, marginVertical: rs(10), marginHorizontal: rs(4) }} />
+            {punchActive[1] || punchActive[2] ? null : <View style={PUNCH_DIVIDER} />}
             <PunchTile
-              active={buttonMode === 'out' && !onBreak} icon={LogOut} title={hasCheckedOut ? 'Checked Out' : 'Check Out'}
+              active={punchActive[2]} icon={LogOut} title={hasCheckedOut ? 'Checked Out' : 'Check Out'}
               sub={hasCheckedOut ? checkOutLabel : 'Tap to Check Out'}
               busy={checkInBusy && buttonMode === 'out'} disabled={buttonMode !== 'out' || buttonDisabled} onPress={handleCheckInPress}
             />
@@ -851,20 +896,44 @@ export default function HomeScreen({ navigation }) {
 
           {/* Today's punches + duration + status (tap → Daily Attendance history) */}
           <TouchableOpacity activeOpacity={0.85} onPress={() => navigation.navigate('DailyAttendance')} className="flex-row" style={{
-            marginTop: rs(6), paddingVertical: rs(6), borderRadius: rs(12), backgroundColor: C.card,
-            borderWidth: 1, borderColor: C.border, ...shadow(0.04, 8, 2, 1),
+            marginTop: rs(10), paddingVertical: rs(12), borderRadius: rs(16), backgroundColor: C.card,
+            borderWidth: 1, borderColor: H.cardBorder, ...shadow(0.05, 10, 3, 2),
           }}>
             <PunchStat icon={Clock} label="Check In" value={checkInLabel} />
             <PunchStat icon={Clock} label="Check Out" value={checkOutLabel} divider />
-            <PunchStat icon={Briefcase} label="Work Duration" value={workDuration(todayAttendance?.checkInTime, todayAttendance?.checkOutTime, now, breakMin)} divider />
-            <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: rs(2), borderLeftWidth: 1, borderLeftColor: C.border }}>
-              <View style={{ width: rs(10), height: rs(10), borderRadius: rs(5), backgroundColor: statusColor, marginVertical: rs(3) }} />
-              <Text style={{ fontSize: rf(10), color: C.muted, marginTop: rs(2) }}>Status</Text>
-              <View style={{ marginTop: rs(2), backgroundColor: `${statusColor}22`, borderRadius: rs(6), paddingHorizontal: rs(6), paddingVertical: rs(1) }}>
-                <Text style={{ fontSize: rf(10.5), fontWeight: '700', color: statusColor === '#FAA700' ? '#FAA700' : statusColor }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{statusText}</Text>
+            <PunchStat icon={Hourglass} label="Work Duration" value={workDuration(todayAttendance?.checkInTime, todayAttendance?.checkOutTime, now, breakMin)} divider />
+            <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: rs(2) }}>
+              <View style={STAT_DIVIDER} />
+              <View style={{ height: rs(18), justifyContent: 'center' }}>
+                <View style={{ width: rs(10), height: rs(10), borderRadius: rs(5), backgroundColor: statusColor }} />
+              </View>
+              <Text style={{ fontSize: rf(12), color: H.text, marginTop: rs(6) }} numberOfLines={1}>Status</Text>
+              <View style={{ marginTop: rs(3), backgroundColor: statusTint, borderRadius: 999, paddingHorizontal: rs(12), paddingVertical: rs(2), maxWidth: '96%' }}>
+                <Text style={{ fontSize: rf(12.5), fontWeight: '800', color: statusInk }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{statusText}</Text>
               </View>
             </View>
           </TouchableOpacity>
+
+          {/* Shop presence (server data from the geofence gate) — only while checked in. */}
+          {presenceLive ? (
+            <TouchableOpacity onPress={() => navigation.navigate('ShopPresenceHistory')} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Shop presence history"
+              style={{ marginTop: rs(8), paddingHorizontal: rs(12), paddingVertical: rs(8), borderRadius: rs(14), backgroundColor: C.card, borderWidth: 1, borderColor: H.cardBorder, ...shadow(0.05, 10, 3, 2) }}>
+              <View className="flex-row items-center">
+                <Text style={{ flex: 1, fontSize: rf(12.5), fontWeight: '800', color: H.ink }} numberOfLines={1}>
+                  Shop Presence<Text style={{ fontWeight: '500', color: H.text }}>{presence.state === 'ON_AUTHORIZED_DUTY' ? ' · Field work' : ' · Monitoring'}</Text>
+                </Text>
+                <View style={{ backgroundColor: presence.state === 'OUTSIDE_SHOP' ? '#FEECEC' : presence.state === 'LOCATION_UNVERIFIED' ? '#FEF3C7' : '#E3F5EA', borderRadius: 999, paddingHorizontal: rs(8), paddingVertical: rs(2) }}>
+                  <Text style={{ fontSize: rf(10.5), fontWeight: '800', color: presence.state === 'OUTSIDE_SHOP' ? C.red : presence.state === 'LOCATION_UNVERIFIED' ? '#B7791F' : '#1E8E4E' }} numberOfLines={1}>{PRESENCE_LABEL[presence.state] || presence.state}</Text>
+                </View>
+              </View>
+              <View className="flex-row items-center" style={{ marginTop: rs(4) }}>
+                <Text style={{ flex: 1, fontSize: rf(11.5), color: H.text }} numberOfLines={1}>
+                  Outside <Text style={{ fontWeight: '800', color: H.teal }}>{presence.outsideVisits ?? 0}</Text> visits · <Text style={{ fontWeight: '800', color: H.teal }}>{fmtDuration(presence.outsideSeconds)}</Text>
+                </Text>
+                <Text style={{ fontSize: rf(11.5), fontWeight: '800', color: H.teal }}>History ›</Text>
+              </View>
+            </TouchableOpacity>
+          ) : null}
 
           {/* Deliveries are pickup-person work: hidden for technicians. */}
           {isPickupPerson ? (
@@ -874,7 +943,7 @@ export default function HomeScreen({ navigation }) {
 
           {/* 3b. Job Overview — counts per bucket; red dot = new unseen assignments */}
           <SectionTitle title={isPickupPerson ? 'Repair Pickups' : 'Job Overview'} />
-          <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
+          <View style={TILE_ROW}>
             {isPickupPerson ? (
               <>
                 {/* Each tile opens My Pickups on the matching tile (its params.filter). */}
@@ -884,12 +953,12 @@ export default function HomeScreen({ navigation }) {
                   onPress={() => navigation.push('PickupAssign', { kind: 'REPAIR', filter: 'assigned' })}
                 />
                 <TaskCountCard
-                  icon={Briefcase} fg={TILE_TONES.teal} tint={C.greenTint}
+                  icon={Layers} fg={TILE_TONES.teal} tint={C.greenTint}
                   label="All Pickups" value={pickupSummary.total} loading={pickups === null}
                   onPress={() => navigation.push('PickupAssign', { kind: 'REPAIR', filter: 'total' })}
                 />
                 <TaskCountCard
-                  icon={Clock} fg={TILE_TONES.orange} tint={C.yellowTint}
+                  icon={RefreshCw} fg={TILE_TONES.orange} tint={C.yellowTint}
                   label="In Progress" value={pickupSummary.inProgress} loading={pickups === null}
                   onPress={() => navigation.push('PickupAssign', { kind: 'REPAIR', filter: 'inProgress' })}
                 />
@@ -908,7 +977,7 @@ export default function HomeScreen({ navigation }) {
               onPress={openRecentAssigned}
             />
             <TaskCountCard
-              icon={Briefcase} fg={TILE_TONES.teal} tint={C.greenTint}
+              icon={Layers} fg={TILE_TONES.teal} tint={C.greenTint}
               label="All Jobs"
               value={tickets.length} loading={!tasksLoaded && ticketsLoading}
               onPress={() => navigation.navigate('TaskReport')}
@@ -932,11 +1001,11 @@ export default function HomeScreen({ navigation }) {
           {isPickupPerson ? (
           <>
           <SectionTitle title="Selling Pickups" />
-          <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
+          <View style={TILE_ROW}>
             {[
               { key: 'assigned', label: 'Assigned', icon: ClipboardList, fg: TILE_TONES.blue, tint: C.redTint },
-              { key: 'total', label: 'All Pickups', icon: Briefcase, fg: TILE_TONES.teal, tint: C.greenTint },
-              { key: 'inProgress', label: 'In Progress', icon: Clock, fg: TILE_TONES.orange, tint: C.yellowTint },
+              { key: 'total', label: 'All Pickups', icon: Layers, fg: TILE_TONES.teal, tint: C.greenTint },
+              { key: 'inProgress', label: 'In Progress', icon: RefreshCw, fg: TILE_TONES.orange, tint: C.yellowTint },
               { key: 'completed', label: 'Completed', icon: CircleCheck, fg: TILE_TONES.green, tint: C.greenTint },
             ].map((t) => (
               <TaskCountCard key={t.key} icon={t.icon} fg={t.fg} tint={t.tint} label={t.label}
@@ -946,10 +1015,10 @@ export default function HomeScreen({ navigation }) {
           </View>
           <SectionTitle title="Marketplace Pickups" />
           {/* Same tile design as Repair Pickups; each opens Buy Deliveries on that tile. */}
-          <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
+          <View style={TILE_ROW}>
             {[
-              { key: 'PICKUP', label: 'Pickup', icon: ClipboardList, fg: TILE_TONES.blue, tint: C.redTint },
-              { key: 'DELIVERY', label: 'Delivery', icon: Clock, fg: TILE_TONES.orange, tint: C.yellowTint },
+              { key: 'PICKUP', label: 'Pickup', icon: Package, fg: TILE_TONES.blue, tint: C.redTint },
+              { key: 'DELIVERY', label: 'Delivery', icon: Truck, fg: TILE_TONES.orange, tint: C.yellowTint },
               { key: 'HISTORY', label: 'Completed', icon: CircleCheck, fg: TILE_TONES.green, tint: C.greenTint },
             ].map((t) => (
               <TaskCountCard key={t.key} icon={t.icon} fg={t.fg} tint={t.tint} label={t.label}
@@ -968,10 +1037,10 @@ export default function HomeScreen({ navigation }) {
           {isPickupPerson || (repairDeliveries || []).length ? (
           <>
           <SectionTitle title="Repair Deliveries" />
-          <View style={{ flexDirection: 'row', backgroundColor: C.card, borderRadius: rs(14), borderWidth: 1, borderColor: C.border, paddingVertical: rs(6), paddingHorizontal: rs(4), ...shadow(0.04, 8, 2, 1) }}>
+          <View style={TILE_ROW}>
             {[
-              { key: 'ASSIGNED', label: 'New', icon: ClipboardList, fg: TILE_TONES.blue, tint: C.redTint, match: (s) => s === 'ASSIGNED' },
-              { key: 'ACTIVE', label: 'Active', icon: Clock, fg: TILE_TONES.orange, tint: C.yellowTint, match: (s) => s !== 'ASSIGNED' && REPAIR_DELIVERY_TABS[0].statuses.includes(s) },
+              { key: 'ASSIGNED', label: 'New', icon: Truck, fg: TILE_TONES.blue, tint: C.redTint, match: (s) => s === 'ASSIGNED' },
+              { key: 'ACTIVE', label: 'Active', icon: ArrowRightLeft, fg: TILE_TONES.orange, tint: C.yellowTint, match: (s) => s !== 'ASSIGNED' && REPAIR_DELIVERY_TABS[0].statuses.includes(s) },
               { key: 'HISTORY', label: 'Completed', icon: CircleCheck, fg: TILE_TONES.green, tint: C.greenTint, match: (s) => REPAIR_DELIVERY_TABS[1].statuses.includes(s) },
             ].map((t) => (
               <TaskCountCard key={t.key} icon={t.icon} fg={t.fg} tint={t.tint} label={t.label}
@@ -994,8 +1063,8 @@ export default function HomeScreen({ navigation }) {
           {/* 4. Quick Access — every category for this role, Partner-app tile grid */}
           <SectionTitle title="Quick Access" />
           <View style={{
-            backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB',
-            paddingTop: 8, paddingBottom: 2, ...shadow(0.05, 10, 3, 1),
+            backgroundColor: C.card, borderRadius: rs(16), borderWidth: 1, borderColor: H.cardBorder,
+            paddingTop: rs(14), paddingBottom: rs(4), ...shadow(0.05, 10, 3, 2),
           }}>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: quickPad }}>
               {categories.map((c, i) => (
@@ -1003,8 +1072,7 @@ export default function HomeScreen({ navigation }) {
                   key={c.key}
                   item={c}
                   width={quickW}
-                  style={{ marginRight: i % quickCols === quickCols - 1 ? 0 : quickGap, marginBottom: 6 }}
-                  tint={c.key === 'apply_permission' ? permTile : null}
+                  style={{ marginRight: i % quickCols === quickCols - 1 ? 0 : quickGap, marginBottom: rs(10) }}
                   onPress={() => navigation.navigate(c.route, c.params)}
                 />
               ))}
@@ -1013,24 +1081,33 @@ export default function HomeScreen({ navigation }) {
 
           {/* 11–13. This Month */}
           <View style={{
-            marginTop: rs(10), backgroundColor: C.card, borderRadius: rs(14),
-            borderWidth: 1, borderColor: C.border, padding: rs(8), ...shadow(0.05, 10, 3, 2),
+            marginTop: rs(12), backgroundColor: C.card, borderRadius: rs(16),
+            borderWidth: 1, borderColor: H.cardBorder, paddingHorizontal: rs(12), paddingVertical: rs(12), ...shadow(0.05, 10, 3, 2),
           }}>
             <View className="flex-row items-center justify-between">
               <View className="flex-row items-center flex-1" style={{ marginRight: rs(8) }}>
-                <View className="items-center justify-center" style={{ width: rs(30), height: rs(30), borderRadius: rs(8), backgroundColor: C.greenTint }}>
-                  <Calendar size={rs(15)} color={C.green} strokeWidth={2.2} />
-                </View>
-                <Text className="font-extrabold" style={{ fontSize: rf(14.5), color: C.text, marginLeft: rs(8) }} numberOfLines={1}>This Month</Text>
+                <Calendar size={rs(22)} color={H.teal} strokeWidth={1.9} />
+                <Text style={{ fontSize: rf(15), fontWeight: '800', color: H.ink, marginLeft: rs(10) }} numberOfLines={1}>This Month</Text>
               </View>
-              <MonthPill month={month} year={year} onChange={(m, y) => selectMonth(m, y)} />
+              <View className="flex-row items-center" style={{ gap: rs(8) }}>
+                <TouchableOpacity onPress={() => stepMonth(-1)} hitSlop={6} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Previous month" style={[MONTH_BTN, { backgroundColor: '#192F36' }]}>
+                  <ChevronLeft size={rs(16)} color="#FFFFFF" strokeWidth={2.6} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setMonthPickerOpen(true)} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Select month" className="flex-row items-center" style={{ gap: rs(6) }}>
+                  <Calendar size={rs(15)} color={H.ink} strokeWidth={1.8} />
+                  <Text style={{ fontSize: rf(14), fontWeight: '800', color: H.ink }} numberOfLines={1}>{`${MONTHS_SHORT[month - 1]} ${year}`}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => stepMonth(1)} hitSlop={6} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel="Next month" style={[MONTH_BTN, { backgroundColor: '#065F3B' }]}>
+                  <ChevronRight size={rs(16)} color="#FFFFFF" strokeWidth={2.6} />
+                </TouchableOpacity>
+              </View>
             </View>
 
-            <View className="flex-row" style={{ marginTop: rs(6), gap: statGap }}>
-              <StatTile inline={statInline} bg={C.greenTint} fg={TILE_TONES.green} icon={Calendar} value={String(present)} label="Present" />
-              <StatTile inline={statInline} bg={C.yellowTint} fg={TILE_TONES.orange} icon={Briefcase} value={String(leaveDays)} label="Leave" />
-              <StatTile inline={statInline} bg={C.greenTint} fg={TILE_TONES.blue} icon={ClipboardList} value={String(permission)} label="Permission" />
-              <StatTile inline={statInline} bg={C.redTint} fg={TILE_TONES.red} icon={Clock} value={String(lateHrs)} label="Late Hrs" />
+            <View className="flex-row" style={{ marginTop: rs(16) }}>
+              <MonthStat icon={CalendarCheck} color="#15803D" outline="#16A34A" value={present} label="Present" />
+              <MonthStat icon={CalendarX} color="#F19D07" bg="#FEF1D6" fill="#F9A60C" value={leaveDays} label="Leave" />
+              <MonthStat icon={FileText} color="#006F68" bg="#E1F3F1" fill="#077775" value={permission} label="Permission" />
+              <MonthStat icon={RotateCcwClock} color="#105351" outline="#078572" value={lateHrs} label="Late Hrs" />
             </View>
           </View>
         </View>
@@ -1074,8 +1151,8 @@ function formatShortDay(date) {
 // Bold section heading (customer-app style, no "See all" — there's no list screen to open).
 function SectionTitle({ title, onViewAll }) {
   return (
-    <View className="flex-row items-center" style={{ marginTop: rs(10), marginBottom: rs(6) }}>
-      <Text style={{ flex: 1, fontSize: rf(14.5), fontWeight: '800', color: '#1C3053' }}>{title}</Text>
+    <View className="flex-row items-center" style={{ marginTop: rs(16), marginBottom: rs(8) }}>
+      <Text style={{ flex: 1, fontSize: rf(16), fontWeight: '800', color: H.ink }}>{title}</Text>
       {onViewAll ? (
         <TouchableOpacity onPress={onViewAll} hitSlop={8} activeOpacity={0.7} className="flex-row items-center" style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text style={{ fontSize: rf(13), fontWeight: '600', color: C.green }}>View All</Text>
@@ -1086,15 +1163,15 @@ function SectionTitle({ title, onViewAll }) {
   );
 }
 
-// One Quick Access tile, as in the Partner app: no card box, just a pastel
-// circle with a solid glyph and a two-line label underneath.
+// One Quick Access tile: mint circle with an outline teal glyph and a
+// two-line label underneath. `tint` ({ bg, fg }) overrides the colours.
 function QuickTile({ item, width, style, onPress, tint }) {
-  const t = { ...(QUICK_TILES[item.key] || QUICK_TILES.default), ...(tint || {}) };
-  // Partner DashboardToolCard sizes per class: phone / large phone (430+) / tablet (768+).
+  const t = { bg: QUICK_BG, fg: QUICK_FG, ...(QUICK_TILES[item.key] || QUICK_TILES.default), ...(tint || {}) };
+  const Icon = t.icon;
   const { width: winW } = useWindowDimensions();
   const cls = winW >= 768 ? 2 : winW >= 430 ? 1 : 0;
-  const box = [44, 46, 48][cls];
-  const glyph = [20, 21, 22][cls] + 3; // solid glyphs read smaller — partner adds 3
+  const box = [46, 48, 52][cls];
+  const glyph = [22, 23, 25][cls];
   const fs = [12, 12.5, 13][cls];
   return (
     <TouchableOpacity
@@ -1107,8 +1184,8 @@ function QuickTile({ item, width, style, onPress, tint }) {
       // without shrinking the font.
       style={[{ width, alignItems: 'center', justifyContent: 'center', paddingVertical: 2 }, style]}
     >
-      <View style={{ width: box, height: box, borderRadius: box / 2, backgroundColor: t.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <MaterialCommunityIcons name={t.icon} size={glyph} color={t.fg || QUICK_TILE_INK} />
+      <View style={{ width: box, height: box, borderRadius: box / 2, backgroundColor: t.bg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#DDF0EC' }}>
+        <Icon size={glyph} color={t.fg} strokeWidth={1.8} />
         {t.badge ? (
           <View style={{
             position: 'absolute', top: -rs(4), right: -rs(4), minWidth: rs(18), height: rs(18), borderRadius: rs(9),
@@ -1122,7 +1199,7 @@ function QuickTile({ item, width, style, onPress, tint }) {
           (fs) are exact, so they skip the shared Typography scale.
           minHeight reserves two lines so every tile in a row lines up. */}
       <RNText
-        style={{ fontFamily: interFamily('600'), fontSize: fs, lineHeight: fs + 4, minHeight: (fs + 4) * 2, color: '#1C3053', marginTop: 4, letterSpacing: -0.1, textAlign: 'center' }}
+        style={{ fontFamily: interFamily('600'), fontSize: fs, lineHeight: fs + 4, minHeight: (fs + 4) * 2, color: H.text, marginTop: 6, letterSpacing: -0.1, textAlign: 'center' }}
         numberOfLines={2}
         ellipsizeMode="tail"
       >
@@ -1142,20 +1219,31 @@ function HeaderButton({ icon: Icon, dot, plain, onPress }) {
   return (
     <TouchableOpacity hitSlop={8} onPress={onPress} activeOpacity={0.8}
                style={{ width: size, height: size, borderRadius: size / 2, marginLeft: plain ? rs(4) : rs(8), alignItems: 'center', justifyContent: 'center', ...chrome }}>
-      <Icon size={plain ? rs(23) : rs(20)} color={C.text} />
+      <Icon size={plain ? rs(24) : rs(20)} color={H.ink} strokeWidth={1.9} />
       {dot ? (
         <View style={{
-          position: 'absolute', top: rs(8), right: rs(9), width: rs(9), height: rs(9),
-          borderRadius: rs(5), backgroundColor: C.red, borderWidth: 1.5, borderColor: '#FFFFFF',
+          position: 'absolute', top: rs(6), right: rs(7), width: rs(10), height: rs(10),
+          borderRadius: rs(5), backgroundColor: '#035C6C', borderWidth: 1.5, borderColor: '#FFFFFF',
         }} />
       ) : null}
     </TouchableOpacity>
   );
 }
 
-// Task Overview button: tinted circle icon with a red count badge (hidden at 0).
-function TaskCountCard({ icon, fg, label, value, loading, onPress }) {
-  return <BadgeIconTile compact icon={icon} color={fg} label={label} count={loading ? null : value} loading={loading} onPress={onPress} badgeRed size={rs(32)} />;
+// Pickup / job count tile: outline glyph with a teal count badge, label below.
+function TaskCountCard({ icon: Icon, label, value, loading, onPress }) {
+  const n = Number(value) || 0;
+  return (
+    <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={{ flex: 1, alignItems: 'center', minWidth: 0 }} accessibilityRole="button" accessibilityLabel={`${label}: ${loading ? '' : n}`}>
+      <View>
+        <Icon size={rs(28)} color={H.ink} strokeWidth={1.6} />
+        <View style={[COUNT_BADGE, { position: 'absolute', top: -rs(9), left: rs(17) }]}>
+          <Text style={COUNT_BADGE_TEXT} numberOfLines={1}>{loading ? '…' : n > 99 ? '99+' : String(n)}</Text>
+        </View>
+      </View>
+      <Text style={{ fontSize: rf(12.5), fontWeight: '700', color: H.ink, marginTop: rs(8) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
+    </TouchableOpacity>
+  );
 }
 
 // "Xh YYm" worked today: check-in → check-out (or now), minus phone-logged break minutes.
@@ -1167,31 +1255,29 @@ function workDuration(inTime, outTime, now, breakMin = 0) {
   return `${Math.floor(d / 60)}h ${String(d % 60).padStart(2, '0')}m`;
 }
 
-// Big Check In / Check Out tile. The active one (the next punch) is the teal gradient.
-function PunchTile({ active, icon: Icon, title, sub, busy, disabled, onPress, accent }) {
-  const ring = rs(34);
+// Check In / Break / Check Out tile. The active one (the next punch) is the
+// raised teal gradient tile; the others are plain on the white card.
+function PunchTile({ active, icon: Icon, title, sub, busy, disabled, onPress }) {
   const body = (
     <>
-      <View style={{
-        width: ring, height: ring, borderRadius: ring / 2, alignItems: 'center', justifyContent: 'center',
-        backgroundColor: active ? 'rgba(255,255,255,0.12)' : accent ? `${accent}22` : C.bg,
-        borderWidth: rs(2), borderColor: active ? 'rgba(255,255,255,0.25)' : '#FFFFFF',
-        ...(active ? {} : shadow(0.08, 6, 2, 2)),
-      }}>
-        {busy ? <ActivityIndicator color="#FFFFFF" /> : <Icon size={rs(16)} color={active ? '#FFFFFF' : accent || C.green} strokeWidth={2} />}
-      </View>
-      <Text style={{ fontSize: rf(12), fontWeight: '800', color: active ? '#FFFFFF' : C.text, marginTop: rs(3) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{title}</Text>
-      <Text style={{ fontSize: rf(9.5), color: active ? 'rgba(255,255,255,0.85)' : C.muted, marginTop: 0 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{sub}</Text>
+      {busy ? <ActivityIndicator color={active ? '#FFFFFF' : H.teal} style={{ height: rs(28) }} />
+        : <Icon size={rs(28)} color={active ? '#FFFFFF' : H.teal} strokeWidth={1.9} />}
+      <Text style={{ fontSize: rf(13.5), fontWeight: '800', color: active ? '#FFFFFF' : H.ink, marginTop: rs(6) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{title}</Text>
+      <Text style={{ fontSize: rf(12), color: active ? 'rgba(255,255,255,0.92)' : H.text, marginTop: rs(2) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{sub}</Text>
     </>
   );
+  const inner = { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: rs(6) };
   return (
     <TouchableOpacity onPress={onPress} disabled={disabled} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel={title}
-                      style={{ flex: 1, borderRadius: rs(14), overflow: 'hidden', opacity: active && disabled && !busy ? 0.6 : 1 }}>
+                      style={[
+                        { flex: 1, borderRadius: rs(16), opacity: active && disabled && !busy ? 0.6 : 1 },
+                        active ? { marginVertical: -rs(3), marginRight: -1, backgroundColor: '#035C6C', ...shadow(0.2, 10, 5, 6) } : null,
+                      ]}>
       {active ? (
-        <LinearGradient colors={[C.green, '#024A57']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                        style={{ alignItems: 'center', paddingVertical: rs(6), paddingHorizontal: rs(4) }}>{body}</LinearGradient>
+        <LinearGradient colors={['#035C6C', '#035C6C']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                        style={[inner, { borderRadius: rs(16), paddingVertical: rs(15) }]}>{body}</LinearGradient>
       ) : (
-        <View style={{ alignItems: 'center', paddingVertical: rs(6), paddingHorizontal: rs(4) }}>{body}</View>
+        <View style={[inner, { paddingVertical: rs(12) }]}>{body}</View>
       )}
     </TouchableOpacity>
   );
@@ -1199,10 +1285,11 @@ function PunchTile({ active, icon: Icon, title, sub, busy, disabled, onPress, ac
 
 function PunchStat({ icon: Icon, label, value, divider }) {
   return (
-    <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: rs(2), ...(divider ? { borderLeftWidth: 1, borderLeftColor: C.border } : {}) }}>
-      <Icon size={rs(14)} color={C.green} />
-      <Text style={{ fontSize: rf(9.5), color: C.muted, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
-      <Text style={{ fontSize: rf(11.5), fontWeight: '800', color: C.text, marginTop: 0 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{value}</Text>
+    <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: rs(2) }}>
+      {divider ? <View style={STAT_DIVIDER} /> : null}
+      <Icon size={rs(18)} color={H.ink} strokeWidth={1.8} />
+      <Text style={{ fontSize: rf(12), color: H.text, marginTop: rs(6) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
+      <Text style={{ fontSize: rf(13), fontWeight: '800', color: H.ink, marginTop: rs(3) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{value}</Text>
     </View>
   );
 }
@@ -1211,13 +1298,46 @@ function Avatar({ uri, name, size, dark }) {
   const box = { width: size, height: size, borderRadius: size / 2 };
   if (uri) return <Image source={{ uri }} style={box} />;
   return (
-    <View className="items-center justify-center" style={{ ...box, backgroundColor: dark ? '#111111' : C.deep, ...shadow(0.2, 6, 3, 3) }}>
-      <Text className="font-extrabold" style={{ fontSize: rf(22), color: '#FFFFFF' }}>{initialsFromName(name)}</Text>
+    <View className="items-center justify-center" style={{ ...box, backgroundColor: dark ? '#111111' : '#133333', ...shadow(0.2, 6, 3, 3) }}>
+      <Text className="font-extrabold" style={{ fontSize: rf(20), color: '#FFFFFF' }}>{initialsFromName(name)}</Text>
     </View>
   );
 }
 
-function StatTile({ fg, icon, value, label }) {
-  return <BadgeIconTile compact icon={icon} color={fg} label={label} count={value} size={rs(32)} />;
+// This Month stat: glyph (optionally on a tinted circle) with a count pill
+// at its top-right — filled (`fill`) or white with a coloured ring (`outline`).
+function MonthStat({ icon: Icon, color, bg, fill, outline, value, label }) {
+  const z = rs(46);
+  return (
+    <View style={{ flex: 1, alignItems: 'center', minWidth: 0 }}>
+      <View style={{ width: z, height: z, borderRadius: z / 2, backgroundColor: bg || 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={rs(26)} color={color} strokeWidth={1.9} />
+        <View style={[COUNT_BADGE, {
+          position: 'absolute', top: -rs(8), left: z * 0.6, minWidth: rs(22), height: rs(20),
+          backgroundColor: fill || '#FFFFFF', borderColor: fill ? '#FFFFFF' : outline,
+        }]}>
+          <Text style={[COUNT_BADGE_TEXT, { color: fill ? '#FFFFFF' : outline }]} numberOfLines={1}>{String(value)}</Text>
+        </View>
+      </View>
+      <Text style={{ fontSize: rf(13), fontWeight: '700', color: H.ink, marginTop: rs(8) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
+    </View>
+  );
 }
+
+const INFO_CARD = {
+  flex: 1, minWidth: 0, justifyContent: 'center', backgroundColor: '#FFFFFF', borderRadius: rs(16), borderWidth: 1, borderColor: H.cardBorder,
+  paddingHorizontal: rs(12), paddingVertical: rs(12), overflow: 'hidden', ...shadow(0.05, 10, 3, 2),
+};
+const PUNCH_DIVIDER = { width: 1, backgroundColor: H.line, marginVertical: rs(14) };
+const STAT_DIVIDER = { position: 'absolute', left: 0, top: rs(2), bottom: rs(2), width: 1, backgroundColor: H.line };
+const TILE_ROW = {
+  flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: rs(16), borderWidth: 1, borderColor: H.cardBorder,
+  paddingTop: rs(16), paddingBottom: rs(12), paddingHorizontal: rs(4), ...shadow(0.05, 10, 3, 2),
+};
+const COUNT_BADGE = {
+  minWidth: rs(20), height: rs(20), borderRadius: rs(10), paddingHorizontal: rs(5), backgroundColor: H.badge,
+  borderWidth: 1.5, borderColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+};
+const COUNT_BADGE_TEXT = { fontSize: rf(10.5), fontWeight: '800', color: '#FFFFFF', includeFontPadding: false };
+const MONTH_BTN = { width: rs(28), height: rs(28), borderRadius: rs(14), alignItems: 'center', justifyContent: 'center' };
 

@@ -1,8 +1,8 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useRef, useMemo, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { ChartColumn, History, IndianRupee, MapPin, RefreshCw, Store, Truck, WifiOff } from 'lucide-react-native';
+import { CircleCheck, IndianRupee, MapPin, RefreshCw, Store, Truck, WifiOff } from 'lucide-react-native';
 import { Text } from '../../components/Typography';
 import { JobHeader, JobPictureCard, JobRail, KIT } from '../../components/JobCardKit';
 import { DELIVERY_STATUS, DELIVERY_TABS, deliveryAction, listMyDeliveries } from '../../api/buyDeliveries';
@@ -17,10 +17,10 @@ import { apiError, money } from './deliveryKit';
 const LOOK = {
   PICKUP: { title: 'Pickup from Shop', icon: Store, tone: 'blue', color: '#0788C9', empty: 'No pickups pending.' },
   DELIVERY: { title: 'Out for Delivery', icon: Truck, tone: 'orange', color: '#FAA700', empty: 'No deliveries in progress.' },
-  HISTORY: { title: 'Delivery History', icon: History, tone: 'green', color: '#609138', empty: 'No past deliveries.' },
+  HISTORY: { title: 'Delivery History', icon: CircleCheck, tone: 'green', color: '#609138', empty: 'No past deliveries.' },
 };
 const TILES = [
-  { key: 'ALL', label: 'All', title: 'All Deliveries', icon: ChartColumn, tone: 'teal', color: '#035C6C', statuses: null, empty: 'No deliveries assigned yet.' },
+  { key: 'ALL', label: 'All', title: 'All Deliveries', icon: Truck, tone: 'teal', color: '#035C6C', statuses: null, empty: 'No deliveries assigned yet.' },
   ...DELIVERY_TABS.map((t) => ({ ...t, ...LOOK[t.key] })),
 ];
 const tileOf = (o) => TILES.find((t) => t.statuses && t.statuses.includes(o.status)) || TILES[0];
@@ -33,8 +33,22 @@ export default function BuyDeliveriesScreen({ navigation, route }) {
   const [filter, setFilter] = useState(route?.params?.filter || null); // a TILES key, or null for the sections
   const [refreshing, setRefreshing] = useState(false);
 
+  // A server-confirmed move to the next tab (Pickup → Delivery → History) opens that tab, job first.
+  const prevTab = useRef(null);
+  const [moved, setMoved] = useState(null);
   const load = useCallback(async () => {
-    try { setRows(await listMyDeliveries()); setError(''); }
+    try {
+      const data = await listMyDeliveries();
+      const arr = Array.isArray(data) ? data : [];
+      const order = ['PICKUP', 'DELIVERY', 'HISTORY'];
+      const tabs = new Map(arr.map((o) => [o.id, tileOf(o).key]));
+      if (prevTab.current) {
+        const hit = arr.find((o) => order.indexOf(tabs.get(o.id)) > order.indexOf(prevTab.current.get(o.id)) && order.indexOf(prevTab.current.get(o.id)) >= 0);
+        if (hit) { setMoved(hit.id); setFilter(tabs.get(hit.id)); }
+      }
+      prevTab.current = tabs;
+      setRows(data); setError('');
+    }
     catch (e) { setError(apiError(e, 'Could not load your assignments.')); }
   }, []);
 
@@ -59,7 +73,7 @@ export default function BuyDeliveriesScreen({ navigation, route }) {
   };
 
   const list = rows || [];
-  const byTile = useMemo(() => Object.fromEntries(TILES.map((t) => [t.key, t.statuses ? list.filter((o) => t.statuses.includes(o.status)) : list])), [list]);
+  const byTile = useMemo(() => Object.fromEntries(TILES.map((t) => [t.key, (t.statuses ? list.filter((o) => t.statuses.includes(o.status)) : list).slice().sort((x, y) => (y.id === moved) - (x.id === moved))])), [list, moved]);
   const counts = useMemo(() => Object.fromEntries(TILES.map((t) => [t.key, byTile[t.key].length])), [byTile]);
   const active = TILES.find((t) => t.key === filter) || null;
 

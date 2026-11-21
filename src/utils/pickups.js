@@ -124,6 +124,12 @@ export function bucketOf(status) {
   if (i > 0) return 'IN_PROGRESS';
   return 'OTHER';
 }
+/** Rail tab for a booking: an accepted pickup (server `accepted`) is In Progress,
+ *  even while its backend status is still the assigned code. */
+export function tabBucketOf(b) {
+  const k = bucketOf(b?.status);
+  return k === 'ASSIGNED' && b?.accepted === true ? 'IN_PROGRESS' : k;
+}
 
 // Current status → the one step the pickup person taps next (null = none:
 // completed, cancelled and post-hand-over bookings are read-only).
@@ -156,7 +162,8 @@ export function nextStatusFor(currentStatus, kind) {
     return { code: 'REACHED_SHOP', label: 'Reached Shop', action: 'reached' };
   }
   if (s === 'REACHED_SHOP') {
-    return { code: 'RECEIVED_AT_SHOP', label: 'Hand Over to Shop' };
+    // Completed only by the shop's TPIN confirmation (Partner App).
+    return { code: 'HANDOVER_REQUEST', label: 'Request Shop Handover', action: 'handover' };
   }
   return null;
 }

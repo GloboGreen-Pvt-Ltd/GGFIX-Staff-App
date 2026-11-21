@@ -102,7 +102,7 @@ export function PinPromptHost() {
     <Modal visible={!!req} transparent animationType="fade" onRequestClose={() => done(false)}>
       <View style={{ flex: 1, backgroundColor: 'rgba(17,17,17,0.45)', justifyContent: 'flex-end' }}>
         <View style={{ backgroundColor: '#FFFFFF', borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingBottom: 12 }}>
-          {req ? <PinPadBody title={req.title} subtitle="Enter your 6-digit MPIN" biometric={req.biometric} onDone={() => done(true)} onCancel={() => done(false)} /> : null}
+          {req ? <PinPadBody title={req.title} subtitle="Enter your 6-digit PIN" biometric={req.biometric} onDone={() => done(true)} onCancel={() => done(false)} /> : null}
         </View>
       </View>
     </Modal>

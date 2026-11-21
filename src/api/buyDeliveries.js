@@ -34,6 +34,6 @@ export const getDelivery = (id) => marketplaceApi.get(`/staff/buy-orders/${id}`)
 //  deliver { amountCollected, otp, paymentRef?, photos: [url…] (≥1) }
 //  fail    { reason }
 export const deliveryAction = async (id, action, body = {}) => {
-  if (action === 'deliver') await requireFreshAuth('Confirm delivery completion');
+  if (action === 'deliver') await requireFreshAuth('Confirm delivery completion', { method: 'POST', path: `/staff/buy-orders/${id}/${action}` });
   return marketplaceApi.post(`/staff/buy-orders/${id}/${action}`, { body });
 };

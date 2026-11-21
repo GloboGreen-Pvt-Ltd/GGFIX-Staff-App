@@ -16,6 +16,6 @@ export const getRepairDelivery = (id) => ticketApi.get(`/technicians/me/repair-d
 // action: accept | decline {reason} | collect {identifier, accessories[], photos[]} | start | arrive
 //   | otp/resend | complete {otp, amountCollected, paymentMethod, paymentRef, photos[]} | fail {reason} | return
 export const repairDeliveryAction = async (id, action, body) => {
-  if (action === 'complete') await requireFreshAuth('Confirm delivery completion');
+  if (action === 'complete') await requireFreshAuth('Confirm delivery completion', { method: 'POST', path: `/technicians/me/repair-deliveries/${id}/${action}` });
   return ticketApi.post(`/technicians/me/repair-deliveries/${id}/${action}`, body ? { body } : undefined);
 };

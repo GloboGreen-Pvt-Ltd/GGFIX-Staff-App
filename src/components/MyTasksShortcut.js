@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
-import { ListChecks, ChevronRight } from 'lucide-react-native';
+import { ListTodo, ChevronRight } from 'lucide-react-native';
 import { Text } from './Typography';
 import { rf, rs } from '../utils/responsive';
 import { selectTechnicianId } from '../store/authSlice';
@@ -37,34 +37,36 @@ export default function MyTasksShortcut({ navigation }) {
 
   return (
     <TouchableOpacity onPress={() => navigation.navigate('MyTasks')} activeOpacity={0.85} style={s.card} accessibilityRole="button" accessibilityLabel="My Tasks">
-      <View style={s.icon}><ListChecks size={rs(17)} color="#FFFFFF" strokeWidth={2.4} /></View>
+      <ListTodo size={rs(28)} color="#00807C" strokeWidth={1.8} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={s.title}>My Tasks</Text>
         <Text style={s.sub} numberOfLines={1}>General shop tasks from your manager</Text>
       </View>
+      <View style={s.vr} />
       <View style={s.stat}>
-        <Text style={[s.statNum, { color: '#035C6C' }]}>{counts ? counts.today : '—'}</Text>
+        <View style={[s.dot, { backgroundColor: '#485058' }]}><Text style={s.dotNum}>{counts ? counts.today : '—'}</Text></View>
         <Text style={s.statLabel}>Today</Text>
       </View>
       <View style={s.stat}>
-        <Text style={[s.statNum, { color: '#FAA700' }]}>{counts ? counts.pending : '—'}</Text>
+        <View style={[s.dot, { backgroundColor: '#035C6C' }]}><Text style={s.dotNum}>{counts ? counts.pending : '—'}</Text></View>
         <Text style={s.statLabel}>Pending</Text>
       </View>
-      <ChevronRight size={rs(16)} color="#035C6C" />
+      <ChevronRight size={rs(20)} color="#111111" strokeWidth={2} />
     </TouchableOpacity>
   );
 }
 
 const s = StyleSheet.create({
   card: {
-    flexDirection: 'row', alignItems: 'center', gap: rs(9), marginTop: rs(8), backgroundColor: '#FFFFFF', borderRadius: rs(14),
-    borderWidth: 1, borderColor: '#E5E7EB', paddingVertical: rs(9), paddingHorizontal: rs(10),
-    shadowColor: '#111111', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1,
+    flexDirection: 'row', alignItems: 'center', gap: rs(10), marginTop: rs(12), backgroundColor: '#FFFFFF', borderRadius: rs(16),
+    borderWidth: 1, borderColor: '#EEF1F3', paddingVertical: rs(12), paddingHorizontal: rs(14),
+    shadowColor: '#111111', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2,
   },
-  icon: { width: rs(34), height: rs(34), borderRadius: rs(17), backgroundColor: '#035C6C', alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: rf(14), fontWeight: '800', color: '#1C3053' },
-  sub: { fontSize: rf(11), color: '#6B7280', marginTop: 1 },
-  stat: { alignItems: 'center', minWidth: rs(40) },
-  statNum: { fontSize: rf(16), fontWeight: '800' },
-  statLabel: { fontSize: rf(10), color: '#6B7280', fontWeight: '600' },
+  title: { fontSize: rf(15), fontWeight: '800', color: '#111111' },
+  sub: { fontSize: rf(12), color: '#1F2937', marginTop: rs(2) },
+  vr: { width: 1, alignSelf: 'stretch', backgroundColor: '#E8ECEF', marginHorizontal: rs(2) },
+  stat: { alignItems: 'center', minWidth: rs(46) },
+  dot: { minWidth: rs(20), height: rs(20), borderRadius: rs(10), paddingHorizontal: rs(4), alignItems: 'center', justifyContent: 'center' },
+  dotNum: { fontSize: rf(11), fontWeight: '800', color: '#FFFFFF', includeFontPadding: false },
+  statLabel: { fontSize: rf(12.5), color: '#111111', fontWeight: '700', marginTop: rs(4) },
 });

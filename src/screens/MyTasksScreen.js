@@ -3,7 +3,7 @@ import { View, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSelector } from 'react-redux';
-import { CalendarRange, History, Inbox, CircleX, ChartColumn, CalendarDays, Clock, RefreshCw, Check } from 'lucide-react-native';
+import { CalendarRange, History, Inbox, CircleX, CalendarDays, Clock, RefreshCw, Briefcase, CircleCheck } from 'lucide-react-native';
 import { Text } from '../components/Typography';
 import { JobHeader, JobRail, toneOf } from '../components/JobCardKit';
 import StaffTaskCard from '../components/StaffTaskCard';
@@ -17,11 +17,11 @@ const SYNC_MS = 30000; // re-read while open so owner changes show up
 
 // Left rail filters — same gradient tiles as My Jobs.
 const RAIL = [
-  { key: 'All', label: 'All', icon: ChartColumn, tone: 'teal' },
+  { key: 'All', label: 'All', icon: Briefcase, tone: 'teal' },
   { key: 'Today', label: 'Today', icon: CalendarDays, tone: 'blue' },
   { key: 'Upcoming', label: 'Upcoming', icon: Clock, tone: toneOf('#1C3053') },
   { key: 'In Progress', label: 'In Progress', icon: RefreshCw, tone: 'orange' },
-  { key: 'Completed', label: 'Completed', icon: Check, tone: 'green' },
+  { key: 'Completed', label: 'Completed', icon: CircleCheck, tone: 'green' },
 ];
 
 // My Tasks — general shop tasks the owner assigned to this employee (not

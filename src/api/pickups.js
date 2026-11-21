@@ -119,7 +119,7 @@ export async function declinePickup(bookingId, { reason, note } = {}) {
 // re-check from the sell inspection pages, saved beside the customer's answers.
 export async function updatePickupStatus(bookingId, nextStatus, opts) {
   const { note, latitude, longitude, inspection } = opts || {};
-  if (nextStatus === 'RECEIVED_AT_SHOP') await requireFreshAuth('Confirm handover to shop');
+  if (nextStatus === 'RECEIVED_AT_SHOP') await requireFreshAuth('Confirm handover to shop', { method: 'PATCH', path: `${base(bookingId)}/${bookingId}/status`, body: { status: nextStatus } });
   return await ticketApi.patch(`${base(bookingId)}/${bookingId}/status`, {
     body: {
       status: nextStatus,
@@ -163,7 +163,7 @@ export const submitSellRevision = (id, { amount, reason, note }) => sellStep(id,
 export const sellCustomerDecision = (id, decision) => sellStep(id, 'revision/customer', { decision });
 /** method UPI | CASH; proofUrl from uploadMedia. */
 export const recordSellPayment = async (id, { method, reference, proofUrl }) => {
-  if (String(method).toUpperCase() === 'CASH') await requireFreshAuth('Confirm cash payment');
+  if (String(method).toUpperCase() === 'CASH') await requireFreshAuth('Confirm cash payment', { method: 'POST', path: `/technicians/me/sell-pickups/${id}/payment` });
   return sellStep(id, 'payment', { method, reference, proofUrl });
 };
 

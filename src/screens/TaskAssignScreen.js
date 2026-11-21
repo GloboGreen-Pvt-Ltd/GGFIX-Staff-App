@@ -6,29 +6,7 @@ import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import {
-  FileText,
-  Users,
-  CircleCheck,
-  BriefcaseBusiness,
-  Clock,
-  Info,
-  Laptop,
-  Smartphone,
-  Monitor,
-  Printer,
-  Tablet,
-  Watch,
-  Tv,
-  Headphones,
-  Camera,
-  Gamepad2,
-  Speaker,
-  Wrench,
-  X,
-  RefreshCw,
-  CircleAlert,
-  Inbox,
-  Check,
+  Users, CircleCheck, Clock, Info, Laptop, Smartphone, Monitor, Printer, Tablet, Watch, Tv, Headphones, Camera, Gamepad2, Speaker, Wrench, X, RefreshCw, CircleAlert, Inbox, Check,
 } from 'lucide-react-native';
 import { ticketApi, shopApi } from '../api/client';
 import { listMyTickets, acceptTicket, listTicketEvents } from '../api/tickets';
@@ -40,7 +18,8 @@ import { rf, rs, sheetWidth } from '../utils/responsive';
 import { ticketRef } from '../utils/ticketRef';
 import { resolveDeviceImageSource } from '../utils/images';
 import { listModelsForBrand } from '../api/master';
-import { JobHeader, JobRail, JobPictureCard, KText } from '../components/JobCardKit';
+import { JobHeader, JobRail, JobPictureCard, KText, WorkerCheck } from '../components/JobCardKit';
+import { Briefcase } from 'lucide-react-native';
 import AcceptJobDialog from '../components/AcceptJobDialog';
 import { SearchBar } from '../components/rnr';
 
@@ -521,8 +500,8 @@ export default function TaskAssignScreen({ navigation }) {
 // ---------- building blocks ----------
 // Rail filters (Partner Job Report gradient tiles).
 const ASSIGN_RAIL = [
-  { key: 'all', label: 'All Jobs', icon: BriefcaseBusiness, tone: 'teal' },
-  { key: 'assigned', label: 'Assigned', icon: FileText, tone: 'blue' },
+  { key: 'all', label: 'All Jobs', icon: Briefcase, tone: 'teal' },
+  { key: 'assigned', label: 'Assigned', icon: WorkerCheck, tone: 'blue' },
   { key: 'reassign', label: 'Re-Assign', icon: Users, tone: 'orange' },
   { key: 'accepted', label: 'Accepted', icon: CircleCheck, tone: 'green' },
 ];

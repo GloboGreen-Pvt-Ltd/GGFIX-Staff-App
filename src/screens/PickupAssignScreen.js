@@ -3,8 +3,7 @@ import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Refr
 import { Text } from '../components/Typography';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  AlertTriangle, Ban, CalendarDays, Check, X, CalendarRange, ChartColumn, CircleAlert, CircleCheck, CircleX, ClipboardCheck, History, MapPin,
-  Navigation, Package, Phone, RefreshCw, Repeat, Search, Truck, WifiOff, Wrench,
+  AlertTriangle, Ban, CalendarDays, Check, X, CalendarRange, CircleAlert, CircleCheck, CircleX, ClipboardCheck, History, MapPin, Navigation, Phone, RefreshCw, Repeat, Search, Truck, WifiOff, Wrench,
 } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { listMyAssignedPickups } from '../api/pickups';
@@ -18,7 +17,7 @@ import usePickupAdvance from '../utils/usePickupAdvance';
 import { syncPickupReminders } from '../utils/checkoutAlarm';
 import {
   PICKUP_STEPS, awaitingAccept, bucketOf, bySchedule, cancelInfo, customerPhone, dayKey, deviceLabel, isActive, isPastPickup, isReassigned, issueLabel,
-  nextStepFor, overlapsFor, pickupDay, serverAcceptance, slotLabel, slotStartAt, statusMeta, stepIndex, todayKey, trackingId,
+  nextStepFor, overlapsFor, pickupDay, serverAcceptance, slotLabel, slotStartAt, statusMeta, stepIndex, tabBucketOf, todayKey, trackingId,
 } from '../utils/pickups';
 import { userMessage } from '../utils/userMessages';
 import { notify } from '../components/confirm';
@@ -54,11 +53,11 @@ const cardDate = (key) => {
 // pickup person; Cancelled = by the shop or customer (last CANCELLED event).
 // Tap one to list just those pickups; tap it again for the normal sections.
 const TILES = [
-  { key: 'total', label: 'All', title: 'All Pickups', icon: ChartColumn, tone: 'teal', color: '#035C6C', match: () => true, empty: 'No pickups.' },
+  { key: 'total', label: 'All', title: 'All Pickups', icon: Truck, tone: 'teal', color: '#035C6C', match: () => true, empty: 'No pickups.' },
   { key: 'today', label: 'Today', title: "Today's Pickups", icon: CalendarDays, tone: 'blue', color: '#0788C9', empty: 'No pickups scheduled for today.' },
-  { key: 'assigned', label: 'Assigned', title: 'Assigned Pickups', icon: Package, tone: toneOf('#1C3053'), color: '#1C3053', match: (b) => bucketOf(b.status) === 'ASSIGNED', empty: 'No assigned pickups.' },
-  { key: 'inProgress', label: 'In Progress', title: 'In Progress Pickups', icon: Truck, tone: 'orange', color: '#FAA700', match: (b) => bucketOf(b.status) === 'IN_PROGRESS', empty: 'No pickups in progress.' },
-  { key: 'completed', label: 'Completed', title: 'Completed Pickups', icon: CircleCheck, tone: 'green', color: '#609138', match: (b) => bucketOf(b.status) === 'COMPLETED', empty: 'No completed pickups.' },
+  { key: 'assigned', label: 'Assigned', title: 'Assigned Pickups', icon: ClipboardCheck, tone: toneOf('#1C3053'), color: '#1C3053', match: (b) => tabBucketOf(b) === 'ASSIGNED', empty: 'No assigned pickups.' },
+  { key: 'inProgress', label: 'In Progress', title: 'In Progress Pickups', icon: Truck, tone: 'orange', color: '#FAA700', match: (b) => tabBucketOf(b) === 'IN_PROGRESS', empty: 'No pickups in progress.' },
+  { key: 'completed', label: 'Completed', title: 'Completed Pickups', icon: CircleCheck, tone: 'green', color: '#609138', match: (b) => tabBucketOf(b) === 'COMPLETED', empty: 'No completed pickups.' },
   { key: 'failed', label: 'Failed', title: 'Failed Pickups', icon: CircleX, tone: 'red', color: '#F32C26', match: (b) => cancelInfo(b)?.byMe === true, empty: 'No failed pickups.' },
   { key: 'cancelled', label: 'Cancelled', title: 'Cancelled Pickups', icon: Ban, tone: toneOf('#6B7280'), color: '#6B7280', match: (b) => cancelInfo(b)?.byMe === false, empty: 'No cancelled pickups.' },
   { key: 'reassigned', label: 'Reassigned', title: 'Reassigned Pickups', icon: Repeat, tone: 'orange', color: '#FAA700', match: (b) => isReassigned(b), empty: 'No reassigned pickups.' },
@@ -74,6 +73,10 @@ export default function PickupAssignScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const loadedOnce = useRef(false);
+  // Last known rail tab per pickup: a server-confirmed move (Accept → In Progress,
+  // hand over → Completed) switches the rail to that tab and lists the job first.
+  const prevTab = useRef(null);
+  const [moved, setMoved] = useState(null); // { id, tab }
 
   // GET /technicians/me/pickup-bookings — the server scopes it to the caller
   // (JWT userId + shopId → their pickup-person row). A failed re-read keeps
@@ -94,7 +97,18 @@ export default function PickupAssignScreen({ navigation, route }) {
       const seen = new Set();
       const rows = (Array.isArray(items) ? items : []).filter((b) => b?.id && !seen.has(b.id) && seen.add(b.id));
       // Repair pickups vs device-purchase (kind SELL) pickups: separate screens.
-      setList(rows.filter((b) => (sellOnly ? b.kind === 'SELL' : b.kind !== 'SELL')));
+      const mine = rows.filter((b) => (sellOnly ? b.kind === 'SELL' : b.kind !== 'SELL'));
+      setList(mine);
+      const tabs = new Map(mine.map((b) => [b.id, tabBucketOf(b)]));
+      if (prevTab.current) {
+        const hit = mine.find((b) => {
+          const was = prevTab.current.get(b.id);
+          const now = tabs.get(b.id);
+          return (was === 'ASSIGNED' && now === 'IN_PROGRESS') || (was === 'IN_PROGRESS' && now === 'COMPLETED');
+        });
+        if (hit) setMoved({ id: hit.id, tab: tabs.get(hit.id) === 'COMPLETED' ? 'completed' : 'inProgress' });
+      }
+      prevTab.current = tabs;
       // 30 / 15-minute reminders for pickups not yet started (OS notifications;
       // a no-op in Expo Go). Re-synced every load, so changes drop stale ones.
       syncPickupReminders(rows.filter((b) => bucketOf(b.status) === 'ASSIGNED').map((b) => ({
@@ -145,6 +159,7 @@ export default function PickupAssignScreen({ navigation, route }) {
     setFilter(paramFilter);
     navigation.setParams({ filter: undefined });
   }, [paramFilter, navigation]);
+  useEffect(() => { if (moved) setFilter(moved.tab); }, [moved]);
   const activeTile = TILES.find((t) => t.key === filter) || null;
   // Quick search (ID / customer / device / phone / address) and date filter
   // run across every pickup; the rail filter still applies.
@@ -168,8 +183,9 @@ export default function PickupAssignScreen({ navigation, route }) {
       .some((v) => String(v || '').toLowerCase().includes(term));
     const base = term || dateFilter !== 'all' ? list : activeTile?.key === 'today' ? todayList : scoped;
     const tileOk = (b) => !activeTile || (activeTile.key === 'today' ? pickupDay(b) === today : activeTile.match(b));
-    return base.filter((b) => tileOk(b) && dateOk(b) && searchOk(b)).sort(bySchedule);
-  }, [filtering, activeTile, term, dateFilter, list, scoped, todayList, today]);
+    const top = (b) => (moved && b.id === moved.id ? 0 : 1);
+    return base.filter((b) => tileOk(b) && dateOk(b) && searchOk(b)).sort((a, b) => top(a) - top(b) || bySchedule(a, b));
+  }, [filtering, activeTile, term, dateFilter, list, scoped, todayList, today, moved]);
   const filterTitle = term ? 'Search Results'
     : [activeTile?.title, dateFilter !== 'all' ? DATE_FILTERS.find((d) => d.key === dateFilter).label : null].filter(Boolean).join(' · ');
   const clearFilters = () => { setFilter(null); setDateFilter('all'); setQ(''); setShowSearch(false); };
@@ -460,3 +476,5 @@ const styles = StyleSheet.create({
     paddingVertical: rs(10), paddingHorizontal: rs(12),
   },
 });
+
+

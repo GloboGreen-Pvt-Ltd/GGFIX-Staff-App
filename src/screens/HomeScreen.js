@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePresence, recheckPresence, PRESENCE_LABEL, fmtClock, fmtDuration } from '../utils/presenceStore';
 import { AppState, RefreshControl, View, TouchableOpacity, ScrollView, Image, ActivityIndicator, useWindowDimensions, Text as RNText } from 'react-native';
 import { Text } from '../components/Typography';
 import { interFamily } from '../theme/typography';
@@ -26,6 +27,7 @@ import {
   Coffee,
   CloudSun,
   Moon,
+  CircleDot,
 } from 'lucide-react-native';
 import { rf, rlh, rs } from '../utils/responsive';
 import { selectSession, mergeTechnicianProfile, selectShopLocation, selectTechnicianId } from '../store/authSlice';
@@ -228,6 +230,9 @@ function initialsFromName(name) {
 }
 
 export default function HomeScreen({ navigation }) {
+  const presence = usePresence();
+  // Only a live, checked-in reading (gate re-checks every 30 s) is shown as presence.
+  const presenceLive = !!presence?.checkedIn && presence.state !== 'MONITORING_OFF' && Date.now() - (presence.receivedAt || 0) < 5 * 60 * 1000;
   const dispatch = useDispatch();
   const session = useSelector(selectSession);
   const shopLoc = useSelector(selectShopLocation);
@@ -250,6 +255,8 @@ export default function HomeScreen({ navigation }) {
   monthRef.current = { month, year };
 
   const [todayAttendance, setTodayAttendance] = useState(null);
+  // Check-in / check-out changed → start / stop presence monitoring now.
+  useEffect(() => { recheckPresence(); }, [todayAttendance?.checkInTime, todayAttendance?.checkOutTime]);
   const [monthly, setMonthly] = useState(null);
   const [tickets, setTickets] = useState([]);
   const [leaves, setLeaves] = useState([]);
@@ -811,9 +818,20 @@ export default function HomeScreen({ navigation }) {
               <MapPin size={rs(17)} color={C.green} fill={C.green} stroke="#FFFFFF" strokeWidth={1.6} />
               <View style={{ flex: 1, marginLeft: rs(8) }}>
                 <Text style={{ fontSize: rf(12), color: C.muted }}>Your Location</Text>
-                <Text style={{ fontSize: rf(13), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Globo Green</Text>
+                <Text style={{ fontSize: rf(13), fontWeight: '800', color: C.text, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{presence?.shopName || 'Globo Green'}</Text>
                 <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: rs(1) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>Cuddalore, Tamil Nadu</Text>
-                {geo.inRange != null ? (
+                {presenceLive ? (
+                  <View style={{ marginTop: rs(4) }}>
+                    <View className="flex-row items-center">
+                      {presence.state === 'INSIDE_SHOP' || presence.state === 'ON_AUTHORIZED_DUTY' ? <CircleDot size={rs(13)} color={C.deep} strokeWidth={2.2} /> : <ShieldAlert size={rs(13)} color={presence.state === 'OUTSIDE_SHOP' ? C.red : '#B7791F'} />}
+                      <Text style={{ fontSize: rf(12), fontWeight: '800', color: presence.state === 'OUTSIDE_SHOP' ? C.red : presence.state === 'LOCATION_UNVERIFIED' ? '#B7791F' : C.deep, marginLeft: rs(4) }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                        {PRESENCE_LABEL[presence.state] || presence.state}
+                        {presence.distanceMeters != null ? <Text style={{ color: C.ink }}>{` • ${presence.distanceMeters}m`}</Text> : null}
+                      </Text>
+                    </View>
+                    {presence.lastVerifiedAt ? <Text style={{ fontSize: rf(11), color: C.muted, marginTop: rs(2) }} numberOfLines={1}>{`Verified ${fmtClock(presence.lastVerifiedAt)}`}</Text> : null}
+                  </View>
+                ) : geo.inRange != null ? (
                   <View className="flex-row items-center" style={{ marginTop: rs(3) }}>
                     {geo.inRange ? <ShieldCheck size={rs(12)} color={C.green} /> : <ShieldAlert size={rs(12)} color={C.red} />}
                     <Text style={{ fontSize: rf(10.5), fontWeight: '700', color: geo.inRange ? C.green : C.red, marginLeft: rs(3) }} numberOfLines={1}>
@@ -865,6 +883,34 @@ export default function HomeScreen({ navigation }) {
               </View>
             </View>
           </TouchableOpacity>
+
+          {/* Shop presence (server data from the geofence gate) — only while checked in. */}
+          {presenceLive ? (
+            <View style={{ marginTop: rs(10), padding: rs(12), borderRadius: rs(16), backgroundColor: C.card, borderWidth: 1, borderColor: C.border, ...shadow(0.05, 10, 3, 2) }}>
+              <View className="flex-row items-center">
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: rf(13), fontWeight: '800', color: C.ink }}>Shop Presence</Text>
+                  <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: rs(2) }}>{presence.state === 'ON_AUTHORIZED_DUTY' ? 'Authorized field work' : 'Monitoring active'}</Text>
+                </View>
+                <View style={{ backgroundColor: presence.state === 'OUTSIDE_SHOP' ? '#FEECEC' : presence.state === 'LOCATION_UNVERIFIED' ? '#FEF3C7' : '#E3F5EA', borderRadius: 999, paddingHorizontal: rs(10), paddingVertical: rs(3) }}>
+                  <Text style={{ fontSize: rf(11.5), fontWeight: '800', color: presence.state === 'OUTSIDE_SHOP' ? C.red : presence.state === 'LOCATION_UNVERIFIED' ? '#B7791F' : '#1E8E4E' }}>{PRESENCE_LABEL[presence.state] || presence.state}</Text>
+                </View>
+              </View>
+              <View className="flex-row" style={{ marginTop: rs(10), gap: rs(8) }}>
+                <View style={{ flex: 1, alignItems: 'center', backgroundColor: '#EAF4F5', borderRadius: rs(12), paddingVertical: rs(10) }}>
+                  <Text style={{ fontSize: rf(16), fontWeight: '800', color: C.deep }}>{presence.outsideVisits ?? 0}</Text>
+                  <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: rs(2) }}>Outside Visits</Text>
+                </View>
+                <View style={{ flex: 1, alignItems: 'center', backgroundColor: '#EAF4F5', borderRadius: rs(12), paddingVertical: rs(10) }}>
+                  <Text style={{ fontSize: rf(16), fontWeight: '800', color: C.deep }}>{fmtDuration(presence.outsideSeconds)}</Text>
+                  <Text style={{ fontSize: rf(11.5), color: C.muted, marginTop: rs(2) }}>Outside Duration</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => navigation.navigate('ShopPresenceHistory')} activeOpacity={0.8} accessibilityRole="button" style={{ alignSelf: 'flex-end', marginTop: rs(8) }}>
+                <Text style={{ fontSize: rf(12), fontWeight: '800', color: C.deep }}>View History ›</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {/* Deliveries are pickup-person work: hidden for technicians. */}
           {isPickupPerson ? (

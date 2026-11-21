@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, AppState, Easing, Platform, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Animated, AppState, Easing, Linking, Platform, ScrollView, StyleSheet, TouchableOpacity, View, useWindowDimensions, Text as RNText } from 'react-native';
 import { Text } from './Typography';
 import Svg, { Circle, Ellipse, Path } from 'react-native-svg';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import {
   LockKeyhole, RefreshCw, LogOut, MapPin, ShieldCheck, ShoppingCart, Smartphone, Store, Users, Wrench,
 } from 'lucide-react-native';
@@ -16,6 +17,8 @@ import { readCurrentLocation, haversineMeters, GEOFENCE_RADIUS_METERS } from '..
 import { rf, rs } from '../utils/responsive';
 import { notifyNow } from '../utils/checkoutAlarm';
 import { hasActiveJourney } from '../utils/activeJourney';
+import { pingPresence } from '../api/presence';
+import { setPresence, setPresenceRecheck, PRESENCE_LABEL, fmtClock } from '../utils/presenceStore';
 
 // Full-screen attendance geofence. Rendered right after login (wraps the whole
 // authenticated app): the employee can only use the app while physically within
@@ -29,6 +32,7 @@ import { hasActiveJourney } from '../utils/activeJourney';
 
 const RECHECK_MS = 12_000; // auto re-check cadence while locked
 const INSIDE_RECHECK_MS = 60_000; // re-check cadence while the app is in use
+const MONITOR_RECHECK_MS = 30_000; // checked in: often enough for the exit grace period
 
 export default function GeofenceGate({ onLogout, children }) {
   const dispatch = useDispatch();
@@ -41,6 +45,9 @@ export default function GeofenceGate({ onLogout, children }) {
   // { latitude, longitude } = enforce against these.
   const shopRef = useRef(null);
   const runningRef = useRef(false);
+  const presRef = useRef(null); // last server presence response
+  const localOutRef = useRef(null); // offline fallback: first outside reading (ms)
+  const manualRef = useRef(false); // Retry tapped (lets a return unlock when auto-unlock is off)
   const isPickupPerson = resolveRoleKey(useSelector(selectSession)) === 'PICKUP_PERSON';
 
   const runCheck = useCallback(async () => {
@@ -70,19 +77,67 @@ export default function GeofenceGate({ onLogout, children }) {
         return;
       }
 
-      // 1b. Pickup person on a started journey (server data, fetched fresh):
+      // 2. Read GPS once; the server presence check and the local rule both use it.
+      let pos = null;
+      let posErr = null;
+      try { pos = await readCurrentLocation(); } catch (e) { posErr = e; }
+
+      // 3. Checked in → shop presence is SERVER-decided (grace period, hysteresis,
+      // authorized duty, exit / return records). The session and attendance are
+      // never touched here: a confirmed exit only pauses the app.
+      let pres = null;
+      try {
+        pres = await pingPresence(pos
+          ? { latitude: pos.latitude, longitude: pos.longitude, accuracy: pos.accuracy ?? null, observedAt: Date.now(), manual: manualRef.current }
+          : { error: posErr?.code || 'LOCATION_UNAVAILABLE' });
+        presRef.current = pres;
+        setPresence(pres);
+      } catch (_) {
+        pres = null; // offline / server error: never treated as "outside"
+      }
+      manualRef.current = false;
+      if (!mountedRef.current) return;
+      const monitored = (p) => !!p?.checkedIn && p.state !== 'MONITORING_OFF';
+      if (pres && monitored(pres)) {
+        localOutRef.current = null;
+        setDistance(pres.distanceMeters ?? null);
+        if (pres.state === 'ON_AUTHORIZED_DUTY') { setStatus('inside'); return; }
+        if (!pos) {
+          if (Platform.OS === 'web') { setStatus('inside'); return; }
+          setStatus('denied');
+          setMessage('Turn on location (GPS) and allow NearGFix to access it to use the app.');
+          return;
+        }
+        setStatus(pres.freeze ? 'paused' : 'inside');
+        return;
+      }
+      // Server unreachable while checked in: same grace rule locally (no records).
+      if (!pres && monitored(presRef.current) && pos) {
+        if (isPickupPerson && (await hasActiveJourney().catch(() => null)) === true) { setStatus('inside'); return; }
+        const cfg = presRef.current.settings || {};
+        const radius = Number(cfg.radiusMeters) || GEOFENCE_RADIUS_METERS;
+        const graceMs = (Number(cfg.graceSeconds) || 120) * 1000;
+        const m = Math.round(haversineMeters(pos.latitude, pos.longitude, shopRef.current.latitude, shopRef.current.longitude));
+        setDistance(m);
+        if (m > radius + 10) {
+          if (!localOutRef.current) localOutRef.current = Date.now();
+          setStatus(Date.now() - localOutRef.current >= graceMs && cfg.autoFreeze !== false ? 'paused' : 'inside');
+        } else {
+          localOutRef.current = null;
+          setStatus('inside');
+        }
+        return;
+      }
+
+      // 4. Not checked in / monitoring off: the existing rules, unchanged.
+      // Pickup person on a started journey (server data, fetched fresh):
       // no distance limit and no geofence lock until every journey is back at
       // the shop. Unknown (offline / API error) → normal rules below.
       if (isPickupPerson && (await hasActiveJourney().catch(() => null)) === true) {
         if (mountedRef.current) setStatus('inside');
         return;
       }
-
-      // 2. Read GPS and compare against the shop.
-      let pos;
-      try {
-        pos = await readCurrentLocation();
-      } catch (e) {
+      if (!pos) {
         if (!mountedRef.current) return;
         // Web (desktop browser) has no reliable GPS — don't lock it out.
         if (Platform.OS === 'web') { setStatus('inside'); return; }
@@ -115,6 +170,8 @@ export default function GeofenceGate({ onLogout, children }) {
     }
   }, [dispatch, isPickupPerson]);
 
+  useEffect(() => { setPresenceRecheck(runCheck); return () => setPresenceRecheck(null); }, [runCheck]);
+
   // Initial check right after login.
   useEffect(() => {
     mountedRef.current = true;
@@ -132,18 +189,21 @@ export default function GeofenceGate({ onLogout, children }) {
   // as they walk out of range).
   useEffect(() => {
     if (status === 'checking') return undefined;
-    const id = setInterval(runCheck, status === 'inside' ? INSIDE_RECHECK_MS : RECHECK_MS);
+    const monitoredNow = !!presRef.current?.checkedIn && presRef.current?.state !== 'MONITORING_OFF';
+    const id = setInterval(runCheck, status === 'inside' ? (monitoredNow ? MONITOR_RECHECK_MS : INSIDE_RECHECK_MS) : RECHECK_MS);
     return () => clearInterval(id);
   }, [status, runCheck]);
 
   // Notify once each time the employee becomes locked out.
   const lockedRef = useRef(false);
   useEffect(() => {
-    const locked = status === 'outside' || status === 'denied';
+    const locked = status === 'outside' || status === 'denied' || status === 'paused';
     if (locked && !lockedRef.current) {
       notifyNow(
         '📍 Outside shop area',
-        status === 'denied'
+        status === 'paused'
+          ? 'You are outside the shop area. The app is paused; your attendance remains active.'
+          : status === 'denied'
           ? 'Location is off. NearGFix works only within ' + GEOFENCE_RADIUS_METERS + 'm of the shop.'
           : `You are ${distance ?? '?'}m from the shop. NearGFix works only within ${GEOFENCE_RADIUS_METERS}m.`,
       );
@@ -154,6 +214,10 @@ export default function GeofenceGate({ onLogout, children }) {
   if (status === 'inside') return children;
 
   const retry = () => { setStatus('checking'); runCheck(); };
+  if (status === 'paused') {
+    const retryPaused = () => { manualRef.current = true; runCheck(); };
+    return <PausedView presence={presRef.current} distance={distance} onRetry={retryPaused} />;
+  }
   return (
     <GateView
       checking={status === 'checking'}
@@ -374,3 +438,85 @@ const styles = StyleSheet.create({
   logout: { flexDirection: 'row', alignItems: 'center', marginTop: rs(14), paddingVertical: rs(6) },
   logoutText: { fontSize: rf(13), fontWeight: '600', color: MUTED, marginLeft: rs(6) },
 });
+/* ------------------------------------------------- checked-in pause screen */
+
+const P_TEAL = '#035C6C';
+const P_INK = '#050607';
+const P_MUTED = '#5C6170';
+function openPresenceLocationSettings() {
+  if (Platform.OS === 'android') {
+    Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(() => Linking.openSettings().catch(() => {}));
+  } else {
+    Linking.openSettings().catch(() => {});
+  }
+}
+
+// Shown only to a checked-in employee whose exit the SERVER confirmed (after
+// the grace period). Nothing behind it is reachable; login and attendance
+// stay intact and the gate unlocks itself on a verified return.
+function PausedView({ presence, distance, onRetry }) {
+  const insets = useSafeAreaInsets();
+  const [busy, setBusy] = useState(false);
+  const p = presence || {};
+  const radius = p.radiusMeters ?? p.settings?.radiusMeters ?? GEOFENCE_RADIUS_METERS;
+  const retry = async () => { setBusy(true); try { await onRetry(); } finally { setBusy(false); } };
+  const Row = ({ label, value, tone }) => (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 7 }}>
+      <RNText style={{ fontSize: 13, color: P_MUTED }}>{label}</RNText>
+      <RNText style={{ fontSize: 13, fontWeight: '700', color: tone || P_INK, flexShrink: 1, textAlign: 'right', marginLeft: 12 }} numberOfLines={1}>{value}</RNText>
+    </View>
+  );
+  return (
+    <View style={{ flex: 1, backgroundColor: '#F4F6F7', paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }}>
+      <StatusBar style="dark" />
+      <ScrollView contentContainerStyle={{ padding: 16, flexGrow: 1, justifyContent: 'center' }}>
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#E6ECEE' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <RNText style={{ fontSize: 14, fontWeight: '800', color: P_TEAL, letterSpacing: 0.5 }}>NearGFix Employee</RNText>
+            <View style={{ backgroundColor: '#E3F5EA', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 }}>
+              <RNText style={{ fontSize: 11.5, fontWeight: '800', color: '#1E8E4E' }}>Checked In</RNText>
+            </View>
+          </View>
+          <View style={{ alignSelf: 'center', width: 88, height: 88, borderRadius: 44, backgroundColor: '#E6F1F3', alignItems: 'center', justifyContent: 'center', marginTop: 22 }}>
+            <LockKeyhole size={34} color={P_TEAL} />
+          </View>
+          <RNText accessibilityRole="header" style={{ fontSize: 19, fontWeight: '800', color: P_INK, textAlign: 'center', marginTop: 16 }}>App Temporarily Paused</RNText>
+          <RNText style={{ fontSize: 13.5, color: P_MUTED, textAlign: 'center', marginTop: 8, lineHeight: 19 }}>
+            You are outside your shop's permitted area. Your attendance remains active.
+          </RNText>
+          <View style={{ backgroundColor: '#F4F6F7', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 6, marginTop: 16 }}>
+            {p.shopName ? <Row label="Shop" value={p.shopName} /> : null}
+            <Row label="Shop Distance Limit" value={`${radius}m`} />
+            <Row label="Current Location" value={distance != null ? `${distance}m away · ${PRESENCE_LABEL[p.state] || 'Outside Shop'}` : (PRESENCE_LABEL[p.state] || 'Outside Shop')} />
+            {p.lastExitAt ? <Row label="Left Shop At" value={fmtClock(p.lastExitAt)} /> : null}
+            <Row label="App Status" value="Paused" tone="#B7791F" />
+          </View>
+          <TouchableOpacity onPress={retry} disabled={busy} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Retry location"
+            style={{ marginTop: 18, height: 50, borderRadius: 14, backgroundColor: P_TEAL, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', opacity: busy ? 0.7 : 1 }}>
+            <RefreshCw size={18} color="#FFFFFF" />
+            <RNText style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '800', marginLeft: 8 }}>{busy ? 'Checking…' : 'Retry Location'}</RNText>
+          </TouchableOpacity>
+          <RNText style={{ fontSize: 12, color: P_MUTED, textAlign: 'center', marginTop: 10 }}>
+            Location is re-checked automatically every few seconds. The app unlocks by itself when your verified location is inside the shop.
+          </RNText>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 14, gap: 18 }}>
+            <TouchableOpacity onPress={openPresenceLocationSettings} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open location settings" style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <MapPin size={15} color={P_TEAL} />
+              <RNText style={{ fontSize: 12.5, fontWeight: '700', color: P_TEAL, marginLeft: 4 }}>Location settings</RNText>
+            </TouchableOpacity>
+            {p.shopPhone ? (
+              <TouchableOpacity onPress={() => Linking.openURL(`tel:${String(p.shopPhone).replace(/[^0-9+]/g, '')}`).catch(() => {})} hitSlop={8}
+                accessibilityRole="button" accessibilityLabel="Call the shop" style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Smartphone size={15} color={P_TEAL} />
+                <RNText style={{ fontSize: 12.5, fontWeight: '700', color: P_TEAL, marginLeft: 4 }}>Call shop</RNText>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          <RNText style={{ fontSize: 11.5, color: P_MUTED, textAlign: 'center', marginTop: 12 }}>
+            GPS not updating? Turn location on, set it to High accuracy and allow NearGFix "While using the app".
+          </RNText>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}

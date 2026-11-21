@@ -16,6 +16,7 @@ const TAB_FOR_ROUTE = {
 
   AttendanceTab: 'Attendance',
   DailyAttendance: 'Attendance',
+  ShopPresenceHistory: 'Attendance',
   DailyShiftSchedule: 'Attendance',
   MonthlySummary: 'Attendance',
   LeaveReport: 'Attendance',
@@ -145,6 +146,7 @@ import AccountTabScreen from '../screens/AccountTabScreen';
 
 // Category drill-down screens
 import DailyAttendanceScreen from '../screens/DailyAttendanceScreen';
+import ShopPresenceHistoryScreen from '../screens/ShopPresenceHistoryScreen';
 import DailyShiftScheduleScreen from '../screens/DailyShiftScheduleScreen';
 import MonthlySummaryScreen from '../screens/MonthlySummaryScreen';
 import LeaveReportScreen from '../screens/LeaveReportScreen';
@@ -271,6 +273,7 @@ export default function TechnicianNavigator({ session, onLogout }) {
 
         {/* Category drill-downs */}
         <Stack.Screen name="DailyAttendance" component={DailyAttendanceScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="ShopPresenceHistory" component={ShopPresenceHistoryScreen} options={{ headerShown: false }} />
         <Stack.Screen name="DailyShiftSchedule" component={DailyShiftScheduleScreen} options={{ headerShown: false }} />
         <Stack.Screen name="MonthlySummary" component={MonthlySummaryScreen} options={{ title: 'Monthly Summary' }} />
         <Stack.Screen name="LeaveReport" component={LeaveReportScreen} options={{ headerShown: false }} />

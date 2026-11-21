@@ -131,6 +131,17 @@ export async function updatePickupStatus(bookingId, nextStatus, opts) {
   });
 }
 
+// Shop handover (repair pickups at REACHED_SHOP): the pickup person asks the
+// shop to confirm; an Owner / Shop / same-shop Employee confirms with their own
+// TPIN on the Partner App. Idempotent (a repeat tap re-notifies the shop).
+export async function requestShopHandover(bookingId) {
+  return await ticketApi.post(`/technicians/me/pickup-bookings/${bookingId}/handover-request`, { body: {} });
+}
+// { state: NOT_REQUESTED | PENDING | COMPLETED, requestedAt, verifiedByName, verifiedRole, confirmedAt }
+export async function getShopHandover(bookingId) {
+  return await ticketApi.get(`/technicians/me/pickup-bookings/${bookingId}/handover`, { skipAuthExpiry: true });
+}
+
 // Device purchase: what the customer answered when selling (device ids,
 // screening, conditions, issues, accessories, warranty) — pre-fills the
 // pickup person's inspection. SellPickupController GET …/{id}/evaluation.
